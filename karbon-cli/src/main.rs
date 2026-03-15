@@ -43,6 +43,14 @@ enum Commands {
         /// Name (PascalCase, e.g. "Post", "BlogComment")
         name: String,
     },
+    /// Run SQL migrations from the migration/ directory
+    Migrate,
+    /// Deploy the project (docker or ssh)
+    Deploy {
+        /// Deploy target: docker, ssh
+        #[arg(default_value = "docker")]
+        target: String,
+    },
 }
 
 fn main() {
@@ -83,6 +91,8 @@ fn main() {
         Commands::Generate { ref kind, ref name } => {
             commands::generate::run(kind, name, &root)
         }
+        Commands::Migrate => commands::migrate::run(&root),
+        Commands::Deploy { ref target } => commands::deploy::run(&config, &root, target),
         Commands::New { .. } => unreachable!(),
     };
 

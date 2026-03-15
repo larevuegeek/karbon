@@ -5,6 +5,8 @@ use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+#[cfg(feature = "studio")]
+use axum::Extension;
 
 use crate::config::Config;
 use crate::db::Database;
@@ -132,6 +134,24 @@ impl App {
             router = router.layer(middleware::from_fn(crate::logger::profiler_middleware));
         }
 
+        // Studio (dev dashboard)
+        #[cfg(feature = "studio")]
+        let studio_enabled = cfg!(debug_assertions) || std::env::var("KARBON_STUDIO").is_ok();
+        #[cfg(feature = "studio")]
+        let studio_collector = if studio_enabled {
+            let (studio_router, collector, token) = crate::studio::build();
+            // Studio router already has its own state, merge at Router<()> level later
+            tracing::info!(
+                "\x1b[38;5;141m⚡ Studio\x1b[0m → http://{}:{}/_studio?token={}",
+                "localhost",
+                self.config.port,
+                token
+            );
+            Some((studio_router, collector))
+        } else {
+            None
+        };
+
         // Frontend reverse proxy (enabled via KARBON_FRONTEND_URL env var)
         if let Ok(frontend_url) = std::env::var("KARBON_FRONTEND_URL") {
             tracing::info!("Frontend proxy enabled → {}", frontend_url);
@@ -139,12 +159,21 @@ impl App {
             router = router.fallback(move |req| proxy.clone().handle(req));
         }
 
-        let router = router
+        #[allow(unused_mut)]
+        let mut router = router
             .layer(middleware::from_fn(super::middleware::request_id))
             .layer(CompressionLayer::new())
             .layer(cors)
             .layer(TraceLayer::new_for_http())
             .with_state(state);
+
+        #[cfg(feature = "studio")]
+        if let Some((studio_router, collector)) = studio_collector {
+            router = router
+                .nest("/_studio", studio_router)
+                .layer(middleware::from_fn(crate::studio::middleware::studio_middleware))
+                .layer(Extension(collector));
+        }
 
         let addr = SocketAddr::from(([0, 0, 0, 0], self.config.port));
         tracing::info!("Server starting on http://{}", addr);

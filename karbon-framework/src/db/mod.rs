@@ -4,6 +4,7 @@ mod pagination;
 mod query;
 mod repository;
 mod paginated_query;
+mod select_builder;
 #[cfg(test)]
 mod pagination_test;
 pub mod filter_value;
@@ -15,6 +16,7 @@ pub use pagination::{Paginated, PaginationParams};
 pub use query::QueryBuilder;
 pub use repository::{CrudRepository, WhereValue};
 pub use paginated_query::PaginatedQuery;
+pub use select_builder::{SelectBuilder, Order};
 
 // ─── Database driver type aliases ───
 

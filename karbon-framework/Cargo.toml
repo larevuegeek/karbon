@@ -12,6 +12,7 @@ license-file = "LICENSE"
 default = ["mysql"]
 mysql = ["sqlx/mysql"]
 postgres = ["sqlx/postgres"]
+studio = []
 
 [dependencies]
 axum.workspace = true
@@ -44,4 +45,4 @@ lettre.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
 futures.workspace = true
-karbon-macros = { version = "0.1.2", path = "../karbon-macros" }
+karbon-macros = { version = "0.2.0", path = "../karbon-macros" }

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Karbon Studio</title>
+    <link rel="stylesheet" href="/_studio/styles.css?token={{TOKEN}}">
+</head>
+<body>
+    <header class="topbar">
+        <div class="topbar-left">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <rect width="24" height="24" rx="6" fill="#6366f1"/>
+                    <path d="M7 7h4l3 5-3 5H7l3-5L7 7z" fill="#fff"/>
+                    <path d="M13 7h4l-3 5 3 5h-4l-3-5 3-5z" fill="#c7d2fe"/>
+                </svg>
+                <span class="logo-text">Karbon <span class="logo-accent">Studio</span></span>
+            </div>
+            <div class="connection-status" id="connectionStatus">
+                <span class="status-dot"></span>
+                <span class="status-text">Connecting...</span>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <span class="uptime" id="uptime">--</span>
+            <button class="btn btn-ghost" onclick="clearData()" title="Clear all data">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4L4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+                Clear
+            </button>
+        </div>
+    </header>
+
+    <div class="stats-bar" id="statsBar">
+        <div class="stat-card">
+            <div class="stat-value" id="statRequests">0</div>
+            <div class="stat-label">Requests</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="statAvgMs">0ms</div>
+            <div class="stat-label">Avg Response</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="statErrors">0%</div>
+            <div class="stat-label">Error Rate</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="statEvents">0</div>
+            <div class="stat-label">Events</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="statJobs">0</div>
+            <div class="stat-label">Jobs</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="statMails">0</div>
+            <div class="stat-label">Mails</div>
+        </div>
+    </div>
+
+    <nav class="tabs">
+        <button class="tab active" data-tab="requests">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.5A.5.5 0 0 1 .5 1H2a.5.5 0 0 1 .485.379L2.89 3H14.5a.5.5 0 0 1 .491.592l-1.5 8A.5.5 0 0 1 13 12H4a.5.5 0 0 1-.491-.408L2.01 3.607 1.61 2H.5a.5.5 0 0 1-.5-.5z"/></svg>
+            Requests
+            <span class="tab-count" id="tabRequestCount">0</span>
+        </button>
+        <button class="tab" data-tab="events">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
+            Events
+            <span class="tab-count" id="tabEventCount">0</span>
+        </button>
+        <button class="tab" data-tab="jobs">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 14s-1 0-1-1 1-4 6-4 6 3 6 4-1 1-1 1H3zm5-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
+            Jobs
+            <span class="tab-count" id="tabJobCount">0</span>
+        </button>
+        <button class="tab" data-tab="mails">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1H2zm13 2.383-4.758 2.855L15 11.114v-5.73zm-.034 6.878L9.271 8.82 8 9.583 6.728 8.82l-5.694 3.44A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.739zM1 11.114l4.758-2.876L1 5.383v5.73z"/></svg>
+            Mails
+            <span class="tab-count" id="tabMailCount">0</span>
+        </button>
+    </nav>
+
+    <main class="content">
+        <!-- Requests panel -->
+        <div class="panel active" id="panel-requests">
+            <div class="panel-toolbar">
+                <input type="text" class="search-input" id="searchRequests" placeholder="Filter by path, method, status...">
+                <div class="filter-group">
+                    <button class="filter-btn active" data-filter="all">All</button>
+                    <button class="filter-btn" data-filter="2xx">2xx</button>
+                    <button class="filter-btn" data-filter="3xx">3xx</button>
+                    <button class="filter-btn" data-filter="4xx">4xx</button>
+                    <button class="filter-btn" data-filter="5xx">5xx</button>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th class="col-status">Status</th>
+                            <th class="col-method">Method</th>
+                            <th class="col-path">Path</th>
+                            <th class="col-duration">Duration</th>
+                            <th class="col-time">Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="requestsBody"></tbody>
+                </table>
+                <div class="empty-state" id="emptyRequests">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
+                    <p>No requests yet</p>
+                    <span>Requests will appear here in real-time</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Events panel -->
+        <div class="panel" id="panel-events">
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Event Type</th>
+                            <th>Handlers</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="eventsBody"></tbody>
+                </table>
+                <div class="empty-state" id="emptyEvents">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
+                    <p>No events emitted</p>
+                    <span>EventBus events will appear here</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Jobs panel -->
+        <div class="panel" id="panel-jobs">
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Job Name</th>
+                            <th>Duration</th>
+                            <th>Attempt</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobsBody"></tbody>
+                </table>
+                <div class="empty-state" id="emptyJobs">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
+                    <p>No jobs recorded</p>
+                    <span>Background jobs will appear here</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mails panel -->
+        <div class="panel" id="panel-mails">
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>To</th>
+                            <th>Subject</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mailsBody"></tbody>
+                </table>
+                <div class="empty-state" id="emptyMails">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
+                    <p>No mails sent</p>
+                    <span>Outgoing emails will appear here</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Request detail slide-over -->
+    <div class="slideover" id="slideover">
+        <div class="slideover-backdrop" onclick="closeDetail()"></div>
+        <div class="slideover-panel">
+            <div class="slideover-header">
+                <h3 id="detailTitle">Request Detail</h3>
+                <button class="btn btn-ghost" onclick="closeDetail()">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
+                </button>
+            </div>
+            <div class="slideover-body" id="detailBody"></div>
+        </div>
+    </div>
+
+    <script src="/_studio/app.js?token={{TOKEN}}"></script>
+</body>
+</html>
