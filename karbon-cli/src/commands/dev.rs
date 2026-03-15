@@ -2,7 +2,7 @@ use crate::config::KarbonConfig;
 use crate::process::{spawn_command, wait_for_any};
 use colored::Colorize;
 use std::path::Path;
-use std::process::Child;
+use std::process::{Child, Command, Stdio};
 
 pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
     println!(
@@ -11,10 +11,25 @@ pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
         config.app.name.bold()
     );
 
+    // ── Build backend first ──
+    println!("  {} Compiling backend...", "⟳".yellow());
+    let build_status = Command::new("cargo")
+        .args(["build", "-p", &config.backend.package])
+        .current_dir(root)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .map_err(|e| format!("cargo build failed: {e}"))?;
+
+    if !build_status.success() {
+        return Err("Backend compilation failed".to_string());
+    }
+    println!("  {} Backend compiled", "✓".green());
+
+    // ── Run the binary directly (no cargo run intermediary) ──
     let mut children: Vec<Child> = Vec::new();
 
-    // ── Backend ──
-    let backend_child = start_backend(config, root)?;
+    let backend_child = start_backend_binary(config, root)?;
     children.push(backend_child);
 
     // ── Frontend ──
@@ -22,7 +37,7 @@ pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
     children.push(frontend_child);
 
     println!(
-        "  {} Backend   → {}",
+        "\n  {} Backend   → {}",
         "●".green(),
         format!("http://localhost:{}", config.backend.port).cyan()
     );
@@ -39,45 +54,24 @@ pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn start_backend(config: &KarbonConfig, root: &Path) -> Result<Child, String> {
-    let has_watch = which::which("cargo-watch").is_ok();
-
-    let (cmd, args) = if config.backend.watch && has_watch {
-        println!(
-            "  {} cargo-watch detected — hot-reload enabled",
-            "✓".green()
-        );
-        (
-            "cargo".to_string(),
-            vec![
-                "watch".to_string(),
-                "-x".to_string(),
-                format!("run -p {}", config.backend.package),
-                "-w".to_string(),
-                format!("{}/src", config.backend.package),
-                "-w".to_string(),
-                "karbon-framework/src".to_string(),
-            ],
-        )
+/// Run the compiled binary directly — karbon owns the process, no intermediary.
+fn start_backend_binary(config: &KarbonConfig, root: &Path) -> Result<Child, String> {
+    let binary = if cfg!(windows) {
+        root.join(format!("target/debug/{}.exe", config.backend.package))
     } else {
-        if config.backend.watch && !has_watch {
-            println!(
-                "  {} cargo-watch not found — install with: {}",
-                "!".yellow(),
-                "cargo install cargo-watch".bold()
-            );
-        }
-        (
-            "cargo".to_string(),
-            vec![
-                "run".to_string(),
-                "-p".to_string(),
-                config.backend.package.clone(),
-            ],
-        )
+        root.join(format!("target/debug/{}", config.backend.package))
     };
 
-    spawn_command(&cmd, &args, root, "backend")
+    if !binary.exists() {
+        return Err(format!("Binary not found: {}", binary.display()));
+    }
+
+    spawn_command(
+        binary.to_str().unwrap_or("api"),
+        &[],
+        root,
+        "backend",
+    )
 }
 
 fn start_frontend(config: &KarbonConfig, root: &Path) -> Result<Child, String> {
@@ -85,7 +79,7 @@ fn start_frontend(config: &KarbonConfig, root: &Path) -> Result<Child, String> {
 
     if !frontend_dir.join("node_modules").exists() {
         println!("  {} Installing frontend dependencies...", "↓".blue());
-        let status = std::process::Command::new("npm")
+        let status = Command::new("npm")
             .arg("install")
             .current_dir(&frontend_dir)
             .status()

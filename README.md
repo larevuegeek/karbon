@@ -61,7 +61,7 @@ MySQL is the default. To use PostgreSQL, change the feature flag:
 
 ```toml
 # Cargo.toml of your project
-framework = { package = "karbon-framework", version = "0.2", default-features = false, features = ["postgres"] }
+karbon = { package = "karbon-framework", version = "0.2", default-features = false, features = ["postgres"] }
 ```
 
 Set the matching port in `.env`:
@@ -115,9 +115,9 @@ Environment variables go in `.env` (copy from `.env.example`).
 ### Controllers
 
 ```rust
-#[framework::controller(prefix = "/admin/posts", role = "ROLE_ADMIN")]
+#[karbon::controller(prefix = "/admin/posts", role = "ROLE_ADMIN")]
 impl PostController {
-    #[framework::get("/")]
+    #[karbon::get("/")]
     async fn list(auth: AuthGuard, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
         // auth.require_role("ROLE_ADMIN")?; ← auto-injected by the macro
     }
@@ -139,7 +139,7 @@ impl CrudRepository for Post {
 ### Insertable / Updatable
 
 ```rust
-#[derive(framework::Insertable)]
+#[derive(karbon::Insertable)]
 #[table_name("posts")]
 #[timestamps]                     // auto-sets created_at
 pub struct NewPost {
@@ -148,7 +148,7 @@ pub struct NewPost {
     pub slug: String,
 }
 
-#[derive(framework::Updatable)]
+#[derive(karbon::Updatable)]
 #[table_name("posts")]
 #[timestamps]                     // auto-sets updated_at
 pub struct UpdatePost {
@@ -160,7 +160,7 @@ pub struct UpdatePost {
 ### Typed Query Builder (SelectBuilder)
 
 ```rust
-use framework::db::{SelectBuilder, Order};
+use karbon::db::{SelectBuilder, Order};
 
 // Fluent API with parameterized conditions
 let users: Vec<User> = SelectBuilder::table("users")
@@ -223,7 +223,7 @@ Built-in middleware applied automatically or available as layers:
 ### Realtime Channels (WebSocket)
 
 ```rust
-use framework::channel::ChannelRegistry;
+use karbon::channel::ChannelRegistry;
 
 let channels = ChannelRegistry::new();
 
@@ -244,7 +244,7 @@ channels.broadcast("chat/room-1", "new_message", &message).await;
 ### Feature Flags
 
 ```rust
-use framework::feature::FeatureFlags;
+use karbon::feature::FeatureFlags;
 
 let flags = FeatureFlags::new();
 flags.register("dark_mode", true, "Enable dark mode UI").await;
@@ -266,9 +266,9 @@ flags.disable("dark_mode").await;
 Controllers return "pages" instead of JSON. On first visit → full HTML. On navigation → JSON only (the client swaps components without full reload).
 
 ```rust
-use framework::inertia::Inertia;
+use karbon::inertia::Inertia;
 
-#[framework::get("/dashboard")]
+#[karbon::get("/dashboard")]
 async fn dashboard(State(state): State<AppState>) -> impl IntoResponse {
     Inertia::render("Dashboard", serde_json::json!({
         "user": current_user,
@@ -282,7 +282,7 @@ Inertia::location("/dashboard")
 
 Setup:
 ```rust
-use framework::inertia::{InertiaConfig, inertia_middleware};
+use karbon::inertia::{InertiaConfig, inertia_middleware};
 
 let config = InertiaConfig::new(include_str!("templates/app.html"))
     .version("1.0.0");
@@ -297,7 +297,7 @@ let app = Router::new()
 Server-rendered interactive components — no React, no Svelte, no JS framework needed.
 
 ```rust
-use framework::livewire::{LiveComponent, live_render, live_socket};
+use karbon::livewire::{LiveComponent, live_render, live_socket};
 
 struct Counter { count: i32 }
 
@@ -323,7 +323,7 @@ impl LiveComponent for Counter {
 }
 
 // Serve the page
-#[framework::get("/counter")]
+#[karbon::get("/counter")]
 async fn counter_page() -> impl IntoResponse {
     live_render(Counter { count: 0 }, "/ws/counter")
 }
@@ -342,7 +342,7 @@ Client-side directives: `lw-click`, `lw-submit`, `lw-input`, `lw-param-*`.
 Auto-reload during development. CSS changes are hot-swapped without page reload.
 
 ```rust
-use framework::hmr::HmrServer;
+use karbon::hmr::HmrServer;
 
 let hmr = HmrServer::new()
     .watch("templates/")
@@ -397,7 +397,7 @@ Real-time monitoring dashboard for development. Zero dependencies, in-memory onl
 
 ```toml
 # Enable in Cargo.toml
-framework = { package = "karbon-framework", features = ["studio"] }
+karbon = { package = "karbon-framework", features = ["studio"] }
 ```
 
 At startup, the terminal shows:

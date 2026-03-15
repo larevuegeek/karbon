@@ -32,19 +32,12 @@ pub fn spawn_command_with_env(
         .stderr(Stdio::inherit())
         .envs(env);
 
-    // On Windows, create the process in a new process group
-    // and assign to a Job Object so all children get killed together
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // CREATE_NEW_PROCESS_GROUP = 0x00000200
-        command.creation_flags(0x00000200);
-    }
-
     let child = command
         .spawn()
         .map_err(|e| format!("Failed to start {label} (`{cmd}`): {e}"))?;
 
+    // On Windows, assign to a shared Job Object so all children
+    // get killed when the parent (karbon-cli) exits.
     #[cfg(windows)]
     assign_to_job(&child);
 
@@ -57,8 +50,8 @@ pub fn spawn_command_with_env(
 fn assign_to_job(child: &Child) {
     use std::mem;
     use std::os::windows::io::AsRawHandle;
+    use std::sync::OnceLock;
 
-    // Windows API types and functions
     #[allow(non_camel_case_types)]
     type HANDLE = *mut std::ffi::c_void;
     #[allow(non_camel_case_types)]
@@ -101,10 +94,13 @@ fn assign_to_job(child: &Child) {
         fn AssignProcessToJobObject(job: HANDLE, process: HANDLE) -> BOOL;
     }
 
-    unsafe {
+    // Use a single shared Job Object for all children
+    static JOB: OnceLock<usize> = OnceLock::new();
+
+    let job_handle = *JOB.get_or_init(|| unsafe {
         let job = CreateJobObjectW(NULL, std::ptr::null());
         if job.is_null() {
-            return;
+            return 0;
         }
 
         // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
@@ -119,14 +115,16 @@ fn assign_to_job(child: &Child) {
             mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
         );
 
-        let process_handle = child.as_raw_handle() as HANDLE;
-        AssignProcessToJobObject(job, process_handle);
+        job as usize
+    });
 
-        // Leak the job handle intentionally — it must stay alive
-        // until the parent process exits, at which point Windows
-        // will close it and kill all assigned children.
-        // Store in a Box to prevent the raw pointer from being dropped.
-        Box::leak(Box::new(job));
+    if job_handle == 0 {
+        return;
+    }
+
+    unsafe {
+        let process_handle = child.as_raw_handle() as HANDLE;
+        AssignProcessToJobObject(job_handle as HANDLE, process_handle);
     }
 }
 
@@ -178,12 +176,11 @@ pub fn wait_for_any(children: &mut Vec<Child>) {
     println!("  {} Stopped.\n", "✓".green());
 }
 
-/// Kill all children. On Windows, also kills their entire process tree.
+/// Kill all children. On Windows, uses taskkill /T to kill process trees.
 fn kill_all(children: &mut Vec<Child>) {
     for child in children.iter_mut() {
         #[cfg(windows)]
         {
-            // taskkill /T /F kills the entire process tree
             let _ = Command::new("taskkill")
                 .args(["/PID", &child.id().to_string(), "/T", "/F"])
                 .stdout(Stdio::null())
