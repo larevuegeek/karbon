@@ -1,0 +1,15 @@
+[package]
+name = "karbon-macros"
+description = "Procedural macros for Karbon framework (route annotations, controller macros)"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full", "extra-traits"] }
