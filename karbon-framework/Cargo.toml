@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [features]
 default = ["mysql"]
@@ -42,4 +43,4 @@ lettre.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
 futures.workspace = true
-karbon-macros = { path = "../karbon-macros" }
+karbon-macros = { version = "0.1.0", path = "../karbon-macros" }
