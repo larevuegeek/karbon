@@ -75,26 +75,14 @@ pub fn insert_sql(table: &str, columns: &[&str]) -> String {
     { return format!("{} RETURNING id", base); }
 }
 
-/// Executes an INSERT query and returns the new row's ID.
-/// MySQL: uses `last_insert_id()`. PostgreSQL: uses `RETURNING id`.
-pub async fn execute_insert<'q, E>(
-    query: sqlx::query::Query<'q, Db, DbArguments>,
-    executor: E,
-) -> crate::error::AppResult<u64>
-where
-    E: sqlx::Executor<'q, Database = Db>,
-{
-    #[cfg(feature = "mysql")]
-    {
-        let result: <Db as sqlx::Database>::QueryResult = query.execute(executor).await?;
-        Ok(result.last_insert_id())
-    }
+/// Extracts the last insert ID from a query result.
+#[cfg(feature = "mysql")]
+pub fn last_insert_id(result: &<Db as sqlx::Database>::QueryResult) -> u64 {
+    result.last_insert_id()
+}
 
-    #[cfg(feature = "postgres")]
-    {
-        use sqlx::Row;
-        let row: DbRow = query.fetch_one(executor).await?;
-        let id: i64 = row.get(0);
-        Ok(id as u64)
-    }
+#[cfg(feature = "postgres")]
+pub fn last_insert_id(_result: &<Db as sqlx::Database>::QueryResult) -> u64 {
+    // For PostgreSQL, use RETURNING id in the query instead
+    0
 }

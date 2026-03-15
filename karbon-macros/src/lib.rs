@@ -231,7 +231,7 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
 
         impl #self_ty {
             /// Auto-generated router from #[controller] annotations
-            pub fn router() -> axum::Router<framework::http::AppState> {
+            pub fn router() -> axum::Router<karbon::http::AppState> {
                 axum::Router::new()
                     #(#route_registrations)*
             }
@@ -412,10 +412,6 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
         column_names.push("created_at".to_string());
     }
 
-    let column_refs_tokens: Vec<proc_macro2::TokenStream> = column_names
-        .iter()
-        .map(|c| quote! { #c })
-        .collect();
 
     // Build bind calls, handling #[slug_from] fields
     let mut bind_calls: Vec<proc_macro2::TokenStream> = Vec::new();
@@ -445,20 +441,27 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
         bind_calls.push(quote! { .bind(chrono::Utc::now()) });
     }
 
+    // Build the SQL string at compile time
+    let columns_str = column_names.join(", ");
+    let placeholders_str: String = (1..=column_names.len())
+        .map(|_| "?".to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql_literal = format!("INSERT INTO {} ({}) VALUES ({})", table, columns_str, placeholders_str);
+
     let expanded = quote! {
         impl #name {
             /// Auto-generated INSERT query from #[derive(Insertable)]
-            pub async fn insert<'e, E>(&self, executor: E) -> framework::error::AppResult<u64>
+            pub async fn insert<'e, E>(&self, executor: E) -> karbon::error::AppResult<u64>
             where
-                E: sqlx::Executor<'e, Database = framework::db::Db>,
+                E: sqlx::Executor<'e, Database = karbon::db::Db>,
             {
                 #(#slug_lets)*
-                let sql = framework::db::insert_sql(#table, &[#(#column_refs_tokens),*]);
-                framework::db::execute_insert(
-                    sqlx::query(&sql)
-                        #(#bind_calls)*,
-                    executor
-                ).await
+                let result = sqlx::query(#sql_literal)
+                    #(#bind_calls)*
+                    .execute(executor)
+                    .await?;
+                Ok(karbon::db::last_insert_id(&result))
             }
         }
     };
@@ -559,7 +562,7 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
             set_pushes.push(quote! {
                 if self.#ident.is_some() {
                     param_idx += 1;
-                    set_clauses.push(format!("{} = {}", #col_name, framework::db::placeholder(param_idx)));
+                    set_clauses.push(format!("{} = {}", #col_name, karbon::db::placeholder(param_idx)));
                 }
             });
             bind_pushes.push(quote! {
@@ -570,7 +573,7 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
         } else {
             set_pushes.push(quote! {
                 param_idx += 1;
-                set_clauses.push(format!("{} = {}", #col_name, framework::db::placeholder(param_idx)));
+                set_clauses.push(format!("{} = {}", #col_name, karbon::db::placeholder(param_idx)));
             });
             bind_pushes.push(quote! {
                 query = query.bind(&self.#ident);
@@ -582,7 +585,7 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
     let timestamps_set_push = if has_timestamps {
         quote! {
             param_idx += 1;
-            set_clauses.push(format!("{} = {}", "updated_at", framework::db::placeholder(param_idx)));
+            set_clauses.push(format!("{} = {}", "updated_at", karbon::db::placeholder(param_idx)));
         }
     } else {
         quote! {}
@@ -606,9 +609,9 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
             /// dto.update(pool).await?;           // normal
             /// dto.update(&mut *tx).await?;       // in transaction
             /// ```
-            pub async fn update<'e, E>(&self, executor: E) -> framework::error::AppResult<u64>
+            pub async fn update<'e, E>(&self, executor: E) -> karbon::error::AppResult<u64>
             where
-                E: sqlx::Executor<'e, Database = framework::db::Db>,
+                E: sqlx::Executor<'e, Database = karbon::db::Db>,
             {
                 let mut set_clauses: Vec<String> = Vec::new();
                 let mut param_idx: usize = 0;
@@ -626,7 +629,7 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
                     #table,
                     set_clauses.join(", "),
                     #pk_col,
-                    framework::db::placeholder(param_idx),
+                    karbon::db::placeholder(param_idx),
                 );
 
                 let mut query = sqlx::query(&sql);

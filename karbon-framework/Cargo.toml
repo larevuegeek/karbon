@@ -44,4 +44,4 @@ lettre.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
 futures.workspace = true
-karbon-macros = { version = "0.1.1", path = "../karbon-macros" }
+karbon-macros = { version = "0.1.2", path = "../karbon-macros" }
