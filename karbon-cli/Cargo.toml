@@ -3,8 +3,9 @@ name = "karbon-cli"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license.workspace = true
 repository.workspace = true
+readme = "README.md"
+license-file = "LICENSE"
 description = "Karbon — unified CLI for Rust + SvelteKit full-stack projects"
 
 [[bin]]

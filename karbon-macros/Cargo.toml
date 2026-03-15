@@ -4,8 +4,9 @@ description = "Procedural macros for Karbon framework (route annotations, contro
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license.workspace = true
 repository.workspace = true
+readme = "README.md"
+license-file = "LICENSE"
 
 [lib]
 proc-macro = true

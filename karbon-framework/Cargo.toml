@@ -4,8 +4,9 @@ description = "Karbon — Rust full-stack web framework with batteries included"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license.workspace = true
 repository.workspace = true
+readme = "README.md"
+license-file = "LICENSE"
 
 [features]
 default = ["mysql"]
@@ -43,4 +44,4 @@ lettre.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
 futures.workspace = true
-karbon-macros = { version = "0.1.0", path = "../karbon-macros" }
+karbon-macros = { version = "0.1.1", path = "../karbon-macros" }
