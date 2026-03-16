@@ -43,9 +43,19 @@ impl AuthGuard {
         }
     }
 
-    /// Get the user ID
-    pub fn user_id(&self) -> &str {
+    /// Get the subject (sub claim — usually email or string user ID)
+    pub fn sub(&self) -> &str {
         &self.claims.sub
+    }
+
+    /// Get the numeric user ID (if set in token)
+    pub fn user_id(&self) -> Option<i64> {
+        self.claims.user_id
+    }
+
+    /// Get the user UUID (if set in token)
+    pub fn user_uuid(&self) -> Option<&str> {
+        self.claims.user_uuid.as_deref()
     }
 
     /// Get the username
