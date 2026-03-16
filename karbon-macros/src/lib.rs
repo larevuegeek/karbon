@@ -13,12 +13,14 @@ use syn::{
 struct ControllerArgs {
     prefix: String,
     role: Option<String>,
+    state: Option<String>,
 }
 
 impl Parse for ControllerArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut prefix = None;
         let mut role = None;
+        let mut state = None;
 
         while !input.is_empty() {
             let ident: syn::Ident = input.parse()?;
@@ -28,7 +30,8 @@ impl Parse for ControllerArgs {
             match ident.to_string().as_str() {
                 "prefix" => prefix = Some(lit.value()),
                 "role" => role = Some(lit.value()),
-                _ => return Err(syn::Error::new(ident.span(), "expected `prefix` or `role`")),
+                "state" => state = Some(lit.value()),
+                _ => return Err(syn::Error::new(ident.span(), "expected `prefix`, `role`, or `state`")),
             }
 
             // Consume optional comma
@@ -38,6 +41,7 @@ impl Parse for ControllerArgs {
         Ok(ControllerArgs {
             prefix: prefix.unwrap_or_default(),
             role,
+            state,
         })
     }
 }
@@ -226,12 +230,19 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let self_ty = &impl_block.self_ty;
 
+    // Use custom state type if provided, otherwise default to karbon::http::AppState
+    let state_type: proc_macro2::TokenStream = if let Some(ref state_path) = args.state {
+        state_path.parse().unwrap_or_else(|_| quote! { karbon::http::AppState })
+    } else {
+        quote! { karbon::http::AppState }
+    };
+
     let expanded = quote! {
         #impl_block
 
         impl #self_ty {
             /// Auto-generated router from #[controller] annotations
-            pub fn router() -> axum::Router<karbon::http::AppState> {
+            pub fn router() -> axum::Router<#state_type> {
                 axum::Router::new()
                     #(#route_registrations)*
             }

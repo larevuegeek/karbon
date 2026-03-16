@@ -141,6 +141,12 @@ impl IntoBindValue for String {
     fn into_bind_value(self) -> BindValue { BindValue::String(self) }
 }
 
+impl IntoBindValue for chrono::DateTime<chrono::Utc> {
+    fn into_bind_value(self) -> BindValue {
+        BindValue::String(self.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
+    }
+}
+
 impl SelectBuilder {
     pub fn table(table: &str) -> Self {
         assert!(validate_identifier(table), "Invalid table name: {table}");
