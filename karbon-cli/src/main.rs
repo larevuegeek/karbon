@@ -45,10 +45,11 @@ enum Commands {
     },
     /// Run SQL migrations from the migration/ directory
     Migrate,
-    /// Deploy the project (docker or ssh)
+    /// Deploy the project
+    /// Targets: publish (deploy only), publish:build (build + deploy), docker (generate Dockerfile)
     Deploy {
-        /// Deploy target: docker, ssh
-        #[arg(default_value = "docker")]
+        /// Deploy target: publish, publish:build, docker
+        #[arg(default_value = "publish:build")]
         target: String,
     },
 }

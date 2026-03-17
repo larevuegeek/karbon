@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Pagination query parameters (from URL: ?page=1&per_page=20&sort=id&order=desc)
 #[derive(Debug, Clone, Deserialize)]
 pub struct PaginationParams {
-    #[serde(default = "default_page")]
+    #[serde(default = "default_page", deserialize_with = "string_or_u32")]
     pub page: u32,
-    #[serde(default = "default_per_page")]
+    #[serde(default = "default_per_page", deserialize_with = "string_or_u32", alias = "limit")]
     pub per_page: u32,
     #[serde(default)]
     pub sort: Option<String>,
@@ -13,6 +13,24 @@ pub struct PaginationParams {
     pub order: String,
     #[serde(default)]
     pub search: Option<String>,
+}
+
+/// Deserialize a u32 from either a number or a string (query strings are always strings)
+fn string_or_u32<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrU32 {
+        Num(u32),
+        Str(String),
+    }
+
+    match StringOrU32::deserialize(deserializer)? {
+        StringOrU32::Num(n) => Ok(n),
+        StringOrU32::Str(s) => s.parse::<u32>().map_err(serde::de::Error::custom),
+    }
 }
 
 fn default_page() -> u32 {

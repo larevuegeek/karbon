@@ -9,6 +9,8 @@ pub struct KarbonConfig {
     pub frontend: FrontendConfig,
     #[serde(default)]
     pub proxy: ProxyConfig,
+    #[serde(default)]
+    pub deploy: Option<DeployConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,6 +46,25 @@ pub struct ProxyConfig {
     #[serde(default = "default_backend_routes")]
     pub backend_routes: Vec<String>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct DeployConfig {
+    /// Deployment path (e.g. /var/www/my-app)
+    pub path: String,
+    /// Process manager: "pm2" or "systemd"
+    #[serde(default = "default_manager")]
+    pub manager: String,
+    /// PM2 config file name (default: ecosystem.config.cjs)
+    #[serde(default = "default_pm2_config")]
+    pub pm2_config: String,
+    /// Systemd service name (default: app name)
+    pub service: Option<String>,
+    /// SSH host (e.g. user@server). If absent → local deploy.
+    pub host: Option<String>,
+}
+
+fn default_manager() -> String { "pm2".to_string() }
+fn default_pm2_config() -> String { "ecosystem.config.cjs".to_string() }
 
 impl Default for ProxyConfig {
     fn default() -> Self {

@@ -1,6 +1,8 @@
 use colored::Colorize;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
+use std::time::Instant;
 
 use crate::config::KarbonConfig;
 
@@ -13,17 +15,219 @@ pub fn run(config: &KarbonConfig, root: &Path, target: &str) -> Result<(), Strin
 
     match target {
         "docker" | "dockerfile" => generate_dockerfile(config, root),
-        "ssh" => deploy_ssh(config, root),
+        "publish" => deploy_publish(config, root, false),
+        "publish:build" | "publish-build" => deploy_publish(config, root, true),
+        // Legacy
+        "ssh" => deploy_publish(config, root, true),
         _ => Err(format!(
-            "Unknown deploy target '{}'. Available: docker, ssh",
+            "Unknown deploy target '{}'. Available: docker, publish, publish:build",
             target
         )),
     }
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Publish (local or SSH)
+// ─────────────────────────────────────────────────────────────────
+
+fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Result<(), String> {
+    let deploy = config.deploy.as_ref().ok_or(
+        "[deploy] section missing in karbon.toml. Example:\n\n\
+         [deploy]\n\
+         path = \"/var/www/my-app\"\n\
+         manager = \"pm2\"\n\
+         # host = \"user@server\"  # optional, for remote deploy"
+            .to_string(),
+    )?;
+
+    let is_remote = deploy.host.is_some();
+    let dest_label = if let Some(ref host) = deploy.host {
+        format!("{}:{}", host, deploy.path)
+    } else {
+        deploy.path.clone()
+    };
+
+    // ── Step 1: Build (optional) ──
+    if build_first {
+        println!("  {} Building for production...\n", "→".blue());
+        crate::commands::build::run(config, root)?;
+        println!();
+    }
+
+    // ── Step 2: Verify artifacts exist ──
+    let binary_path = root.join(format!("target/release/{}", config.backend.package));
+    if !binary_path.exists() {
+        return Err(format!(
+            "Binary not found at {}. Run `karbon build` first.",
+            binary_path.display()
+        ));
+    }
+
+    let frontend_build = config.frontend_dir(root).join("build");
+    if !frontend_build.exists() {
+        return Err(format!(
+            "Frontend build not found at {}. Run `karbon build` first.",
+            frontend_build.display()
+        ));
+    }
+
+    println!("  {} Publishing to {}", "→".blue(), dest_label.bold());
+    let start = Instant::now();
+
+    // ── Step 3: Ensure destination directory exists ──
+    run_on_target(deploy, &format!("mkdir -p {}/frontend", deploy.path))?;
+
+    // ── Step 4: Sync files ──
+    // Binary
+    rsync_to_target(
+        deploy,
+        binary_path.to_str().unwrap(),
+        &format!("{}/", deploy.path),
+    )?;
+    println!("    {} {}", "✓".green(), config.backend.package);
+
+    // Frontend build
+    rsync_to_target(
+        deploy,
+        &format!("{}/", frontend_build.to_str().unwrap()),
+        &format!("{}/frontend/build/", deploy.path),
+    )?;
+    println!("    {} frontend/build/", "✓".green());
+
+    // PM2 config (if exists)
+    let pm2_path = root.join(&deploy.pm2_config);
+    if pm2_path.exists() {
+        rsync_to_target(
+            deploy,
+            pm2_path.to_str().unwrap(),
+            &format!("{}/", deploy.path),
+        )?;
+        println!("    {} {}", "✓".green(), deploy.pm2_config);
+    }
+
+    // Migrations (if exist)
+    let migration_dir = root.join("migration");
+    if migration_dir.exists() {
+        rsync_to_target(
+            deploy,
+            &format!("{}/", migration_dir.to_str().unwrap()),
+            &format!("{}/migration/", deploy.path),
+        )?;
+        println!("    {} migration/", "✓".green());
+    }
+
+    // .env.example (if exists, as reference — never overwrite .env)
+    let env_example = root.join(".env.example");
+    if env_example.exists() {
+        rsync_to_target(
+            deploy,
+            env_example.to_str().unwrap(),
+            &format!("{}/", deploy.path),
+        )?;
+        println!("    {} .env.example", "✓".green());
+    }
+
+    // ── Step 5: Restart process manager ──
+    println!("\n  {} Restarting {}...", "→".blue(), deploy.manager);
+    restart_manager(deploy, config)?;
+
+    println!(
+        "\n  {} Published to {} in {:.1}s\n",
+        "✓".green().bold(),
+        dest_label.bold(),
+        start.elapsed().as_secs_f64()
+    );
+
+    Ok(())
+}
+
+/// Run rsync — local if no host, SSH if host is set
+fn rsync_to_target(
+    deploy: &crate::config::DeployConfig,
+    src: &str,
+    dest: &str,
+) -> Result<(), String> {
+    let mut args = vec!["-a", "--delete", src];
+
+    let full_dest;
+    if let Some(ref host) = deploy.host {
+        full_dest = format!("{host}:{dest}");
+        args.push(&full_dest);
+    } else {
+        args.push(dest);
+    }
+
+    let status = Command::new("rsync")
+        .args(&args)
+        .status()
+        .map_err(|e| format!("Failed to run rsync: {e}"))?;
+
+    if !status.success() {
+        return Err(format!("rsync failed for {src}"));
+    }
+
+    Ok(())
+}
+
+/// Run a command on the target (local or SSH)
+fn run_on_target(deploy: &crate::config::DeployConfig, cmd: &str) -> Result<(), String> {
+    let status = if let Some(ref host) = deploy.host {
+        Command::new("ssh")
+            .args([host.as_str(), cmd])
+            .status()
+            .map_err(|e| format!("SSH failed: {e}"))?
+    } else {
+        Command::new("sh")
+            .args(["-c", cmd])
+            .status()
+            .map_err(|e| format!("Command failed: {e}"))?
+    };
+
+    if !status.success() {
+        return Err(format!("Command failed: {cmd}"));
+    }
+
+    Ok(())
+}
+
+/// Restart the process manager
+fn restart_manager(
+    deploy: &crate::config::DeployConfig,
+    config: &KarbonConfig,
+) -> Result<(), String> {
+    let cmd = match deploy.manager.as_str() {
+        "pm2" => {
+            format!(
+                "cd {} && pm2 restart {} --update-env 2>/dev/null || pm2 start {}",
+                deploy.path, deploy.pm2_config, deploy.pm2_config
+            )
+        }
+        "systemd" => {
+            let service = deploy
+                .service
+                .as_deref()
+                .unwrap_or(&config.app.name);
+            format!("sudo systemctl restart {service}")
+        }
+        other => return Err(format!("Unknown manager: {other}. Use 'pm2' or 'systemd'.")),
+    };
+
+    run_on_target(deploy, &cmd)
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Docker (unchanged)
+// ─────────────────────────────────────────────────────────────────
+
 fn validate_shell_safe(s: &str, field: &str) -> Result<(), String> {
-    if s.contains(';') || s.contains('&') || s.contains('|') || s.contains('`')
-        || s.contains('$') || s.contains('\n') || s.contains("..") {
+    if s.contains(';')
+        || s.contains('&')
+        || s.contains('|')
+        || s.contains('`')
+        || s.contains('$')
+        || s.contains('\n')
+        || s.contains("..")
+    {
         return Err(format!("{field} contains unsafe characters: {s}"));
     }
     Ok(())
@@ -35,7 +239,6 @@ fn generate_dockerfile(config: &KarbonConfig, root: &Path) -> Result<(), String>
     let serve_cmd = &config.frontend.serve_cmd;
     let port = config.backend.port;
 
-    // Validate all config values that will be embedded in shell/Dockerfile
     validate_shell_safe(package, "backend.package")?;
     validate_shell_safe(frontend_dir, "frontend.dir")?;
     validate_shell_safe(serve_cmd, "frontend.serve_cmd")?;
@@ -68,23 +271,16 @@ RUN apt-get update && apt-get install -y ca-certificates curl nodejs npm && rm -
 
 WORKDIR /app
 
-# Copy backend binary
 COPY --from=backend-builder /app/target/release/{package} /app/{package}
-
-# Copy frontend build
 COPY --from=frontend-builder /app/{frontend_dir}/build /app/{frontend_dir}/build
 COPY --from=frontend-builder /app/{frontend_dir}/package*.json /app/{frontend_dir}/
-
-# Install production node dependencies for SSR
 WORKDIR /app/{frontend_dir}
 RUN npm ci --omit=dev
 WORKDIR /app
 
-# Copy migrations and .env template
 COPY migration/ /app/migration/
 COPY .env.example /app/.env.example
 
-# Startup script
 RUN echo '#!/bin/sh' > /app/start.sh && \
     echo 'cd /app/{frontend_dir} && PORT=3004 {serve_cmd} &' >> /app/start.sh && \
     echo 'FRONTEND_PID=$!' >> /app/start.sh && \
@@ -101,12 +297,10 @@ CMD ["/app/start.sh"]
     );
 
     let path = root.join("Dockerfile");
-    fs::write(&path, dockerfile)
-        .map_err(|e| format!("Cannot write Dockerfile: {e}"))?;
+    fs::write(&path, dockerfile).map_err(|e| format!("Cannot write Dockerfile: {e}"))?;
 
     println!("  {} Dockerfile generated", "✓".green());
 
-    // Generate .dockerignore too
     let dockerignore = r#"target/
 node_modules/
 .git/
@@ -123,100 +317,9 @@ node_modules/
 
     println!("\n  {}  Build and run with:", "→".blue());
     println!("     docker build -t {} .", config.app.name);
-    println!("     docker run -p {port}:{port} --env-file .env {}\n", config.app.name);
-
-    Ok(())
-}
-
-fn deploy_ssh(config: &KarbonConfig, root: &Path) -> Result<(), String> {
-    // Read deploy config from karbon.toml [deploy] section or env vars
-    let host = std::env::var("DEPLOY_HOST")
-        .map_err(|_| "DEPLOY_HOST env var not set. Set it to user@host".to_string())?;
-    let deploy_dir = std::env::var("DEPLOY_DIR")
-        .unwrap_or_else(|_| format!("/opt/{}", config.app.name));
-    let service_name = std::env::var("DEPLOY_SERVICE")
-        .unwrap_or_else(|_| config.app.name.clone());
-
-    let package = &config.backend.package;
-
-    // Step 1: Build
-    println!("  {} Building for production...", "→".blue());
-    crate::commands::build::run(config, root)?;
-
-    // Step 2: Upload binary
-    let binary_path = root.join(format!("target/release/{package}"));
-    if !binary_path.exists() {
-        return Err(format!("Binary not found at {}", binary_path.display()));
-    }
-
-    println!("  {} Uploading binary to {}:{}...", "→".blue(), host, deploy_dir);
-
-    let scp = std::process::Command::new("scp")
-        .args([
-            binary_path.to_str().unwrap(),
-            &format!("{host}:{deploy_dir}/{package}"),
-        ])
-        .status()
-        .map_err(|e| format!("Failed to run scp: {e}"))?;
-
-    if !scp.success() {
-        return Err("scp failed".to_string());
-    }
-
-    // Step 3: Upload frontend build
-    let frontend_build = config.frontend_dir(root).join("build");
-    if frontend_build.exists() {
-        println!("  {} Uploading frontend build...", "→".blue());
-        let rsync = std::process::Command::new("rsync")
-            .args([
-                "-avz", "--delete",
-                frontend_build.to_str().unwrap(),
-                &format!("{host}:{deploy_dir}/{}/", config.frontend.dir),
-            ])
-            .status()
-            .map_err(|e| format!("Failed to run rsync: {e}"))?;
-
-        if !rsync.success() {
-            return Err("rsync failed".to_string());
-        }
-    }
-
-    // Step 4: Upload migrations
-    let migration_dir = root.join("migration");
-    if migration_dir.exists() {
-        println!("  {} Uploading migrations...", "→".blue());
-        let rsync = std::process::Command::new("rsync")
-            .args([
-                "-avz",
-                migration_dir.to_str().unwrap(),
-                &format!("{host}:{deploy_dir}/"),
-            ])
-            .status()
-            .map_err(|e| format!("Failed to run rsync: {e}"))?;
-
-        if !rsync.success() {
-            return Err("rsync failed".to_string());
-        }
-    }
-
-    // Step 5: Restart service
-    println!("  {} Restarting service {}...", "→".blue(), service_name);
-    let restart = std::process::Command::new("ssh")
-        .args([
-            &host,
-            &format!("sudo systemctl restart {service_name}"),
-        ])
-        .status()
-        .map_err(|e| format!("Failed to restart service: {e}"))?;
-
-    if !restart.success() {
-        return Err(format!("Failed to restart {service_name}"));
-    }
-
     println!(
-        "\n  {} Deployed to {}\n",
-        "✓".green().bold(),
-        host.bold()
+        "     docker run -p {port}:{port} --env-file .env {}\n",
+        config.app.name
     );
 
     Ok(())
