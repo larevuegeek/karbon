@@ -127,7 +127,14 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
         println!("    {} .env.example", "✓".green());
     }
 
-    // ── Step 5: Restart process manager ──
+    // ── Step 5: Set ownership ──
+    if let Some(ref user) = deploy.user {
+        println!("\n  {} Setting ownership to {}...", "→".blue(), user);
+        run_on_target(deploy, &format!("chown -R {user}:{user} {}", deploy.path))?;
+        println!("    {} chown -R {}:{}", "✓".green(), user, user);
+    }
+
+    // ── Step 6: Restart process manager ──
     println!("\n  {} Restarting {}...", "→".blue(), deploy.manager);
     restart_manager(deploy, config)?;
 
@@ -190,12 +197,12 @@ fn run_on_target(deploy: &crate::config::DeployConfig, cmd: &str) -> Result<(), 
     Ok(())
 }
 
-/// Restart the process manager
+/// Restart the process manager (runs as deploy.user if set)
 fn restart_manager(
     deploy: &crate::config::DeployConfig,
     config: &KarbonConfig,
 ) -> Result<(), String> {
-    let cmd = match deploy.manager.as_str() {
+    let pm2_cmd = match deploy.manager.as_str() {
         "pm2" => {
             format!(
                 "cd {} && pm2 restart {} --update-env 2>/dev/null || pm2 start {}",
@@ -210,6 +217,13 @@ fn restart_manager(
             format!("sudo systemctl restart {service}")
         }
         other => return Err(format!("Unknown manager: {other}. Use 'pm2' or 'systemd'.")),
+    };
+
+    // Run as the deploy user if specified (sudo -u user)
+    let cmd = if let Some(ref user) = deploy.user {
+        format!("sudo -u {user} bash -lc '{pm2_cmd}'")
+    } else {
+        pm2_cmd
     };
 
     run_on_target(deploy, &cmd)

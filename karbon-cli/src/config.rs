@@ -51,6 +51,8 @@ pub struct ProxyConfig {
 pub struct DeployConfig {
     /// Deployment path (e.g. /var/www/my-app)
     pub path: String,
+    /// System user to own the deployed files and run the app (e.g. "antispammeur")
+    pub user: Option<String>,
     /// Process manager: "pm2" or "systemd"
     #[serde(default = "default_manager")]
     pub manager: String,
