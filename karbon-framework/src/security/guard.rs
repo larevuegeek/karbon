@@ -1,3 +1,6 @@
+use std::future::Future;
+use std::pin::Pin;
+
 use axum::{
     extract::{FromRequestParts, Request},
     http::{header::AUTHORIZATION, request::Parts},
@@ -25,6 +28,7 @@ pub struct AuthGuard {
 }
 
 impl AuthGuard {
+    
     /// Build an AuthGuard from existing Claims (e.g. for refresh token validation)
     pub fn from_claims(claims: Claims) -> Self {
         Self {
@@ -79,20 +83,21 @@ impl FromRequestParts<AppState> for AuthGuard {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+
         // Extract Bearer token from Authorization header
-        let auth_header = parts
+        let auth_header: &str = parts
             .headers
             .get(AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
             .ok_or_else(|| AppError::Unauthorized("Missing Authorization header".to_string()))?;
 
-        let token = auth_header
+        let token: &str = auth_header
             .strip_prefix("Bearer ")
             .ok_or_else(|| AppError::Unauthorized("Invalid Authorization format".to_string()))?;
 
         // Verify JWT
-        let jwt = super::JwtManager::new(&state.config.jwt_secret, state.config.jwt_expiration);
-        let claims = jwt.verify(token).map_err(|_| {
+        let jwt: super::JwtManager = super::JwtManager::new(&state.config.jwt_secret, state.config.jwt_expiration);
+        let claims: Claims = jwt.verify(token).map_err(|_| {
             AppError::Unauthorized("Invalid or expired token".to_string())
         })?;
 
@@ -103,22 +108,21 @@ impl FromRequestParts<AppState> for AuthGuard {
     }
 }
 
-/// Middleware pour protéger un groupe de routes par ROLE_ADMIN.
-pub async fn require_admin(
-    auth: AuthGuard,
-    request: Request,
-    next: Next,
-) -> Result<Response, AppError> {
-    auth.require_role("ROLE_ADMIN")?;
-    Ok(next.run(request).await)
-}
-
-/// Middleware pour protéger un groupe de routes par ROLE_REDACTEUR (ou supérieur).
-pub async fn require_redacteur(
-    auth: AuthGuard,
-    request: Request,
-    next: Next,
-) -> Result<Response, AppError> {
-    auth.require_role("ROLE_REDACTEUR")?;
-    Ok(next.run(request).await)
+/// Middleware factory pour protéger un groupe de routes par rôle.
+///
+/// ```ignore
+/// router.layer(middleware::from_fn(require_role("ROLE_ADMIN")))
+/// router.layer(middleware::from_fn(require_role("ROLE_REDACTEUR")))
+/// ```
+pub fn require_role(
+    role: &'static str,
+) -> impl Fn(AuthGuard, Request, Next) -> Pin<Box<dyn Future<Output = Result<Response, AppError>> + Send>>
+       + Clone
+{
+    move |auth: AuthGuard, request: Request, next: Next| {
+        Box::pin(async move {
+            auth.require_role(role)?;
+            Ok(next.run(request).await)
+        })
+    }
 }

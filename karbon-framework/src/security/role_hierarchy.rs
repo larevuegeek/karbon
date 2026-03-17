@@ -27,7 +27,7 @@ impl RoleHierarchy {
     /// Build from a list of (role, children) pairs.
     /// Each entry means: `role` inherits all `children` roles (and their children, transitively).
     pub fn new(entries: &[(&str, &[&str])]) -> Self {
-        let map = entries
+        let map: HashMap<String, Vec<String>> = entries
             .iter()
             .map(|(role, children)| {
                 (
