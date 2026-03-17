@@ -25,6 +25,14 @@ pub struct AuthGuard {
 }
 
 impl AuthGuard {
+    /// Build an AuthGuard from existing Claims (e.g. for refresh token validation)
+    pub fn from_claims(claims: Claims) -> Self {
+        Self {
+            claims,
+            role_hierarchy: crate::security::default_hierarchy(),
+        }
+    }
+
     /// Check if the user has a specific role (with hierarchy resolution).
     /// E.g. a ROLE_SUPER_ADMIN user will pass `has_role("ROLE_ADMIN")`.
     pub fn has_role(&self, role: &str) -> bool {
