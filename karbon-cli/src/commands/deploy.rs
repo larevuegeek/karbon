@@ -202,31 +202,35 @@ fn restart_manager(
     deploy: &crate::config::DeployConfig,
     config: &KarbonConfig,
 ) -> Result<(), String> {
-    let pm2_cmd = match deploy.manager.as_str() {
+    match deploy.manager.as_str() {
         "pm2" => {
-            format!(
-                "cd {} && pm2 restart {} --update-env 2>/dev/null || pm2 start {}",
-                deploy.path, deploy.pm2_config, deploy.pm2_config
-            )
+            let path = &deploy.path;
+            let pm2_config = &deploy.pm2_config;
+
+            // Stop existing processes (ignore errors if none running)
+            let stop_cmd = format!("cd {path} && pm2 stop {pm2_config} 2>/dev/null; pm2 delete {pm2_config} 2>/dev/null; true");
+            // Start fresh
+            let start_cmd = format!("cd {path} && pm2 start {pm2_config} && pm2 save");
+
+            if let Some(ref user) = deploy.user {
+                run_on_target(deploy, &format!("sudo -u {user} bash -lc '{stop_cmd}'"))?;
+                run_on_target(deploy, &format!("sudo -u {user} bash -lc '{start_cmd}'"))?;
+            } else {
+                run_on_target(deploy, &stop_cmd)?;
+                run_on_target(deploy, &start_cmd)?;
+            }
+
+            Ok(())
         }
         "systemd" => {
             let service = deploy
                 .service
                 .as_deref()
                 .unwrap_or(&config.app.name);
-            format!("sudo systemctl restart {service}")
+            run_on_target(deploy, &format!("sudo systemctl restart {service}"))
         }
-        other => return Err(format!("Unknown manager: {other}. Use 'pm2' or 'systemd'.")),
-    };
-
-    // Run as the deploy user if specified (sudo -u user)
-    let cmd = if let Some(ref user) = deploy.user {
-        format!("sudo -u {user} bash -lc '{pm2_cmd}'")
-    } else {
-        pm2_cmd
-    };
-
-    run_on_target(deploy, &cmd)
+        other => Err(format!("Unknown manager: {other}. Use 'pm2' or 'systemd'.")),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────
