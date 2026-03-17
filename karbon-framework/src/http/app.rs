@@ -20,6 +20,8 @@ pub struct AppState {
     pub config: Config,
     pub mailer: Option<Mailer>,
     pub role_hierarchy: RoleHierarchy,
+    #[cfg(feature = "templates")]
+    pub templates: crate::template::TemplateEngine,
 }
 
 /// Main application builder
@@ -116,11 +118,31 @@ impl App {
             None
         };
 
+        // Template engine (optional feature)
+        #[cfg(feature = "templates")]
+        let templates = {
+            let tpl_dir = std::env::var("TEMPLATE_DIR").unwrap_or_else(|_| "./templates".to_string());
+            if std::path::Path::new(&tpl_dir).exists() {
+                match crate::template::TemplateEngine::new(&tpl_dir) {
+                    Ok(engine) => engine,
+                    Err(e) => {
+                        tracing::warn!("Template engine init failed: {} — using empty engine", e);
+                        crate::template::TemplateEngine::empty()
+                    }
+                }
+            } else {
+                tracing::debug!("No template directory at '{}', using empty engine", tpl_dir);
+                crate::template::TemplateEngine::empty()
+            }
+        };
+
         let state = AppState {
             db,
             config: self.config.clone(),
             mailer,
             role_hierarchy: crate::security::default_hierarchy(),
+            #[cfg(feature = "templates")]
+            templates,
         };
 
         let cors = self.cors_layer();

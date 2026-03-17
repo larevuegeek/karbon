@@ -49,6 +49,8 @@ impl TestApp {
             config,
             mailer,
             role_hierarchy: crate::security::default_hierarchy(),
+            #[cfg(feature = "templates")]
+            templates: crate::template::TemplateEngine::empty(),
         };
 
         let router = router.with_state(state);

@@ -13,6 +13,7 @@ default = ["mysql"]
 mysql = ["sqlx/mysql"]
 postgres = ["sqlx/postgres"]
 studio = []
+templates = ["tera"]
 
 [dependencies]
 axum.workspace = true
@@ -45,4 +46,5 @@ lettre.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
 futures.workspace = true
+tera = { version = "1", optional = true }
 karbon-macros = { version = "0.2.5", path = "../karbon-macros" }

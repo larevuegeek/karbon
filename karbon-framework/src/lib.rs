@@ -18,6 +18,8 @@ pub mod feature;
 pub mod inertia;
 pub mod livewire;
 pub mod hmr;
+#[cfg(feature = "templates")]
+pub mod template;
 #[cfg(feature = "studio")]
 pub mod studio;
 
