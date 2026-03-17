@@ -5,7 +5,6 @@ use tera::{Context, Tera};
 use crate::error::{AppError, AppResult};
 use crate::mail::Mailer;
 use super::filters;
-use super::mail::MailTemplateOptions;
 
 /// Template engine wrapping Tera with custom filters and helpers.
 ///
@@ -95,28 +94,63 @@ impl TemplateEngine {
         })
     }
 
-    /// Render and send an HTML email.
+    /// Render and send an email (HTML + auto plain text fallback).
+    ///
+    /// If a `.txt` version of the template exists (e.g. `emails/welcome.txt`
+    /// alongside `emails/welcome.html`), it is rendered and sent as the
+    /// plain text part of a multipart email.
     ///
     /// # Example
     /// ```rust,ignore
     /// let mut ctx = engine.site_context("LaRevueGeek", "https://www.larevuegeek.com");
     /// ctx.insert("username", "david");
-    /// engine.send_mail(&mailer, "emails/welcome.html", &ctx, &MailTemplateOptions {
-    ///     to: "user@example.com".into(),
-    ///     subject: "Bienvenue !".into(),
-    ///     ..Default::default()
-    /// }).await?;
+    /// engine.send_mail(&mailer, "to@mail.com", "Bienvenue !", "emails/welcome.html", &ctx).await?;
     /// ```
     pub async fn send_mail(
         &self,
         mailer: &Mailer,
+        to: &str,
+        subject: &str,
         template_name: &str,
         context: &Context,
-        opts: &MailTemplateOptions,
     ) -> AppResult<()> {
         let html = self.render(template_name, context)?;
 
-        mailer.send_html(&opts.to, &opts.subject, &html).await
+        // Auto-detect .txt counterpart for multipart
+        let txt_name = template_name.replace(".html", ".txt");
+        let has_txt = self.tera.get_template_names().any(|n| n == txt_name);
+
+        if has_txt {
+            let text = self.render(&txt_name, context)?;
+            mailer.compose().to(to)?.subject(subject).text_and_html(&text, &html).send().await
+        } else {
+            mailer.send_html(to, subject, &html).await
+        }
+    }
+
+    /// Same as `send_mail` but with a custom `from` address.
+    pub async fn send_mail_from(
+        &self,
+        mailer: &Mailer,
+        from: &str,
+        to: &str,
+        subject: &str,
+        template_name: &str,
+        context: &Context,
+    ) -> AppResult<()> {
+        let html = self.render(template_name, context)?;
+
+        let txt_name = template_name.replace(".html", ".txt");
+        let has_txt = self.tera.get_template_names().any(|n| n == txt_name);
+
+        let builder = mailer.compose().from(from).to(to)?.subject(subject);
+
+        if has_txt {
+            let text = self.render(&txt_name, context)?;
+            builder.text_and_html(&text, &html).send().await
+        } else {
+            builder.html(&html).send().await
+        }
     }
 
     /// Reload templates from disk (useful in development).

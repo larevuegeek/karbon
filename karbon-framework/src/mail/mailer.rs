@@ -174,6 +174,12 @@ fn parse_mailbox(addr: &str) -> AppResult<Mailbox> {
 }
 
 impl MailBuilder {
+    /// Override the sender (FROM) address
+    pub fn from(mut self, address: &str) -> Self {
+        self.from = address.to_string();
+        self
+    }
+
     /// Add a recipient (TO)
     pub fn to(mut self, address: &str) -> AppResult<Self> {
         parse_mailbox(address)?;

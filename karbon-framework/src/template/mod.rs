@@ -10,7 +10,7 @@
 //! let html = state.templates.render("emails/welcome.html", &ctx)?;
 //!
 //! // Send email with template
-//! state.templates.send_mail(&mailer, "emails/welcome.html", &ctx, &opts)?;
+//! state.templates.send_mail(&mailer, "to@mail.com", "Sujet", "emails/welcome.html", &ctx).await?;
 //! ```
 //!
 //! ## Template syntax (Jinja2/Twig)
@@ -25,7 +25,5 @@
 
 mod engine;
 mod filters;
-mod mail;
 
 pub use engine::TemplateEngine;
-pub use mail::MailTemplateOptions;
