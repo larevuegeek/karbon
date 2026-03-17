@@ -131,6 +131,10 @@ fn assign_to_job(child: &Child) {
 /// Wait for any child to exit, then kill the rest.
 /// Also handles Ctrl+C to gracefully stop all children.
 pub fn wait_for_any(children: &mut Vec<Child>) {
+    // Save console mode before children can modify it (Vite/Node change raw mode)
+    #[cfg(windows)]
+    let saved_console_mode = save_console_mode();
+
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
 
@@ -173,7 +177,58 @@ pub fn wait_for_any(children: &mut Vec<Child>) {
     // Kill remaining children
     kill_all(children);
 
+    // Restore console mode — child processes (Vite/Node) may have left it in raw mode
+    #[cfg(windows)]
+    restore_console_mode(saved_console_mode);
+
     println!("  {} Stopped.\n", "✓".green());
+}
+
+/// Save the current console input/output modes so we can restore them later.
+/// Child processes (Vite, Node) often switch to raw mode and don't restore on force-kill.
+#[cfg(windows)]
+fn save_console_mode() -> (u32, u32) {
+    #[allow(non_camel_case_types)]
+    type HANDLE = *mut std::ffi::c_void;
+    #[allow(non_camel_case_types)]
+    type BOOL = i32;
+
+    const STD_INPUT_HANDLE: u32 = 0xFFFF_FFF6; // -10i32 as u32
+    const STD_OUTPUT_HANDLE: u32 = 0xFFFF_FFF5; // -11i32 as u32
+
+    unsafe extern "system" {
+        fn GetStdHandle(nStdHandle: u32) -> HANDLE;
+        fn GetConsoleMode(hConsole: HANDLE, lpMode: *mut u32) -> BOOL;
+    }
+
+    let (mut input_mode, mut output_mode) = (0u32, 0u32);
+    unsafe {
+        GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mut input_mode);
+        GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), &mut output_mode);
+    }
+    (input_mode, output_mode)
+}
+
+/// Restore console modes saved before child processes were spawned.
+#[cfg(windows)]
+fn restore_console_mode(modes: (u32, u32)) {
+    #[allow(non_camel_case_types)]
+    type HANDLE = *mut std::ffi::c_void;
+    #[allow(non_camel_case_types)]
+    type BOOL = i32;
+
+    const STD_INPUT_HANDLE: u32 = 0xFFFF_FFF6;
+    const STD_OUTPUT_HANDLE: u32 = 0xFFFF_FFF5;
+
+    unsafe extern "system" {
+        fn GetStdHandle(nStdHandle: u32) -> HANDLE;
+        fn SetConsoleMode(hConsole: HANDLE, dwMode: u32) -> BOOL;
+    }
+
+    unsafe {
+        SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), modes.0);
+        SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), modes.1);
+    }
 }
 
 /// Kill all children. On Windows, uses taskkill /T to kill process trees.

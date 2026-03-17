@@ -96,6 +96,36 @@ impl Config {
         }
     }
 
+    /// Create a minimal config for unit tests (no env vars needed)
+    pub fn test_config(jwt_secret: &str) -> Self {
+        Self {
+            port: 3005,
+            environment: "test".into(),
+            log_level: "error".into(),
+            db_host: "127.0.0.1".into(),
+            db_port: 3306,
+            db_name: "test".into(),
+            db_user: "test".into(),
+            db_password: "test".into(),
+            db_max_connections: 1,
+            jwt_secret: jwt_secret.into(),
+            jwt_expiration: 3600,
+            refresh_token_expiration: 86400,
+            cors_origins: vec!["*".into()],
+            upload_dir: "/tmp".into(),
+            upload_max_size: 10_485_760,
+            cdn_url: "".into(),
+            mail_from: "test@test.com".into(),
+            smtp_host: "localhost".into(),
+            smtp_port: 587,
+            smtp_user: "".into(),
+            smtp_password: "".into(),
+            site_name: "Test".into(),
+            site_url: "http://localhost:3005".into(),
+            base_url: "http://localhost:3005/".into(),
+        }
+    }
+
     /// Check if running in production
     pub fn is_production(&self) -> bool {
         self.environment == "production"
