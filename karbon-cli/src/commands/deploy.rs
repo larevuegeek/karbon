@@ -197,12 +197,22 @@ fn run_on_target(deploy: &crate::config::DeployConfig, cmd: &str) -> Result<(), 
     Ok(())
 }
 
-/// Run a command as a specific user (sudo -u -H) or as current user
+/// Run a command as a specific user or as current user.
+/// For PM2: forces PM2_HOME to the user's home so it connects to the right daemon.
 fn run_as_user(deploy: &crate::config::DeployConfig, cmd: &str) -> Result<(), String> {
     let status = if let Some(ref user) = deploy.user {
-        // sudo -H sets HOME, -u sets user — PM2 uses HOME to find its .pm2 dir
+        // Get the user's home dir from /etc/passwd
+        let home_output = Command::new("sh")
+            .args(["-c", &format!("getent passwd {user} | cut -d: -f6")])
+            .output()
+            .map_err(|e| format!("Failed to resolve home for {user}: {e}"))?;
+        let user_home = String::from_utf8_lossy(&home_output.stdout).trim().to_string();
+        let pm2_home = format!("{}/.pm2", if user_home.is_empty() { format!("/home/{user}") } else { user_home });
+
+        // PM2_HOME forces PM2 to use the user's daemon, not root's
+        let full_cmd = format!("PM2_HOME={pm2_home} {cmd}");
         Command::new("sudo")
-            .args(["-H", "-u", user, "bash", "-lc", cmd])
+            .args(["-H", "-u", user, "bash", "-lc", &full_cmd])
             .status()
             .map_err(|e| format!("sudo failed: {e}"))?
     } else if let Some(ref host) = deploy.host {
