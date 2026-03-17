@@ -197,6 +197,33 @@ fn run_on_target(deploy: &crate::config::DeployConfig, cmd: &str) -> Result<(), 
     Ok(())
 }
 
+/// Run a command as a specific user (sudo -u -H) or as current user
+fn run_as_user(deploy: &crate::config::DeployConfig, cmd: &str) -> Result<(), String> {
+    let status = if let Some(ref user) = deploy.user {
+        // sudo -H sets HOME, -u sets user — PM2 uses HOME to find its .pm2 dir
+        Command::new("sudo")
+            .args(["-H", "-u", user, "bash", "-lc", cmd])
+            .status()
+            .map_err(|e| format!("sudo failed: {e}"))?
+    } else if let Some(ref host) = deploy.host {
+        Command::new("ssh")
+            .args([host.as_str(), cmd])
+            .status()
+            .map_err(|e| format!("SSH failed: {e}"))?
+    } else {
+        Command::new("sh")
+            .args(["-c", cmd])
+            .status()
+            .map_err(|e| format!("Command failed: {e}"))?
+    };
+
+    if !status.success() {
+        return Err(format!("Command failed: {cmd}"));
+    }
+
+    Ok(())
+}
+
 /// Restart the process manager (runs as deploy.user if set)
 fn restart_manager(
     deploy: &crate::config::DeployConfig,
@@ -208,17 +235,14 @@ fn restart_manager(
             let pm2_config = &deploy.pm2_config;
 
             // Stop existing processes (ignore errors if none running)
-            let stop_cmd = format!("cd {path} && pm2 stop {pm2_config} 2>/dev/null; pm2 delete {pm2_config} 2>/dev/null; true");
-            // Start fresh
-            let start_cmd = format!("cd {path} && pm2 start {pm2_config} && pm2 save");
+            run_as_user(deploy, &format!(
+                "cd {path} && pm2 stop {pm2_config} 2>/dev/null; pm2 delete {pm2_config} 2>/dev/null; true"
+            ))?;
 
-            if let Some(ref user) = deploy.user {
-                run_on_target(deploy, &format!("sudo -u {user} bash -lc '{stop_cmd}'"))?;
-                run_on_target(deploy, &format!("sudo -u {user} bash -lc '{start_cmd}'"))?;
-            } else {
-                run_on_target(deploy, &stop_cmd)?;
-                run_on_target(deploy, &start_cmd)?;
-            }
+            // Start fresh
+            run_as_user(deploy, &format!(
+                "cd {path} && pm2 start {pm2_config} && pm2 save"
+            ))?;
 
             Ok(())
         }

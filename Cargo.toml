@@ -3,7 +3,7 @@ resolver = "2"
 members = ["karbon-framework", "karbon-macros", "karbon-cli"]
 
 [workspace.package]
-version = "0.2.10"
+version = "0.2.11"
 edition = "2024"
 authors = ["LaRevueGeek"]
 license = "AGPL-3.0-or-later"
