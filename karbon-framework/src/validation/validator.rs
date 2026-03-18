@@ -1,8 +1,8 @@
 use crate::error::AppError;
 use validator::Validate;
 
-/// Validate a struct and return a formatted AppError if invalid
-pub fn validate_input<T: Validate>(input: &T) -> Result<(), AppError> {
+/// Validate a request/input struct and return a formatted AppError if invalid
+pub fn validate_request<T: Validate>(input: &T) -> Result<(), AppError> {
     input.validate().map_err(|errors| {
         let messages: Vec<String> = errors
             .field_errors()
@@ -21,4 +21,10 @@ pub fn validate_input<T: Validate>(input: &T) -> Result<(), AppError> {
 
         AppError::Validation(messages.join(", "))
     })
+}
+
+/// Alias for backward compatibility
+#[inline]
+pub fn validate_input<T: Validate>(input: &T) -> Result<(), AppError> {
+    validate_request(input)
 }
