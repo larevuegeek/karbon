@@ -358,13 +358,27 @@ async fn handle_resize(
         std::fs::create_dir_all(parent).ok();
     }
 
-    // Process and cache
-    if let Err(e) = processor.process(&source_path, &cache_path) {
-        tracing::error!("ImgResizer: failed to process {}: {}", file_path, e);
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Processing failed").into_response();
-    }
+    // Process in a blocking thread to avoid starving the Tokio runtime
+    let cache_path_clone = cache_path.clone();
+    let source_clone = source_path.clone();
+    let file_path_clone = file_path.clone();
 
-    serve_file(&cache_path).await
+    let result = tokio::task::spawn_blocking(move || {
+        processor.process(&source_clone, &cache_path_clone)
+    }).await;
+
+    match result {
+        Ok(Ok(())) => serve_file(&cache_path).await,
+        Ok(Err(e)) => {
+            tracing::error!("ImgResizer: failed to process {}: {}", file_path, e);
+            // Fallback: serve original
+            serve_file(&source_path).await
+        }
+        Err(e) => {
+            tracing::error!("ImgResizer: task panicked for {}: {}", file_path, e);
+            serve_file(&source_path).await
+        }
+    }
 }
 
 /// Serve a file with proper content-type and cache headers

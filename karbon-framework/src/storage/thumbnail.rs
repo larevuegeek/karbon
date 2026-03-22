@@ -414,7 +414,7 @@ impl ImageProcessor {
         let wm_resized = wm_img.resize_exact(
             wm_target_w.max(1),
             wm_target_h.max(1),
-            imageops::FilterType::Lanczos3,
+            imageops::FilterType::CatmullRom,
         );
 
         // Apply opacity
@@ -460,20 +460,20 @@ impl ImageProcessor {
 
         let result = match self.resize_mode {
             ResizeMode::Fit => {
-                img.resize(target_w, target_h, imageops::FilterType::Lanczos3)
+                img.resize(target_w, target_h, imageops::FilterType::CatmullRom)
             }
             ResizeMode::Stretch => {
-                img.resize_exact(target_w, target_h, imageops::FilterType::Lanczos3)
+                img.resize_exact(target_w, target_h, imageops::FilterType::CatmullRom)
             }
             ResizeMode::Width => {
                 let ratio = target_w as f64 / src_w as f64;
                 let new_h = (src_h as f64 * ratio).round() as u32;
-                img.resize_exact(target_w, new_h.max(1), imageops::FilterType::Lanczos3)
+                img.resize_exact(target_w, new_h.max(1), imageops::FilterType::CatmullRom)
             }
             ResizeMode::Height => {
                 let ratio = target_h as f64 / src_h as f64;
                 let new_w = (src_w as f64 * ratio).round() as u32;
-                img.resize_exact(new_w.max(1), target_h, imageops::FilterType::Lanczos3)
+                img.resize_exact(new_w.max(1), target_h, imageops::FilterType::CatmullRom)
             }
             ResizeMode::Cover => {
                 self.apply_cover_resize(img, target_w, target_h)?
@@ -501,7 +501,7 @@ impl ImageProcessor {
         let resized = img.resize_exact(
             scaled_w.max(1),
             scaled_h.max(1),
-            imageops::FilterType::Lanczos3,
+            imageops::FilterType::CatmullRom,
         );
 
         // Calculate crop position based on anchor
