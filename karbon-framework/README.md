@@ -471,6 +471,62 @@ let file = manager.save(field).await?;
 // Returns: SavedFile { filename, path, size, mime_type }
 ```
 
+## ImgResizer — On-the-fly Image Processing
+
+Automatic image resizing, format conversion, and caching. Just add one line to your router.
+
+```rust
+use framework::storage::ImgResizer;
+
+// Quick setup
+app.nest_service("/files", ImgResizer::serve("./storage", "./cache/img"));
+
+// Advanced config
+app.nest_service("/files", ImgResizer::config("./storage", "./cache/img")
+    .max_width(2560)
+    .default_quality(90)
+    .build());
+```
+
+### URL format
+
+```
+/files/r/{spec}/{path}
+```
+
+| URL | Effect |
+|-----|--------|
+| `/files/r/320x180/uploads/photo.jpg` | Resize fit 320x180 |
+| `/files/r/640x0/uploads/photo.jpg` | Width 640, auto height |
+| `/files/r/0x400/uploads/photo.jpg` | Height 400, auto width |
+| `/files/r/320x180_cover/uploads/photo.jpg` | Cover crop (fill + crop) |
+| `/files/r/320x180_stretch/uploads/photo.jpg` | Stretch to exact size |
+| `/files/r/800x600.webp/uploads/photo.jpg` | Convert to WebP |
+| `/files/r/320x180_q75/uploads/photo.jpg` | JPEG quality 75% |
+| `/files/r/320x180_gray/uploads/photo.jpg` | Grayscale filter |
+| `/files/r/320x180_blur3/uploads/photo.jpg` | Gaussian blur (sigma 3) |
+| `/files/r/800x600_cover_q90_gray.webp/path.jpg` | All combined |
+
+Query params: `?anchor=bottom-right` for crop anchor in cover mode.
+
+### Image processor (programmatic)
+
+```rust
+use framework::storage::{ImageProcessor, ResizeMode, CropAnchor, OutputFormat};
+
+ImageProcessor::new()
+    .resize(800, 600)
+    .mode(ResizeMode::Cover)
+    .anchor(CropAnchor::Center)
+    .jpeg(85)
+    .grayscale()
+    .sharpen(1.5)
+    .watermark("./logo.png", CropAnchor::BottomRight, 50, 15, 10)
+    .process(&source_path, &dest_path)?;
+```
+
+Features: resize (fit/cover/stretch/width/height), crop, rotate, flip, blur, brightness, contrast, grayscale, sharpen, watermark with opacity/scale/position, WebP/PNG/JPEG/GIF output, decompression bomb protection, upscale guard, disk cache with auto-invalidation.
+
 ---
 
 ## Full documentation

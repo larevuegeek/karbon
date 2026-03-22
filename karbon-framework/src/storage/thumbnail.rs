@@ -85,6 +85,16 @@ pub enum PngCompression {
     Best,
 }
 
+/// Watermark configuration
+#[derive(Debug, Clone)]
+pub struct Watermark {
+    pub path: std::path::PathBuf,
+    pub position: CropAnchor,
+    pub opacity: u8,
+    pub scale_percent: u32,
+    pub margin: u32,
+}
+
 /// Image processing pipeline builder
 #[derive(Default)]
 pub struct ImageProcessor {
@@ -98,8 +108,11 @@ pub struct ImageProcessor {
     brightness: Option<i32>,
     contrast: Option<f32>,
     grayscale: bool,
+    sharpen: Option<f32>,
     crop_region: Option<CropRegion>,
     output_format: OutputFormat,
+    watermark: Option<Watermark>,
+    upscale: bool,
 }
 
 /// Manual crop region (in pixels from source image)
@@ -192,6 +205,46 @@ impl ImageProcessor {
             y,
             width,
             height,
+        });
+        self
+    }
+
+    /// Apply sharpening filter (sigma value, e.g. 1.0-5.0)
+    pub fn sharpen(mut self, sigma: f32) -> Self {
+        self.sharpen = Some(sigma.clamp(0.1, 10.0));
+        self
+    }
+
+    /// Allow upscaling (by default images are NOT upscaled beyond original size)
+    pub fn upscale(mut self, allow: bool) -> Self {
+        self.upscale = allow;
+        self
+    }
+
+    /// Apply a watermark image
+    ///
+    /// ```rust
+    /// processor.watermark("./logo.png", CropAnchor::BottomRight, 50, 15, 10)
+    /// ```
+    /// - `path`: path to watermark image (PNG with transparency recommended)
+    /// - `position`: where to place the watermark
+    /// - `opacity`: 0-100 (100 = fully opaque)
+    /// - `scale_percent`: watermark size as % of the output image width (e.g. 15 = 15%)
+    /// - `margin`: pixel margin from edges
+    pub fn watermark(
+        mut self,
+        path: impl Into<std::path::PathBuf>,
+        position: CropAnchor,
+        opacity: u8,
+        scale_percent: u32,
+        margin: u32,
+    ) -> Self {
+        self.watermark = Some(Watermark {
+            path: path.into(),
+            position,
+            opacity: opacity.min(100),
+            scale_percent: scale_percent.clamp(1, 100),
+            margin,
         });
         self
     }
@@ -333,14 +386,77 @@ impl ImageProcessor {
             img = img.adjust_contrast(c);
         }
 
+        // 6. Sharpen
+        if let Some(sigma) = self.sharpen {
+            img = img.unsharpen(sigma, 1);
+        }
+
+        // 7. Watermark
+        if let Some(wm) = &self.watermark {
+            img = self.apply_watermark(img, wm)?;
+        }
+
         Ok(img)
+    }
+
+    /// Apply watermark overlay
+    fn apply_watermark(&self, mut base: DynamicImage, wm: &Watermark) -> AppResult<DynamicImage> {
+        let wm_img = ImageReader::open(&wm.path)
+            .map_err(|e| AppError::Internal(format!("Failed to open watermark: {}", e)))?
+            .decode()
+            .map_err(|e| AppError::Internal(format!("Failed to decode watermark: {}", e)))?;
+
+        // Scale watermark relative to base image width
+        let wm_target_w = (base.width() * wm.scale_percent) / 100;
+        let wm_ratio = wm_target_w as f64 / wm_img.width() as f64;
+        let wm_target_h = (wm_img.height() as f64 * wm_ratio).round() as u32;
+
+        let wm_resized = wm_img.resize_exact(
+            wm_target_w.max(1),
+            wm_target_h.max(1),
+            imageops::FilterType::Lanczos3,
+        );
+
+        // Apply opacity
+        let mut wm_rgba = wm_resized.to_rgba8();
+        if wm.opacity < 100 {
+            let alpha_factor = wm.opacity as f32 / 100.0;
+            for pixel in wm_rgba.pixels_mut() {
+                pixel[3] = (pixel[3] as f32 * alpha_factor).round() as u8;
+            }
+        }
+
+        // Compute position
+        let (x, y) = self.compute_crop_offset(
+            base.width(),
+            base.height(),
+            wm_rgba.width() + wm.margin * 2,
+            wm_rgba.height() + wm.margin * 2,
+        );
+        let x = x + wm.margin;
+        let y = y + wm.margin;
+
+        // Overlay
+        imageops::overlay(&mut base, &DynamicImage::ImageRgba8(wm_rgba), x as i64, y as i64);
+
+        Ok(base)
     }
 
     /// Apply resize based on mode
     fn apply_resize(&self, img: DynamicImage) -> AppResult<DynamicImage> {
         let (src_w, src_h) = (img.width(), img.height());
-        let target_w = self.width.unwrap_or(src_w);
-        let target_h = self.height.unwrap_or(src_h);
+        let mut target_w = self.width.unwrap_or(src_w);
+        let mut target_h = self.height.unwrap_or(src_h);
+
+        // Prevent upscaling unless explicitly allowed
+        if !self.upscale {
+            target_w = target_w.min(src_w);
+            target_h = target_h.min(src_h);
+            // If both are at source size, skip resize entirely
+            if target_w == src_w && target_h == src_h {
+                return Ok(img);
+            }
+        }
 
         let result = match self.resize_mode {
             ResizeMode::Fit => {
