@@ -94,6 +94,34 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     )?;
     println!("    {} frontend/build/", "✓".green());
 
+    // Frontend package.json + lock (needed for npm install on server)
+    let frontend_dir = config.frontend_dir(root);
+    let pkg_json = frontend_dir.join("package.json");
+    if pkg_json.exists() {
+        rsync_to_target(
+            deploy,
+            pkg_json.to_str().unwrap(),
+            &format!("{}/frontend/", deploy.path),
+        )?;
+        let lock = frontend_dir.join("package-lock.json");
+        if lock.exists() {
+            rsync_to_target(
+                deploy,
+                lock.to_str().unwrap(),
+                &format!("{}/frontend/", deploy.path),
+            )?;
+        }
+        println!("    {} frontend/package*.json", "✓".green());
+
+        // Install production dependencies on server
+        println!("\n  {} Installing frontend dependencies...", "→".blue());
+        run_on_target(deploy, &format!(
+            "cd {}/frontend && npm install --omit=dev --no-audit --no-fund 2>&1 | tail -1",
+            deploy.path
+        ))?;
+        println!("    {} npm install (production)", "✓".green());
+    }
+
     // PM2 config (if exists)
     let pm2_path = root.join(&deploy.pm2_config);
     if pm2_path.exists() {
