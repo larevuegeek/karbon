@@ -1,7 +1,7 @@
 use crate::config::KarbonConfig;
 use colored::Colorize;
 use std::path::Path;
-use std::process::{Command, ExitStatus};
+use std::process::{Command, ExitStatus, Stdio};
 use std::time::{Instant, Duration};
 
 pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
@@ -71,9 +71,11 @@ fn build_backend(config: &KarbonConfig, root: &Path) -> Result<(), String> {
 }
 
 fn run_cmd(cmd: &str, args: &[&str], dir: &Path) -> Result<(), String> {
-    let status: ExitStatus = Command::new(cmd)
+    let status: ExitStatus = Command::new(resolve_cmd(cmd))
         .args(args)
         .current_dir(dir)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .status()
         .map_err(|e| format!("Failed to run `{cmd}`: {e}"))?;
 
@@ -81,4 +83,15 @@ fn run_cmd(cmd: &str, args: &[&str], dir: &Path) -> Result<(), String> {
         return Err(format!("`{cmd} {}` failed with exit code {:?}", args.join(" "), status.code()));
     }
     Ok(())
+}
+
+/// On Windows, resolve npm/npx to their .cmd wrappers
+fn resolve_cmd(cmd: &str) -> String {
+    #[cfg(windows)]
+    {
+        if matches!(cmd, "npm" | "npx" | "pnpm" | "yarn") {
+            return format!("{cmd}.cmd");
+        }
+    }
+    cmd.to_string()
 }
