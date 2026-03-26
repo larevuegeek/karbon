@@ -23,10 +23,23 @@ pub fn spawn_command_with_env(
     label: &str,
     env: &HashMap<String, String>,
 ) -> Result<Child, String> {
-    let mut command = Command::new(cmd);
+    // On Windows, use cmd.exe /C to resolve .cmd/.bat scripts (npm, npx, etc.)
+    #[cfg(windows)]
+    let mut command = {
+        let mut c = Command::new("cmd");
+        let mut cmd_args = vec!["/C".to_string(), cmd.to_string()];
+        cmd_args.extend(args.iter().cloned());
+        c.args(&cmd_args);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut command = {
+        let mut c = Command::new(cmd);
+        c.args(args);
+        c
+    };
 
     command
-        .args(args)
         .current_dir(dir)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())

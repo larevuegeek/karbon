@@ -79,6 +79,13 @@ fn start_frontend(config: &KarbonConfig, root: &Path) -> Result<Child, String> {
 
     if !frontend_dir.join("node_modules").exists() {
         println!("  {} Installing frontend dependencies...", "↓".blue());
+        #[cfg(windows)]
+        let status = Command::new("cmd")
+            .args(["/C", "npm", "install"])
+            .current_dir(&frontend_dir)
+            .status()
+            .map_err(|e| format!("npm install failed: {e}"))?;
+        #[cfg(not(windows))]
         let status = Command::new("npm")
             .arg("install")
             .current_dir(&frontend_dir)
