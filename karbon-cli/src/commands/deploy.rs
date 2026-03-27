@@ -150,9 +150,10 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
 
     // ── Step 5: Set ownership ──
     if let Some(ref user) = deploy.user {
-        println!("\n  {} Setting ownership to {}...", "→".blue(), user);
-        run_on_target(deploy, &format!("chown -R {user}:{user} {}", deploy.path))?;
-        println!("    {} chown -R {}:{}", "✓".green(), user, user);
+        let group = deploy.group.as_deref().unwrap_or(user);
+        println!("\n  {} Setting ownership to {}:{}...", "→".blue(), user, group);
+        run_on_target(deploy, &format!("chown -R {user}:{group} {}", deploy.path))?;
+        println!("    {} chown -R {}:{}", "✓".green(), user, group);
     }
 
     // ── Step 6: Restart process manager ──

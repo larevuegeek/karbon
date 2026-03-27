@@ -54,6 +54,9 @@ pub struct DeployConfig {
     /// System user to own the deployed files and run the app (e.g. "antispammeur")
     pub user: Option<String>,
     /// Process manager: "pm2" or "systemd"
+    /// System group for chown (defaults to user if absent)
+    pub group: Option<String>,
+    /// Process manager: "pm2" or "systemd"
     #[serde(default = "default_manager")]
     pub manager: String,
     /// PM2 config file name (default: ecosystem.config.cjs)

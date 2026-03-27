@@ -53,7 +53,8 @@ karbon serve
 | `karbon g crud <Name>` | Short alias |
 | `karbon migrate` | Run SQL migrations from `migration/` directory |
 | `karbon deploy docker` | Generate optimized multi-stage Dockerfile |
-| `karbon deploy ssh` | Build + deploy via SSH (scp + rsync + systemd restart) |
+| `karbon deploy publish` | Publish artifacts (rsync, local or SSH) |
+| `karbon deploy publish:build` | Build + publish |
 
 ## Database
 
@@ -446,8 +447,24 @@ Reads database connection from `DATABASE_URL` or individual `DB_*` variables in 
 # Generate optimized multi-stage Dockerfile
 karbon deploy docker
 
-# Build + deploy via SSH
-DEPLOY_HOST=user@myserver.com karbon deploy ssh
+# Publish artifacts (local or SSH)
+karbon deploy publish
+
+# Build + publish
+karbon deploy publish:build
+```
+
+Configure in `karbon.toml`:
+
+```toml
+[deploy]
+path = "/var/www/my-app"
+user = "www-data"                    # optional — owner for chown
+group = "www-data"                   # optional — group for chown (defaults to user)
+manager = "pm2"                      # "pm2" or "systemd"
+pm2_config = "ecosystem.config.cjs"  # PM2 config file (default)
+service = "my-app"                   # systemd service name (default: app.name)
+host = "user@server"                 # optional — if absent, deploys locally
 ```
 
 ## Requirements
