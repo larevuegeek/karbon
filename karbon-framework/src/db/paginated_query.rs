@@ -43,7 +43,7 @@ pub struct PaginatedQuery<T> {
     default_order: String,
     sort_prefix: Option<String>,
     search_columns: Vec<String>,
-    where_conditions: Vec<(String, WhereValue)>,
+    where_conditions: Vec<(String, &'static str, WhereValue)>,
     _phantom: PhantomData<T>,
 }
 
@@ -98,7 +98,19 @@ where
 
     /// Ajoute une condition WHERE (col = ?).
     pub fn where_eq(mut self, column: &str, value: WhereValue) -> Self {
-        self.where_conditions.push((column.to_string(), value));
+        self.where_conditions.push((column.to_string(), "=", value));
+        self
+    }
+
+    /// Ajoute une condition WHERE (col >= ?).
+    pub fn where_gte(mut self, column: &str, value: WhereValue) -> Self {
+        self.where_conditions.push((column.to_string(), ">=", value));
+        self
+    }
+
+    /// Ajoute une condition WHERE (col <= ?).
+    pub fn where_lte(mut self, column: &str, value: WhereValue) -> Self {
+        self.where_conditions.push((column.to_string(), "<=", value));
         self
     }
 
@@ -141,9 +153,9 @@ where
         let mut bind_values: Vec<WhereValue> = Vec::new();
         let mut ph_idx: usize = 0;
 
-        for (col, val) in &self.where_conditions {
+        for (col, op, val) in &self.where_conditions {
             ph_idx += 1;
-            where_clauses.push(format!("{} = {}", col, placeholder(ph_idx)));
+            where_clauses.push(format!("{} {} {}", col, op, placeholder(ph_idx)));
             bind_values.push(val.clone());
         }
 

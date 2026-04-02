@@ -3,7 +3,7 @@ resolver = "2"
 members = ["karbon-framework", "karbon-macros", "karbon-cli"]
 
 [workspace.package]
-version = "0.2.23"
+version = "0.2.24"
 edition = "2024"
 authors = ["LaRevueGeek"]
 license = "AGPL-3.0-or-later"
@@ -16,7 +16,7 @@ axum-extra = { version = "0.12.5", features = ["typed-header"] }
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.5", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "fs", "limit", "compression-full", "request-id", "util", "propagate-header", "set-header"] }
-hyper = { version = "1", features = ["full"] }
+hyper = { version = "1.9.0", features = ["full"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 
 # Database
@@ -30,8 +30,8 @@ serde_json = "1"
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
 argon2 = "0.5"
 bcrypt = "0.19.0"
-sha2 = "0.10"
-uuid = { version = "1", features = ["v4", "serde"] }
+sha2 = "0.11.0"
+uuid = { version = "1.23.0", features = ["v4", "serde"] }
 
 # Utils
 chrono = { version = "0.4", features = ["serde"] }
@@ -49,9 +49,9 @@ base64 = "0.22"
 image = "0.25"
 
 # HTTP client (for testing)
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["rustls", "json"] }
 futures = "0.3"
 
 # Email
-lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder", "hostname", "pool"] }
+lettre = { version = "0.11.20", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder", "hostname", "pool"] }
 anyhow = "1"
