@@ -407,6 +407,12 @@ async fn serve_file(path: &StdPath) -> Response {
         [
             (header::CONTENT_TYPE, content_type),
             (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            // Prevent MIME sniffing (polyglot file attack)
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            // Images should not be framed
+            (header::X_FRAME_OPTIONS, "DENY"),
+            // Block if browser detects XSS in image context
+            (header::CONTENT_SECURITY_POLICY, "default-src 'none'; style-src 'unsafe-inline'"),
         ],
         data,
     ).into_response()
