@@ -415,7 +415,10 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
 
     let mut column_names: Vec<String> = insert_fields
         .iter()
-        .map(|f| f.ident.as_ref().unwrap().to_string())
+        .map(|f| {
+            let name = f.ident.as_ref().unwrap().to_string();
+            name.strip_prefix("r#").unwrap_or(&name).to_string()
+        })
         .collect();
 
     // Auto-timestamps: add created_at column
@@ -551,7 +554,8 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
         }
     };
     let pk_ident = pk_field.ident.as_ref().unwrap();
-    let pk_col = pk_ident.to_string();
+    let pk_col_raw = pk_ident.to_string();
+    let pk_col = pk_col_raw.strip_prefix("r#").unwrap_or(&pk_col_raw).to_string();
 
     let has_timestamps = has_struct_attr(&input.attrs, "timestamps");
 
@@ -567,7 +571,8 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
 
     for field in &update_fields {
         let ident = field.ident.as_ref().unwrap();
-        let col_name = ident.to_string();
+        let col_name_raw = ident.to_string();
+        let col_name = col_name_raw.strip_prefix("r#").unwrap_or(&col_name_raw).to_string();
 
         if is_option_type(&field.ty) {
             set_pushes.push(quote! {
