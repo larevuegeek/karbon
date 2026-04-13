@@ -1,8 +1,10 @@
 use axum::{middleware, Router};
 use std::net::SocketAddr;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 #[cfg(feature = "studio")]
@@ -181,13 +183,31 @@ impl App {
             router = router.fallback(move |req| proxy.clone().handle(req));
         }
 
+        // Body size limit
+        let body_limit = RequestBodyLimitLayer::new(self.config.body_max_size);
+
+        // Rate limiting (0 = disabled)
+        let rate_limit_max = self.config.rate_limit_max;
+        let rate_limit_window = self.config.rate_limit_window;
+
         #[allow(unused_mut)]
         let mut router = router
             .layer(middleware::from_fn(super::middleware::request_id))
+            .layer(body_limit)
             .layer(CompressionLayer::new())
             .layer(cors)
-            .layer(TraceLayer::new_for_http())
-            .with_state(state);
+            .layer(TraceLayer::new_for_http());
+
+        // Apply rate limiting if configured
+        if rate_limit_max > 0 {
+            tracing::info!("Rate limiting: {} requests per {}s", rate_limit_max, rate_limit_window);
+            router = router.layer(super::middleware::RateLimitLayer::new(
+                rate_limit_max,
+                Duration::from_secs(rate_limit_window),
+            ));
+        }
+
+        let mut router = router.with_state(state);
 
         #[cfg(feature = "studio")]
         if let Some((studio_router, collector)) = studio_collector {

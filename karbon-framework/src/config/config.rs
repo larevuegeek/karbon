@@ -38,6 +38,13 @@ pub struct Config {
     pub smtp_user: String,
     pub smtp_password: String,
 
+    // Rate limiting
+    pub rate_limit_max: u32,        // max requests per window
+    pub rate_limit_window: u64,     // window in seconds
+
+    // Body size
+    pub body_max_size: usize,       // max request body in bytes
+
     // Site
     pub site_name: String,
     pub site_url: String,
@@ -89,6 +96,13 @@ impl Config {
             smtp_user: env_or("SMTP_USER", ""),
             smtp_password: env_or("SMTP_PASSWORD", ""),
 
+            // Rate limiting (0 = disabled)
+            rate_limit_max: env_parse("RATE_LIMIT_MAX", 0),
+            rate_limit_window: env_parse("RATE_LIMIT_WINDOW", 60),
+
+            // Body size (default 10MB)
+            body_max_size: env_parse("BODY_MAX_SIZE", 10_485_760),
+
             // Site
             site_name: env_or("SITE_NAME", "Karbon"),
             site_url: env_or("SITE_URL", "http://localhost:3000"),
@@ -120,6 +134,9 @@ impl Config {
             smtp_port: 587,
             smtp_user: "".into(),
             smtp_password: "".into(),
+            rate_limit_max: 0,
+            rate_limit_window: 60,
+            body_max_size: 10_485_760,
             site_name: "Test".into(),
             site_url: "http://localhost:3005".into(),
             base_url: "http://localhost:3005/".into(),
