@@ -471,6 +471,7 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
                 E: sqlx::Executor<'e, Database = karbon::db::Db>,
             {
                 #(#slug_lets)*
+                tracing::debug!("[SQL INSERT] {}", #sql_literal);
                 let result = sqlx::query(#sql_literal)
                     #(#bind_calls)*
                     .execute(executor)

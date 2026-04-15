@@ -83,9 +83,17 @@ impl IntoResponse for AppError {
             tracing::error!(%status, error = %self, "Server error");
         }
 
+        // Dev: expose full error details — Prod: hide internal details
+        let is_dev = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string()) != "production";
+        let message = if !is_dev && status.is_server_error() {
+            "Une erreur interne est survenue".to_string()
+        } else {
+            self.to_string()
+        };
+
         let body = ErrorResponse {
             error: error_type,
-            message: self.to_string(),
+            message,
             details: None,
         };
 
