@@ -20,11 +20,27 @@ pub struct AppConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct BackendConfig {
+    /// Main backend package (the one with port + watch + frontend proxy).
     pub package: String,
+    /// Additional Cargo packages to build and deploy alongside the main one.
+    /// Useful for workspace projects with daemons / workers / sidecars.
+    /// Their binaries are rsynced to deploy.path but not started by karbon —
+    /// add them to your pm2 config or systemd unit if you want them supervised.
+    #[serde(default)]
+    pub extra_packages: Vec<String>,
     #[serde(default = "default_backend_port")]
     pub port: u16,
     #[serde(default = "default_true")]
     pub watch: bool,
+}
+
+impl BackendConfig {
+    /// Returns all packages to build/deploy : the main one + extras.
+    pub fn all_packages(&self) -> Vec<&str> {
+        let mut v = vec![self.package.as_str()];
+        v.extend(self.extra_packages.iter().map(|s| s.as_str()));
+        v
+    }
 }
 
 #[derive(Debug, Deserialize)]

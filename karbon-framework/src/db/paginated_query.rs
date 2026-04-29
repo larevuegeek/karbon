@@ -236,12 +236,25 @@ where
 
 /// Extrait la clause FROM d'un SELECT (tout après le premier FROM/from).
 fn extract_from_clause(sql: &str) -> &str {
+    // Find the first top-level " FROM " (i.e. not inside parentheses), so that subqueries
+    // like `(SELECT ... FROM tbl)` in the SELECT list don't fool us.
+    let bytes = sql.as_bytes();
     let upper = sql.to_uppercase();
-    if let Some(pos) = upper.find(" FROM ") {
-        &sql[pos..]
-    } else {
-        sql
+    let upper_bytes = upper.as_bytes();
+    let mut depth: i32 = 0;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'(' => depth += 1,
+            b')' => depth = depth.saturating_sub(1),
+            b' ' if depth == 0 && i + 6 <= upper_bytes.len() && &upper_bytes[i..i + 6] == b" FROM " => {
+                return &sql[i..];
+            }
+            _ => {}
+        }
+        i += 1;
     }
+    sql
 }
 
 /// Bind une WhereValue sur un query_as<T>

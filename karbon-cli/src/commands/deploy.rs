@@ -54,12 +54,17 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     }
 
     // ── Step 2: Verify artifacts exist ──
-    let binary_path = root.join(format!("target/release/{}", config.backend.package));
-    if !binary_path.exists() {
-        return Err(format!(
-            "Binary not found at {}. Run `karbon build` first.",
-            binary_path.display()
-        ));
+    let all_packages = config.backend.all_packages();
+    let mut binary_paths: Vec<std::path::PathBuf> = Vec::with_capacity(all_packages.len());
+    for pkg in &all_packages {
+        let p = root.join(format!("target/release/{}", pkg));
+        if !p.exists() {
+            return Err(format!(
+                "Binary not found at {}. Run `karbon build` first.",
+                p.display()
+            ));
+        }
+        binary_paths.push(p);
     }
 
     let frontend_build = config.frontend_dir(root).join("build");
@@ -77,13 +82,15 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     run_on_target(deploy, &format!("mkdir -p {}/frontend", deploy.path))?;
 
     // ── Step 4: Sync files ──
-    // Binary
-    rsync_to_target(
-        deploy,
-        binary_path.to_str().unwrap(),
-        &format!("{}/", deploy.path),
-    )?;
-    println!("    {} {}", "✓".green(), config.backend.package);
+    // Backend binaries (main + extras)
+    for (pkg, binary_path) in all_packages.iter().zip(binary_paths.iter()) {
+        rsync_to_target(
+            deploy,
+            binary_path.to_str().unwrap(),
+            &format!("{}/", deploy.path),
+        )?;
+        println!("    {} {}", "✓".green(), pkg);
+    }
 
     // Frontend build
     rsync_to_target(

@@ -53,20 +53,21 @@ fn build_frontend(config: &KarbonConfig, root: &Path) -> Result<(), String> {
 }
 
 fn build_backend(config: &KarbonConfig, root: &Path) -> Result<(), String> {
-    println!("  {} Building backend (release)...", "→".blue());
-    let start: Instant = Instant::now();
+    let packages = config.backend.all_packages();
 
-    run_cmd(
-        "cargo",
-        &["build", "--release", "-p", &config.backend.package],
-        root,
-    )?;
+    for pkg in packages {
+        println!("  {} Building {} (release)...", "→".blue(), pkg);
+        let start: Instant = Instant::now();
 
-    println!(
-        "  {} Backend built in {:.1}s",
-        "✓".green(),
-        start.elapsed().as_secs_f64()
-    );
+        run_cmd("cargo", &["build", "--release", "-p", pkg], root)?;
+
+        println!(
+            "  {} {} built in {:.1}s",
+            "✓".green(),
+            pkg,
+            start.elapsed().as_secs_f64()
+        );
+    }
     Ok(())
 }
 
