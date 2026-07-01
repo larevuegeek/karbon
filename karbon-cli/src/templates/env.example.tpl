@@ -30,6 +30,14 @@ CORS_ORIGINS=
 # ignored, safe). Use "*" only if you are ALWAYS behind a trusted proxy.
 # TRUSTED_PROXIES=127.0.0.1,10.0.0.1
 
+# Live debug mode (Symfony `app_dev.php` equivalent). Disabled unless KARBON_DEBUG_KEY is set.
+# On a live deployment, append ?__karbon_dev=<KEY> to any URL from an allowed IP to open a
+# per-request debug session (verbose errors + debug toolbar + Studio) bound to your IP; the
+# rest of the traffic stays in production mode. Deactivate with ?__karbon_dev=off.
+# Requires TRUSTED_PROXIES set correctly (real client IP is resolved from X-Forwarded-For).
+# KARBON_DEBUG_KEY=change-me-to-a-long-random-secret
+# KARBON_DEBUG_IPS=203.0.113.7
+
 CORS_ORIGINS=http://localhost:3004,http://localhost:3005
 
 UPLOAD_DIR=./uploads

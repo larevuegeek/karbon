@@ -336,7 +336,9 @@ impl App {
 
         // Studio (dev dashboard)
         #[cfg(feature = "studio")]
-        let studio_enabled = cfg!(debug_assertions) || std::env::var("KARBON_STUDIO").is_ok();
+        let studio_enabled = cfg!(debug_assertions)
+            || std::env::var("KARBON_STUDIO").is_ok()
+            || self.config.debug_key.is_some();
         #[cfg(feature = "studio")]
         let studio_collector = if studio_enabled {
             let studio_db = if self.config.has_database() {
@@ -450,6 +452,32 @@ impl App {
                     crate::studio::middleware::studio_middleware,
                 ))
                 .layer(Extension(collector));
+        }
+
+        // Live debug mode ("app_dev"): outermost layer so its per-request scope wraps every
+        // inner middleware (toolbar, studio guard) and the error handler. Present in local
+        // debug builds and whenever KARBON_DEBUG_KEY is configured; inert otherwise.
+        if cfg!(debug_assertions) || self.config.debug_key.is_some() {
+            let dev_cfg = crate::http::dev_mode::DevModeConfig {
+                key: self.config.debug_key.clone(),
+                allowed_ips: self.config.debug_ips.clone(),
+                trusted_proxies: self.config.trusted_proxies.clone(),
+                signing_key: format!(
+                    "{}{}",
+                    self.config.jwt_secret,
+                    self.config.debug_key.clone().unwrap_or_default()
+                )
+                .into_bytes(),
+                always_on: cfg!(debug_assertions),
+            };
+            router = router.layer(middleware::from_fn(
+                move |axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<SocketAddr>,
+                      req: axum::extract::Request,
+                      next: middleware::Next| {
+                    let dev_cfg = dev_cfg.clone();
+                    async move { crate::http::dev_mode::run(peer.ip(), dev_cfg, req, next).await }
+                },
+            ));
         }
 
         let addr = SocketAddr::from(([0, 0, 0, 0], self.config.port));

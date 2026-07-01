@@ -32,6 +32,11 @@ pub struct Config {
     // none (Karbon is the edge). `*` = always behind a trusted proxy.
     pub trusted_proxies: Vec<String>,
 
+    // Live debug mode ("app_dev"): secret key to activate a per-request debug session,
+    // plus the IP allowlist allowed to activate/hold it. `debug_key` None ⇒ disabled.
+    pub debug_key: Option<String>,
+    pub debug_ips: Vec<String>,
+
     // Upload
     pub upload_dir: String,
     pub upload_max_size: u64, // bytes
@@ -105,6 +110,17 @@ impl Config {
                 .filter(|s| !s.is_empty())
                 .collect(),
 
+            // Live debug mode (Symfony-style app_dev). Disabled unless KARBON_DEBUG_KEY is set.
+            debug_key: {
+                let k = env_or("KARBON_DEBUG_KEY", "");
+                if k.is_empty() { None } else { Some(k) }
+            },
+            debug_ips: env_or("KARBON_DEBUG_IPS", "")
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+
             // Upload
             upload_dir: env_or("UPLOAD_DIR", "./uploads"),
             upload_max_size: env_parse("UPLOAD_MAX_SIZE", 10_485_760), // 10MB
@@ -151,6 +167,8 @@ impl Config {
             cors_origins: vec!["*".into()],
             csrf_enabled: true,
             trusted_proxies: Vec::new(),
+            debug_key: None,
+            debug_ips: Vec::new(),
             upload_dir: "/tmp".into(),
             upload_max_size: 10_485_760,
             cdn_url: "".into(),

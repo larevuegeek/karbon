@@ -87,12 +87,13 @@ impl IntoResponse for AppError {
         // EXPLICITLY development or test. Any other value — production, a custom env, or
         // unset — masks server errors, so a misconfigured `APP_ENV` fails safe instead of
         // leaking raw sqlx/driver messages to clients.
-        let is_dev = matches!(
-            crate::config::Environment::from_name(
-                std::env::var("APP_ENV").unwrap_or_default().trim()
-            ),
-            crate::config::Environment::Development | crate::config::Environment::Test
-        );
+        let is_dev = crate::http::dev_mode::active()
+            || matches!(
+                crate::config::Environment::from_name(
+                    std::env::var("APP_ENV").unwrap_or_default().trim()
+                ),
+                crate::config::Environment::Development | crate::config::Environment::Test
+            );
         let message = if status.is_server_error() && !is_dev {
             "Une erreur interne est survenue".to_string()
         } else {

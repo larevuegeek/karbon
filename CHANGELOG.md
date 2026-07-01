@@ -11,6 +11,26 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.3.1] - 2026-07-01
+
+> Additive release: a live debug mode plus a Studio hardening fix. No breaking changes.
+
+### Added
+- **Live debug mode (Symfony `app_dev.php` equivalent)**. On a deployed binary, append
+  `?__karbon_dev=<KEY>` to any URL to open a **per-request** debug session — verbose errors,
+  debug toolbar, and Studio access — while all other traffic stays in production mode.
+  Enabled only when `KARBON_DEBUG_KEY` is set. Gated by an IP allowlist (`KARBON_DEBUG_IPS`)
+  and a signed, **IP-bound**, short-lived HttpOnly cookie (HMAC-SHA256); the real client IP
+  is resolved through `TRUSTED_PROXIES`. Deactivate with `?__karbon_dev=off`.
+
+### Security
+- **Studio loopback bypass closed in release builds.** The `is_loopback()` shortcut in the
+  Studio guard now applies only to local debug builds. On a same-host reverse-proxy deploy the
+  peer is loopback, which previously exposed `/_studio` — release builds now require a valid
+  token or an active debug session.
+- Error masking is now decided **per request**: a live debug session sees full detail, all
+  other traffic keeps the production mask (unchanged default).
+
 ## [0.3.0] - 2026-07-01
 
 > Notable release: a security-hardening pass with several **breaking default changes**

@@ -1,4 +1,5 @@
 mod app;
+pub mod dev_mode;
 pub mod middleware;
 pub mod proxy;
 mod response;

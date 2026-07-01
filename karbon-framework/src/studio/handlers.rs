@@ -48,12 +48,17 @@ pub async fn studio_guard(
                 .is_some_and(|t| constant_time_eq(t, &state.token))
     };
 
-    if peer.ip().is_loopback() || token_ok {
+    // The loopback bypass is a *local dev* convenience only. In a release build the peer is
+    // the reverse proxy (also loopback on a same-host deploy), so trusting it would expose
+    // Studio to the whole internet. Release builds require a token or an active debug session.
+    let loopback_ok = cfg!(debug_assertions) && peer.ip().is_loopback();
+
+    if loopback_ok || token_ok || crate::http::dev_mode::active() {
         next.run(request).await
     } else {
         (
             StatusCode::UNAUTHORIZED,
-            "Unauthorized — Studio is localhost-only or requires a valid token",
+            "Unauthorized — Studio requires a valid token or an active debug session",
         )
             .into_response()
     }

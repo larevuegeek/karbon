@@ -87,6 +87,12 @@ pub async fn studio_toolbar_middleware(request: Request, next: Next) -> Response
     let response = next.run(request).await;
     let duration = start.elapsed();
 
+    // Only inject for requests running in debug mode (local dev, or a live debug session).
+    // Ordinary production traffic on a debug-configured binary never sees the toolbar.
+    if !crate::http::dev_mode::active() {
+        return response;
+    }
+
     // Only touch HTML responses.
     let is_html = response
         .headers()
@@ -244,10 +250,12 @@ mod tests {
         let app = Router::new()
             .route("/", get(|| async { Html("<html><body>hi</body></html>") }))
             .layer(axum::middleware::from_fn(studio_toolbar_middleware));
-        let res = app
-            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
+        let res = crate::http::dev_mode::scoped(
+            true,
+            app.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap()),
+        )
+        .await
+        .unwrap();
         let html = body_string(res).await;
         assert!(html.contains("karbon-toolbar"), "toolbar not injected");
         assert!(html.contains("hi"), "original content lost");
@@ -263,10 +271,12 @@ mod tests {
                 get(|| async { Json(serde_json::json!({"ok": true})) }),
             )
             .layer(axum::middleware::from_fn(studio_toolbar_middleware));
-        let res = app
-            .oneshot(Request::builder().uri("/api").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
+        let res = crate::http::dev_mode::scoped(
+            true,
+            app.oneshot(Request::builder().uri("/api").body(Body::empty()).unwrap()),
+        )
+        .await
+        .unwrap();
         let body = body_string(res).await;
         assert!(!body.contains("karbon-toolbar"));
     }
@@ -279,15 +289,17 @@ mod tests {
                 get(|| async { Html("<html><body>dash</body></html>") }),
             )
             .layer(axum::middleware::from_fn(studio_toolbar_middleware));
-        let res = app
-            .oneshot(
+        let res = crate::http::dev_mode::scoped(
+            true,
+            app.oneshot(
                 Request::builder()
                     .uri("/_studio")
                     .body(Body::empty())
                     .unwrap(),
-            )
-            .await
-            .unwrap();
+            ),
+        )
+        .await
+        .unwrap();
         let html = body_string(res).await;
         assert!(!html.contains("karbon-toolbar"));
     }
