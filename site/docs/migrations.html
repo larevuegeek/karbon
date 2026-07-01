@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Migrations — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Migrations" data-cat="Core concepts">
+<h1>Migrations</h1>
+<p class="lead-p">Karbon migrations are versioned, native (run through sqlx — no external <code>mysql</code>/<code>psql</code> binary) and entity-first: your entities are the source of truth, and <code>migrate diff</code> generates the SQL to match them.</p>
+
+<h2>The entity-first workflow</h2>
+<p>Generators do <b>not</b> write migrations. Instead, you define entities, then ask <code>migrate diff</code> to compare them against the live database and write the delta — the Doctrine approach.</p>
+<pre>karbon generate crud Post title:string body:text   # entity, repo, controller — no SQL
+karbon migrate diff init                            # writes migration/0001_init.sql
+karbon migrate                                      # applies it</pre>
+<p>Add a field to the entity later, and diff again:</p>
+<pre># add `rating:int` to the Post entity, then:
+karbon migrate diff add_rating
+# → ALTER TABLE posts ADD COLUMN rating … (with a matching DROP in -- migrate:down)
+karbon migrate</pre>
+
+<div class="note">
+<p><b>Additive and safe.</b> <code>migrate diff</code> only creates missing tables and columns. It never drops or alters existing schema, so an accidental field rename won't destroy data — review the generated file before applying it. When nothing changed, nothing is generated.</p>
+</div>
+
+<h2>Commands</h2>
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>karbon migrate</code></td><td>Apply all pending migrations (up)</td></tr>
+    <tr><td><code>karbon migrate status</code></td><td>List applied vs pending migrations</td></tr>
+    <tr><td><code>karbon migrate rollback</code></td><td>Undo the last applied migration (down)</td></tr>
+    <tr><td><code>karbon migrate diff [name]</code></td><td>Generate a migration from the entity ↔ DB diff</td></tr>
+  </tbody>
+</table>
+
+<h2>How the diff works</h2>
+<p><code>migrate diff</code>:</p>
+<ol>
+  <li>Detects the driver from the connection URL (SQLite / PostgreSQL / MySQL).</li>
+  <li>Introspects the database — <code>information_schema</code> for MySQL/PostgreSQL, <code>sqlite_master</code> + <code>PRAGMA table_info</code> for SQLite.</li>
+  <li>Parses <code>app/src/entity/*.rs</code> for structs with an <code>id</code> field, reading the table name from <code>#[table_name("…")]</code> (or the pluralised struct name) and the columns from the fields.</li>
+  <li>Computes the difference: a new entity → <code>CREATE TABLE</code>; a new field → <code>ALTER TABLE … ADD COLUMN</code>.</li>
+  <li>Writes a numbered file <code>migration/NNNN_&lt;name&gt;.sql</code> with up and down sections, using driver-correct DDL.</li>
+</ol>
+<p>Field Rust types map to driver-appropriate column types — for example <code>String</code> → <code>VARCHAR(255)</code> (or <code>TEXT</code> on SQLite), and <code>id</code> uses <code>AUTO_INCREMENT</code> / <code>BIGSERIAL</code> / <code>AUTOINCREMENT</code> respectively.</p>
+
+<h2>Migration file format</h2>
+<p>Migrations are plain <code>.sql</code> files with optional up/down sections (dbmate style):</p>
+<pre>-- migrate:up
+CREATE TABLE posts (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  title VARCHAR(255) NOT NULL,
+  body TEXT NOT NULL
+);
+
+-- migrate:down
+DROP TABLE posts;</pre>
+<p>Without a <code>-- migrate:up</code> marker, the whole file is treated as the up migration (no rollback). Files are numbered without collision — the next number is <code>max(NNNN) + 1</code>.</p>
+
+<h2>Versioning</h2>
+<p>A tracking table <code>_karbon_migrations</code> records which versions have been applied, so each file runs exactly once. <code>karbon migrate</code> reads <code>DATABASE_URL</code>, or the <code>DB_*</code> variables from <code>.env</code>, and supports MySQL/MariaDB and PostgreSQL through the sqlx <code>Any</code> driver.</p>
+
+<div class="note ok">
+<p><b>From Studio.</b> <code>migrate diff</code>, <code>migrate</code>, <code>status</code> and <code>rollback</code> are all available from the Studio Terminal tab (rollback asks for confirmation). See <a href="studio.html">Studio</a>.</p>
+</div>
+</article>
+</body>
+</html>

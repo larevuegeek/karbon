@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installation — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Installation" data-cat="Get started">
+<h1>Installation</h1>
+<p class="lead-p">Karbon needs a Rust toolchain and, for full-stack projects, Node.js. Install the <code>karbon</code> CLI once and use it for every project.</p>
+
+<h2>Prerequisites</h2>
+<table>
+  <thead><tr><th>Tool</th><th>Version</th><th>Needed for</th></tr></thead>
+  <tbody>
+    <tr><td>Rust</td><td>1.82+ (edition 2024)</td><td>Everything — the framework and CLI are Rust</td></tr>
+    <tr><td>Node.js</td><td>18+</td><td>The frontend (SvelteKit / Next.js). Not needed for <code>--skeleton micro</code></td></tr>
+    <tr><td>A database</td><td>MySQL 8 / MariaDB, PostgreSQL 13+, or SQLite</td><td>Optional — apps can run without one</td></tr>
+  </tbody>
+</table>
+
+<p>Install Rust with <a href="https://rustup.rs">rustup</a> if you don't have it:</p>
+<pre>curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustc --version   # should print 1.82 or newer</pre>
+
+<h2>Install the CLI</h2>
+<p>The CLI is published on crates.io:</p>
+<pre>cargo install karbon-cli</pre>
+<p>This installs a <code>karbon</code> binary into <code>~/.cargo/bin</code> (make sure that's on your <code>PATH</code>). Verify it:</p>
+<pre>karbon --version
+karbon --help</pre>
+
+<div class="note">
+<p><b>Updating.</b> Re-run <code>cargo install karbon-cli</code> to upgrade to the latest published version. Add <code>--force</code> to reinstall the same version.</p>
+</div>
+
+<h2>Check your environment</h2>
+<p>Karbon ships a diagnostic that flags common setup problems offline:</p>
+<pre>karbon doctor          # toolchain, project layout, config sanity
+karbon doctor --db     # also probes the database connection &amp; pending migrations</pre>
+<p><code>doctor</code> exits non-zero if it finds a blocking problem, so it's safe to run in CI.</p>
+
+<h2>Developing against a local checkout</h2>
+<p>The published crates pin a stable API. If you want to build against an unreleased version of the framework — for example to use the <code>studio</code> feature or to contribute — clone the repo and scaffold with <code>--local</code>:</p>
+<pre>git clone https://github.com/larevuegeek/karbon
+cd karbon
+cargo build -p karbon-cli
+./target/debug/karbon new demo --skeleton micro --local .   # . = the karbon checkout</pre>
+<p>With <code>--local</code>, the generated project's <code>karbon</code> dependency points at your checkout (a path dependency, with the <code>studio</code> feature enabled) instead of crates.io. Running <code>karbon doctor</code> in a project warns you when a dependency points at crates.io but you meant to use <code>--local</code>.</p>
+
+<div class="note ok">
+<p>Ready? Head to the <a href="quickstart.html">Quickstart</a> to scaffold and run your first app.</p>
+</div>
+</article>
+</body>
+</html>

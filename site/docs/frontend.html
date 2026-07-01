@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend & rendering — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Frontend & rendering" data-cat="Build">
+<h1>Frontend &amp; rendering</h1>
+<p class="lead-p">A full Karbon project pairs the Rust backend with a SvelteKit or Next.js frontend. In production a single binary serves both, proxying non-API requests to the Node SSR process. You can also render HTML server-side from Rust.</p>
+
+<h2>Choosing a frontend</h2>
+<pre>karbon new my-app                     # SvelteKit (default)
+karbon new my-app --frontend nextjs   # Next.js
+karbon new my-app --skeleton micro    # no frontend at all</pre>
+<p>The choice is recorded in <code>karbon.toml</code> under <code>[frontend] framework = "svelte" | "nextjs"</code>. A micro skeleton omits the section and serves an HTML welcome page from the backend.</p>
+
+<h2>Dev mode</h2>
+<p><code>karbon dev</code> runs the frontend's own dev server (Vite for SvelteKit) alongside the backend, both with hot-reload. Saving a Rust file recompiles and restarts the backend; the frontend reloads independently.</p>
+
+<h2>Production: one port</h2>
+<p><code>karbon serve</code> starts the Node SSR process and the Rust binary, and adds a fallback that proxies every non-API request to the frontend. This is driven by the <code>KARBON_FRONTEND_URL</code> environment variable, which <code>serve</code> sets automatically.</p>
+<pre>karbon build   # frontend build + cargo build --release
+karbon serve   # single public port; reverse proxy to SSR built in</pre>
+<div class="note">
+<p>Because everything is fronted by the Rust binary, you deploy and operate <b>one process</b> (plus the Node SSR child). See <a href="deployment.html">Deployment</a>.</p>
+</div>
+
+<h2>Server-side rendering from Rust</h2>
+<p>When you want Rust to render HTML directly, the <code>Renderer</code> trait abstracts over three interchangeable engines, selected by feature flag:</p>
+<table>
+  <thead><tr><th>Feature</th><th>Engine</th></tr></thead>
+  <tbody>
+    <tr><td><code>templates</code></td><td><code>TemplateEngine</code> (Tera) — filters + email rendering</td></tr>
+    <tr><td><code>minijinja</code></td><td><code>MinijinjaEngine</code></td></tr>
+    <tr><td><code>native-templates</code></td><td><code>NativeEngine</code> — a dependency-free in-house engine</td></tr>
+  </tbody>
+</table>
+<pre>use karbon::template::{Renderer, MinijinjaEngine};
+
+let engine = MinijinjaEngine::new("./templates")?;
+let html = engine.render("page.html", &amp;json!({ "title": "Hi" }))?;</pre>
+<p>The native engine supports <code>{{ var }}</code>, filters (<code>| upper</code>, <code>| safe</code>), <code>{% if/elif/else %}</code>, <code>{% for %}</code> with <code>loop.*</code>, template inheritance (<code>{% extends %}</code>/<code>{% block %}</code>), <code>{% include %}</code>, comments and auto-escaping. Application code can depend on <code>Arc&lt;dyn Renderer&gt;</code> so the backend is swappable.</p>
+
+<h2>Inertia &amp; LiveWire</h2>
+<p>For SPA-like apps without a separate API, use the Inertia.js adapter; for server-driven interactivity without a JS framework, use LiveWire components. Both are covered in <a href="realtime.html">Realtime &amp; background</a>.</p>
+
+<h2>The welcome page</h2>
+<p>A fresh full project ships a live mini-profiler home page (version, environment, features and entities, pulled from <code>/_studio/api/info</code>) with links to the API, the docs and Studio — a useful starting dashboard while you build.</p>
+</article>
+</body>
+</html>

@@ -43,7 +43,7 @@ impl RandomHelper {
     }
 
     /// Pick a random element from a slice
-    pub fn pick<'a, T>(items: &'a [T]) -> Option<&'a T> {
+    pub fn pick<T>(items: &[T]) -> Option<&T> {
         if items.is_empty() {
             return None;
         }

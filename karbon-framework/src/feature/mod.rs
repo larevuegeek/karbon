@@ -1,3 +1,3 @@
 mod feature_flags;
 
-pub use feature_flags::{FeatureFlags, FeatureFlag};
+pub use feature_flags::{FeatureFlag, FeatureFlags};

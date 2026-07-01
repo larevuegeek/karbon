@@ -1,7 +1,9 @@
-pub mod dev;
 pub mod build;
-pub mod serve;
-pub mod new;
+pub mod deploy;
+pub mod dev;
+pub mod docs;
+pub mod doctor;
 pub mod generate;
 pub mod migrate;
-pub mod deploy;
+pub mod new;
+pub mod serve;

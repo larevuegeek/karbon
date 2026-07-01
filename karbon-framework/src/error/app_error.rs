@@ -83,9 +83,17 @@ impl IntoResponse for AppError {
             tracing::error!(%status, error = %self, "Server error");
         }
 
-        // Dev: expose full error details — Prod: hide internal details
-        let is_dev = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string()) != "production";
-        let message = if !is_dev && status.is_server_error() {
+        // Secure by default: only expose full internal detail when the environment is
+        // EXPLICITLY development or test. Any other value — production, a custom env, or
+        // unset — masks server errors, so a misconfigured `APP_ENV` fails safe instead of
+        // leaking raw sqlx/driver messages to clients.
+        let is_dev = matches!(
+            crate::config::Environment::from_name(
+                std::env::var("APP_ENV").unwrap_or_default().trim()
+            ),
+            crate::config::Environment::Development | crate::config::Environment::Test
+        );
+        let message = if status.is_server_error() && !is_dev {
             "Une erreur interne est survenue".to_string()
         } else {
             self.to_string()

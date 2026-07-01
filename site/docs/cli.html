@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLI reference — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="CLI reference" data-cat="Core concepts">
+<h1>CLI reference</h1>
+<p class="lead-p">The <code>karbon</code> binary covers the whole lifecycle of a project. Every command is listed here with its key flags.</p>
+
+<h2>new</h2>
+<p>Scaffold a new project.</p>
+<pre>karbon new my-app                     # SvelteKit (default)
+karbon new my-app --frontend nextjs   # Next.js frontend
+karbon new my-app --skeleton micro    # backend-only (no frontend)
+karbon new my-app --template blog     # Post CRUD + admin starter
+karbon new my-app --local ./karbon    # depend on a local framework checkout</pre>
+<table>
+  <thead><tr><th>Flag</th><th>Values</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>--frontend</code></td><td><code>svelte</code> / <code>nextjs</code></td><td><code>svelte</code></td></tr>
+    <tr><td><code>--skeleton</code></td><td><code>full</code> / <code>micro</code></td><td><code>full</code></td></tr>
+    <tr><td><code>--template</code></td><td><code>blog</code></td><td>—</td></tr>
+    <tr><td><code>--local</code></td><td>path to karbon repo</td><td>crates.io</td></tr>
+  </tbody>
+</table>
+
+<h2>dev</h2>
+<p>Run the backend and frontend together with hot-reload. A native file watcher recompiles and restarts the backend when you save a Rust file; the frontend runs its own dev server (Vite). Studio is available in dev.</p>
+<pre>karbon dev</pre>
+
+<h2>build / serve</h2>
+<pre>karbon build    # npm build + cargo build --release
+karbon serve    # run production on a single port (reverse proxy to Node SSR built in)</pre>
+<p><code>serve</code> starts the Node SSR process and the Rust binary, and proxies non-API requests to the frontend. Set <code>KARBON_FRONTEND_URL</code> to point the proxy elsewhere (done automatically by <code>serve</code>).</p>
+
+<h2>generate (alias: g)</h2>
+<p>Code generators. Routes and OpenAPI paths are wired into <code>main.rs</code> automatically.</p>
+<pre>karbon generate entity Post title:string body:text published:bool
+karbon generate entity Post -i        # interactive field assistant
+karbon generate controller Post       # controller stub (validated routes)
+karbon generate crud Post title:string body:text   # entity + repo + controller
+karbon generate admin Post            # field-aware back-office (run after crud)
+karbon g crud Post --dry-run          # preview without writing
+karbon g crud Post --force            # overwrite existing files</pre>
+<p>Field syntax: <code>name:type</code> with a trailing <code>?</code> for nullable. Types: <code>string</code>, <code>text</code>, <code>int</code>, <code>bigint</code>, <code>float</code>, <code>bool</code>, <code>datetime</code>, <code>date</code>, <code>json</code>. See <a href="generators.html">Generators</a>.</p>
+
+<h2>migrate</h2>
+<p>Versioned, native migrations (run through sqlx — no <code>mysql</code>/<code>psql</code> binary needed).</p>
+<pre>karbon migrate              # apply pending migrations
+karbon migrate status       # list applied / pending
+karbon migrate rollback     # undo the last applied migration (down)
+karbon migrate diff [name]  # generate a migration from the entity ↔ DB diff</pre>
+<p><code>migrate diff</code> is the entity-first workflow: it introspects the database, parses <code>app/src/entity/*.rs</code>, and writes a migration for the differences. See <a href="migrations.html">Migrations</a>.</p>
+
+<h2>doctor</h2>
+<pre>karbon doctor        # offline diagnostics (toolchain, layout, config)
+karbon doctor --db   # also probe the DB connection &amp; pending migrations</pre>
+<p>Exits non-zero on a blocking problem — safe for CI.</p>
+
+<h2>docs</h2>
+<pre>karbon docs build    # render docs/**.md → static site in docs/_site/</pre>
+<p>The same Markdown sources feed the Docs tab in Studio.</p>
+
+<h2>deploy</h2>
+<pre>karbon deploy docker          # multi-stage Dockerfile + .dockerignore
+karbon deploy paas            # fly.toml, render.yaml, Procfile
+karbon deploy fly             # deploy via flyctl
+karbon deploy railway         # deploy via railway up
+karbon deploy publish         # rsync artifacts (local or SSH)
+karbon deploy publish:build   # build then publish
+karbon deploy ssh             # legacy alias of publish:build</pre>
+<p>Targets are configured in the <code>[deploy]</code> section of <code>karbon.toml</code>. See <a href="deployment.html">Deployment</a>.</p>
+
+<div class="note">
+<p><b>Tip.</b> Most generators and migration commands are also available from the Studio <b>Terminal</b> tab — a whitelisted, no-shell runner with a scaffolding form. See <a href="studio.html">Studio</a>.</p>
+</div>
+</article>
+</body>
+</html>

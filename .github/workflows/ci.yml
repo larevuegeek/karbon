@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-and-test:
+    name: Build & test (${{ matrix.driver }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - driver: mysql
+            features: ""            # mysql is the default feature
+          - driver: postgres
+            features: "--no-default-features --features postgres"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build framework (${{ matrix.driver }})
+        run: cargo build -p karbon-framework ${{ matrix.features }}
+
+      - name: Build CLI & macros
+        run: cargo build -p karbon-cli -p karbon-macros
+
+      - name: Run tests
+        run: cargo test --workspace
+
+  cli-e2e:
+    name: CLI e2e (scaffold → compile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build CLI
+        run: cargo build -p karbon-cli
+
+      # Fast scaffold/doctor/generator tests run in `cargo test --workspace` above;
+      # this runs the heavy `#[ignore]`d test that scaffolds a project and compiles
+      # it against the local framework (macros + ORM + route auto-wiring end-to-end).
+      - name: Scaffold a project and compile it
+        run: cargo test -p karbon-cli --test scaffold -- --ignored
+
+  lint:
+    name: Lint (fmt + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: rustfmt
+        run: cargo fmt --check
+
+      - name: clippy (default / mysql)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: clippy (postgres + studio + templates)
+        run: cargo clippy -p karbon-framework --no-default-features --features postgres,studio,templates --all-targets -- -D warnings

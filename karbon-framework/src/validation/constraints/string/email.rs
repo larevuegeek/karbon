@@ -67,9 +67,9 @@ impl Email {
         }
 
         // Local part: allowed characters
-        let valid_local = local.chars().all(|c| {
-            c.is_alphanumeric() || ".!#$%&'*+/=?^_`{|}~-".contains(c)
-        });
+        let valid_local = local
+            .chars()
+            .all(|c| c.is_alphanumeric() || ".!#$%&'*+/=?^_`{|}~-".contains(c));
 
         if !valid_local {
             return false;
@@ -87,11 +87,7 @@ impl Email {
 impl Constraint for Email {
     fn validate(&self, value: &str) -> ConstraintResult {
         if !Self::is_valid_email(value) {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                value,
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, value));
         }
         Ok(())
     }

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deployment — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Deployment" data-cat="Operate">
+<h1>Deployment</h1>
+<p class="lead-p">Karbon builds to a single Rust binary that fronts the whole app. <code>karbon deploy</code> targets a VPS over SSH, a Docker image, or a PaaS — generating the configs you need.</p>
+
+<h2>Build for production</h2>
+<pre>karbon build   # frontend build + cargo build --release
+karbon serve   # run on a single port (reverse proxy to Node SSR built in)</pre>
+<p>For a micro skeleton there's no frontend step — it's just the release binary.</p>
+
+<h2>Deploy to a VPS</h2>
+<pre>karbon deploy publish         # rsync artifacts (no rebuild)
+karbon deploy publish:build   # build then publish
+karbon deploy ssh             # legacy alias of publish:build</pre>
+<p>Configure the target in <code>karbon.toml</code>:</p>
+<pre>[deploy]
+path = "/var/www/my-app"
+user = "www-data"                    # optional — owner for chown
+group = "www-data"                   # optional — defaults to user
+manager = "pm2"                      # "pm2" or "systemd"
+pm2_config = "ecosystem.config.cjs"  # PM2 file (default)
+service = "my-app"                    # systemd service name (default: app.name)
+host = "user@server"                 # optional — omit for a local deploy</pre>
+<p>If <code>user</code> is set, <code>chown -R user:group</code> runs after the sync (<code>group</code> falls back to <code>user</code>). The process manager is either <b>PM2</b> (with the given ecosystem file) or <b>systemd</b> (the named service).</p>
+<div class="note">
+<p><b>Hardened scripts.</b> Every value injected into a shell command passes through <code>validate_shell_safe()</code>, and the database password is passed via an environment variable (<code>MYSQL_PWD</code>) rather than a command-line argument.</p>
+</div>
+
+<h2>Docker</h2>
+<pre>karbon deploy docker   # multi-stage Dockerfile + .dockerignore</pre>
+<p>Generates an optimised multi-stage build: a builder stage compiles the release binary (and the frontend, unless micro), and a slim runtime stage runs it. The backend-only case produces a backend-only image.</p>
+
+<h2>PaaS</h2>
+<pre>karbon deploy paas      # generate fly.toml, render.yaml, Procfile
+karbon deploy fly       # deploy via flyctl (generates config as needed)
+karbon deploy railway    # deploy via railway up</pre>
+
+<h2>Production checklist</h2>
+<ul>
+  <li>Set <code>APP_ENV=production</code> — internal error details are then hidden from clients.</li>
+  <li>Set a strong <code>JWT_SECRET</code> (or leave empty to disable auth deliberately).</li>
+  <li>Provide database credentials via <code>DATABASE_URL</code> or <code>DB_*</code>.</li>
+  <li>Run <code>karbon migrate</code> on the target before serving traffic.</li>
+  <li>Run <code>karbon doctor --db</code> to confirm connectivity and that no migrations are pending.</li>
+  <li>Decide on rate limiting based on your proxy/NAT topology (it's opt-in).</li>
+  <li>Terminate TLS at your proxy or platform — cookies become <code>Secure</code> over HTTPS automatically.</li>
+</ul>
+
+<div class="note ok">
+<p>Because the Rust binary reverse-proxies the frontend, you operate <b>one service</b> in production. See <a href="frontend.html">Frontend &amp; rendering</a> for how the single-port model works.</p>
+</div>
+</article>
+</body>
+</html>

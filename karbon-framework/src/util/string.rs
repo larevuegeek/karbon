@@ -64,14 +64,14 @@ impl StringHelper {
     pub fn title_case(value: &str) -> String {
         value
             .split_whitespace()
-            .map(|word| Self::capitalize(word))
+            .map(Self::capitalize)
             .collect::<Vec<_>>()
             .join(" ")
     }
 
     /// Convert to camelCase
     pub fn camel_case(value: &str) -> String {
-        let parts: Vec<&str> = value.split(|c: char| c == '_' || c == '-' || c == ' ').collect();
+        let parts: Vec<&str> = value.split(['_', '-', ' ']).collect();
         let mut result = String::new();
         for (i, part) in parts.iter().enumerate() {
             if part.is_empty() {
@@ -193,7 +193,7 @@ impl StringHelper {
         if current_len >= length {
             return value.to_string();
         }
-        let padding: String = std::iter::repeat(pad_char).take(length - current_len).collect();
+        let padding: String = std::iter::repeat_n(pad_char, length - current_len).collect();
         format!("{}{}", padding, value)
     }
 
@@ -203,7 +203,7 @@ impl StringHelper {
         if current_len >= length {
             return value.to_string();
         }
-        let padding: String = std::iter::repeat(pad_char).take(length - current_len).collect();
+        let padding: String = std::iter::repeat_n(pad_char, length - current_len).collect();
         format!("{}{}", value, padding)
     }
 }
@@ -216,7 +216,10 @@ mod tests {
     fn test_truncate() {
         assert_eq!(StringHelper::truncate("Hello World", 5, None), "Hello...");
         assert_eq!(StringHelper::truncate("Hi", 5, None), "Hi");
-        assert_eq!(StringHelper::truncate("Hello World", 5, Some("…")), "Hello…");
+        assert_eq!(
+            StringHelper::truncate("Hello World", 5, Some("…")),
+            "Hello…"
+        );
     }
 
     #[test]
@@ -277,7 +280,10 @@ mod tests {
 
     #[test]
     fn test_mask_email() {
-        assert_eq!(StringHelper::mask_email("user@example.com"), "us***@***.com");
+        assert_eq!(
+            StringHelper::mask_email("user@example.com"),
+            "us***@***.com"
+        );
         assert_eq!(StringHelper::mask_email("a@b.io"), "a***@***.io");
     }
 

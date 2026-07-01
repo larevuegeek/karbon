@@ -60,20 +60,19 @@ pub enum Rotation {
 }
 
 /// Output format with quality settings
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum OutputFormat {
-    Jpeg { quality: u8 },
-    Png { compression: PngCompression },
+    Jpeg {
+        quality: u8,
+    },
+    Png {
+        compression: PngCompression,
+    },
     WebP,
     Gif,
     /// Auto-detect from output file extension
+    #[default]
     Auto,
-}
-
-impl Default for OutputFormat {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 /// PNG compression level
@@ -113,6 +112,8 @@ pub struct ImageProcessor {
     output_format: OutputFormat,
     watermark: Option<Watermark>,
     upscale: bool,
+    /// When false (default), EXIF orientation is auto-applied on load.
+    disable_auto_orient: bool,
 }
 
 /// Manual crop region (in pixels from source image)
@@ -221,9 +222,19 @@ impl ImageProcessor {
         self
     }
 
+    /// Keep the original EXIF orientation instead of auto-applying it.
+    ///
+    /// By default the processor reads the EXIF orientation tag (set by phone
+    /// cameras) and rotates/flips the pixels so the image displays upright,
+    /// dropping the now-redundant metadata. Call this to opt out.
+    pub fn keep_orientation(mut self) -> Self {
+        self.disable_auto_orient = true;
+        self
+    }
+
     /// Apply a watermark image
     ///
-    /// ```rust
+    /// ```ignore
     /// processor.watermark("./logo.png", CropAnchor::BottomRight, 50, 15, 10)
     /// ```
     /// - `path`: path to watermark image (PNG with transparency recommended)
@@ -318,9 +329,21 @@ impl ImageProcessor {
         limits.max_alloc = Some(MAX_PIXEL_COUNT * 4); // 4 bytes per pixel (RGBA)
         limited_reader.limits(limits);
 
-        let img = limited_reader
-            .decode()
+        // Decode via the decoder so we can read the EXIF orientation first.
+        use image::ImageDecoder;
+        let mut decoder = limited_reader
+            .into_decoder()
             .map_err(|e| AppError::BadRequest(format!("Failed to decode image: {}", e)))?;
+        let orientation = decoder
+            .orientation()
+            .unwrap_or(image::metadata::Orientation::NoTransforms);
+        let mut img = DynamicImage::from_decoder(decoder)
+            .map_err(|e| AppError::BadRequest(format!("Failed to decode image: {}", e)))?;
+
+        // Auto-apply EXIF orientation (upright pixels, metadata dropped) unless opted out.
+        if !self.disable_auto_orient {
+            img.apply_orientation(orientation);
+        }
 
         // Double check pixel count
         let (w, h) = (img.width(), img.height());
@@ -437,7 +460,12 @@ impl ImageProcessor {
         let y = y + wm.margin;
 
         // Overlay
-        imageops::overlay(&mut base, &DynamicImage::ImageRgba8(wm_rgba), x as i64, y as i64);
+        imageops::overlay(
+            &mut base,
+            &DynamicImage::ImageRgba8(wm_rgba),
+            x as i64,
+            y as i64,
+        );
 
         Ok(base)
     }
@@ -459,9 +487,7 @@ impl ImageProcessor {
         }
 
         let result = match self.resize_mode {
-            ResizeMode::Fit => {
-                img.resize(target_w, target_h, imageops::FilterType::CatmullRom)
-            }
+            ResizeMode::Fit => img.resize(target_w, target_h, imageops::FilterType::CatmullRom),
             ResizeMode::Stretch => {
                 img.resize_exact(target_w, target_h, imageops::FilterType::CatmullRom)
             }
@@ -475,9 +501,7 @@ impl ImageProcessor {
                 let new_w = (src_w as f64 * ratio).round() as u32;
                 img.resize_exact(new_w.max(1), target_h, imageops::FilterType::CatmullRom)
             }
-            ResizeMode::Cover => {
-                self.apply_cover_resize(img, target_w, target_h)?
-            }
+            ResizeMode::Cover => self.apply_cover_resize(img, target_w, target_h)?,
         };
 
         Ok(result)
@@ -629,12 +653,7 @@ impl ImageProcessor {
 }
 
 /// Simple shortcut: generate a thumbnail (backward compatible)
-pub fn generate_thumbnail(
-    source: &Path,
-    dest: &Path,
-    width: u32,
-    height: u32,
-) -> AppResult<()> {
+pub fn generate_thumbnail(source: &Path, dest: &Path, width: u32, height: u32) -> AppResult<()> {
     ImageProcessor::new()
         .resize(width, height)
         .mode(ResizeMode::Fit)
@@ -717,7 +736,10 @@ mod tests {
     #[test]
     fn test_jpeg_quality_clamped() {
         let processor = ImageProcessor::new().jpeg(150);
-        assert!(matches!(processor.output_format, OutputFormat::Jpeg { quality: 100 }));
+        assert!(matches!(
+            processor.output_format,
+            OutputFormat::Jpeg { quality: 100 }
+        ));
     }
 
     #[test]

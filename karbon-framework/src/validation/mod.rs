@@ -1,7 +1,12 @@
-mod validator;
 mod async_validator;
+mod builder;
 pub mod constraints;
+pub mod route;
+mod validator;
 
-pub use validator::{validate_request, validate_input};
 pub use async_validator::AsyncValidator;
-pub use constraints::{Constraint, ConstraintResult, ConstraintViolation, NumericConstraint, CollectionConstraint};
+pub use builder::{ValidationErrors, Validator};
+pub use constraints::{
+    CollectionConstraint, Constraint, ConstraintResult, ConstraintViolation, NumericConstraint,
+};
+pub use validator::{validate_input, validate_request};

@@ -1,5 +1,5 @@
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 
 use super::collector::StudioCollector;
 use super::handlers::{self, StudioState};
@@ -12,7 +12,7 @@ use super::handlers::{self, StudioState};
 /// - The token is printed to the console for the developer
 ///
 /// ```ignore
-/// use framework::studio;
+/// use karbon::studio;
 ///
 /// let (studio_router, collector, token) = studio::build();
 /// tracing::info!("Studio: http://localhost:{}/_studio?token={}", port, token);
@@ -22,13 +22,14 @@ use super::handlers::{self, StudioState};
 ///     .layer(middleware::from_fn(studio::middleware::studio_middleware))
 ///     .layer(Extension(collector));
 /// ```
-pub fn build() -> (Router, StudioCollector, String) {
+pub fn build(db: Option<crate::db::DbPool>) -> (Router, StudioCollector, String) {
     let collector = StudioCollector::new();
     let token = generate_token();
 
     let state = StudioState {
         collector: collector.clone(),
         token: token.clone(),
+        db,
     };
 
     let router = Router::new()
@@ -38,7 +39,15 @@ pub fn build() -> (Router, StudioCollector, String) {
         .route("/ws", get(handlers::ws_handler))
         .route("/api/data", get(handlers::api_data))
         .route("/api/stats", get(handlers::api_stats))
+        .route("/api/info", get(handlers::api_info))
+        .route("/api/database", get(handlers::api_database))
+        .route("/api/terminal", post(handlers::api_terminal))
+        .route("/api/docs", get(handlers::api_docs))
         .route("/api/clear", post(handlers::api_clear))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            handlers::studio_guard,
+        ))
         .with_state(state);
 
     (router, collector, token)

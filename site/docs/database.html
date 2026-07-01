@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Database & ORM — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Database & ORM" data-cat="Core concepts">
+<h1>Database &amp; ORM</h1>
+<p class="lead-p">Karbon supports MySQL, PostgreSQL and SQLite behind feature flags, with a repository trait, a typed and injection-safe query builder, derive macros for inserts/updates, and helpers for relations.</p>
+
+<h2>Choosing a driver</h2>
+<p>MySQL is the default. Switch drivers with feature flags on the <code>karbon</code> dependency:</p>
+<pre># MySQL (default)
+karbon = { package = "karbon-framework", version = "0.2" }
+
+# PostgreSQL
+karbon = { package = "karbon-framework", version = "0.2",
+           default-features = false, features = ["postgres"] }
+
+# SQLite (demos, embedded, small sites)
+karbon = { package = "karbon-framework", version = "0.2",
+           default-features = false, features = ["sqlite"] }</pre>
+<p>The query builders and macros use driver-abstract helpers (<code>placeholder(n)</code>, <code>insert_sql()</code>, <code>last_insert_id()</code>), so there's no hardcoded SQL dialect in your code. For PostgreSQL, <code>INSERT</code> uses <code>RETURNING id</code>, so <code>id</code> columns must be <code>bigserial</code>.</p>
+
+<div class="note">
+<p><b>Optional database.</b> If <code>DB_NAME</code> is empty the app starts <b>without connecting</b> — the pool is lazy and never used. <code>Config::has_database()</code> reports the mode. <code>JWT_SECRET</code> empty disables auth.</p>
+</div>
+
+<h2>Entities &amp; CrudRepository</h2>
+<p>An entity is a struct with an <code>id</code>. Implementing <code>CrudRepository</code> gives it a full set of query methods:</p>
+<pre>impl CrudRepository for Post {
+    const TABLE: &amp;'static str = "posts";
+    const ENTITY_NAME: &amp;'static str = "Article";
+    const HAS_SLUG: bool = true;
+    const SOFT_DELETE: bool = true;   // soft delete via deleted_at
+}</pre>
+<p>You get <code>find_by_id</code>, <code>find_by_slug</code>, <code>find_all</code>, <code>count</code>, <code>delete</code>, <code>exists</code>, <code>find_where</code>, <code>find_all_where</code>. With <code>SOFT_DELETE</code>, <code>delete()</code> sets <code>deleted_at = NOW()</code> and you gain <code>restore()</code>, <code>force_delete()</code> and <code>find_all_with_trashed()</code>.</p>
+
+<h2>SelectBuilder</h2>
+<p>A typed query builder. Every value is bound — there is no string interpolation of user data, and identifiers (table, column, join, order_by) are validated to reject injection.</p>
+<pre>use karbon::db::{SelectBuilder, Order};
+
+let users: Vec&lt;User&gt; = SelectBuilder::table("users")
+    .columns("id, name, email")
+    .where_eq("active", true)
+    .where_like("name", "%alice%")
+    .where_gt("age", 18)
+    .where_in("role", &amp;["admin", "editor"])
+    .where_null("deleted_at")
+    .order_by("created_at", Order::Desc)
+    .limit(20)
+    .fetch_all(&amp;pool)
+    .await?;</pre>
+<p>Supported clauses: <code>where_eq</code>, <code>where_ne</code>, <code>where_gt/gte/lt/lte</code>, <code>where_like</code>, <code>where_null/not_null</code>, <code>where_in</code>, <code>where_raw</code>, <code>join</code>, <code>group_by</code>, <code>order_by</code>, <code>limit</code>, <code>offset</code>. Execute with <code>fetch_all()</code>, <code>fetch_one()</code> or <code>count()</code>.</p>
+
+<h2>Insertable &amp; Updatable</h2>
+<p>Derive inserts and updates from a struct. <code>#[timestamps]</code> fills <code>created_at</code>/<code>updated_at</code>; <code>#[slug_from(...)]</code> generates a slug when empty.</p>
+<pre>#[derive(karbon::Insertable)]
+#[table_name("posts")]
+#[timestamps]
+pub struct NewPost {
+    pub title: String,
+    #[slug_from("title")]
+    pub slug: String,
+    pub body: String,
+}
+
+#[derive(karbon::Updatable)]
+#[table_name("posts")]
+#[timestamps]
+pub struct UpdatePost {
+    #[primary_key] pub id: i64,
+    pub title: Option&lt;String&gt;,
+}
+
+let id = NewPost { /* … */ }.insert(state.db.pool()).await?;</pre>
+
+<h2>Transactions</h2>
+<pre>let mut tx = state.db.begin().await?;
+NewPost { /* … */ }.insert(&amp;mut *tx).await?;
+tx.commit().await?;</pre>
+
+<h2>Relations</h2>
+<p>On <code>CrudRepository</code>: <code>has_many</code> (1-N), belongs-to via <code>find_by_id</code>, and <code>load_grouped_by</code> for batch loading that avoids the N+1 problem.</p>
+<pre>let comments = Comment::has_many(pool, "post_id", post.id).await?;       // 1-N
+let parent   = Post::find_by_id(pool, comment.post_id).await?;           // belongs-to
+let by_post  = Comment::load_grouped_by(pool, "post_id", &amp;ids, |c| c.post_id).await?;</pre>
+
+<h2>Seeding</h2>
+<pre>impl Seeder for UserSeeder {
+    fn name(&amp;self) -&gt; &amp;str { "users" }
+    fn seed&lt;'a&gt;(&amp;'a self, pool: &amp;'a DbPool)
+        -&gt; Pin&lt;Box&lt;dyn Future&lt;Output = AppResult&lt;()&gt;&gt; + Send + 'a&gt;&gt; {
+        Box::pin(async move { /* … */ Ok(()) })
+    }
+}
+run_seeders(pool, &amp;[Box::new(UserSeeder)]).await?;</pre>
+
+<div class="note ok">
+<p>Entities are also the <b>source of truth for migrations</b>. Once you've defined them, run <code>karbon migrate diff</code> to generate the schema. See <a href="migrations.html">Migrations</a>.</p>
+</div>
+</article>
+</body>
+</html>

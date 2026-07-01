@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Realtime & background — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Realtime & background" data-cat="Build">
+<h1>Realtime &amp; background work</h1>
+<p class="lead-p">WebSocket channels for realtime, plus a message bus, jobs and events for async work — all in-process, with the option to persist jobs to the database.</p>
+
+<h2>WebSocket channels</h2>
+<p><code>ChannelRegistry</code> manages rooms: clients join/leave, and you broadcast from anywhere — a controller, a job, an event handler.</p>
+<pre>use karbon::channel::ChannelRegistry;
+
+let channels = ChannelRegistry::new();
+
+Router::new().route("/ws/channels",
+    get(|ws: WebSocketUpgrade, State(ch): State&lt;ChannelRegistry&gt;|
+        ws.on_upgrade(move |socket| ch.handle_socket(socket))));
+
+channels.broadcast("chat/room-1", "new_message", &amp;message).await;</pre>
+<p>The client JSON protocol:</p>
+<pre>{"channel": "chat/room-1", "event": "join",    "payload": {}}
+{"channel": "chat/room-1", "event": "message", "payload": {"text": "hello"}}
+{"channel": "chat/room-1", "event": "leave",   "payload": {}}</pre>
+
+<h2>Message bus</h2>
+<p>A unified bus (Symfony Messenger style) that generalises events (fan-out) and jobs (background + retry). Handlers are fallible; two transports — sync and background — with retry/backoff and a dead-letter path.</p>
+<pre>use karbon::message::{Message, MessageBus, RetryPolicy};
+
+struct SendWelcome { email: String }
+impl Message for SendWelcome {}
+
+let bus = MessageBus::new(4);          // 4 background workers
+bus.handle::&lt;SendWelcome, _, _&gt;(|msg| async move {
+    send_email(&amp;msg.email).await?;     // -&gt; anyhow::Result&lt;()&gt;
+    Ok(())
+}).await;
+
+bus.dispatch(SendWelcome { email }).await?;       // sync: run &amp; await result
+bus.dispatch_async(SendWelcome { email }).await;  // background: worker + retry</pre>
+<p>Use <code>MessageBus::with_retry(workers, RetryPolicy { max_retries, backoff })</code> to tune retries.</p>
+
+<h2>Background jobs</h2>
+<pre>let queue = JobQueue::new(4);          // 4 workers
+queue.push(SendEmailJob { to: "foo@bar.com".into() }).await;</pre>
+<p>For jobs that must survive a restart, use the persistent queue backed by a <code>_karbon_jobs</code> table:</p>
+<pre>let queue = PersistentQueue::builder(pool)
+    .register::&lt;SendEmailJob&gt;()
+    .build();
+queue.migrate().await?;
+queue.push(&amp;job).await?;
+queue.start(interval).await;           // retry + dead-letter</pre>
+
+<h2>Events</h2>
+<pre>let bus = EventBus::new();
+bus.on::&lt;UserCreated&gt;(|event| async move { /* send email */ }).await;
+bus.emit(UserCreated { user_id: 1 }).await;</pre>
+
+<h2>LiveWire components</h2>
+<p>Server-rendered interactive components — HTML over WebSocket, no JS framework. The server renders, handles events and re-renders; the client patches the DOM.</p>
+<pre>impl LiveComponent for Counter {
+    fn render(&amp;self) -&gt; String {
+        format!("&lt;span&gt;{}&lt;/span&gt;&lt;button lw-click=\"inc\"&gt;+&lt;/button&gt;", self.count)
+    }
+    // handle_event(&amp;mut self, event, params) → mutate state
+}</pre>
+<p>Client directives: <code>lw-click</code>, <code>lw-submit</code>, <code>lw-input</code>, <code>lw-param-*</code>, with automatic reconnect.</p>
+
+<h2>Inertia.js adapter</h2>
+<p>Return pages instead of JSON: the first visit serves full HTML, subsequent navigations return JSON and the client swaps the component.</p>
+<pre>Inertia::render("Dashboard", json!({ "user": user, "stats": stats }))
+Inertia::location("/dashboard")   // after POST/PUT/DELETE</pre>
+
+<h2>Other building blocks</h2>
+<ul>
+  <li><b>Cache</b> — memory / file / Redis backends behind one <code>Cache</code> facade, with tags and a <code>remember()</code> cache-aside helper, plus an HTTP cache (ETag + 304) middleware.</li>
+  <li><b>Mail</b> — SMTP via lettre, integrated with the template engine.</li>
+  <li><b>i18n</b> — <code>I18n::t("key")</code> and <code>t_with</code> for interpolation.</li>
+  <li><b>Images</b> — a full <code>ImageProcessor</code> pipeline (resize, crop, watermark, formats) with EXIF auto-orientation.</li>
+  <li><b>Scraping</b> — a polite HTTP client with CSS parsing and <code>robots.txt</code> checks (feature <code>scraping</code>).</li>
+  <li><b>HMR</b> — a dev file watcher that hot-swaps CSS and reloads on other changes.</li>
+</ul>
+</article>
+</body>
+</html>

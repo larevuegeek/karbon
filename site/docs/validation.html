@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Validation — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Validation" data-cat="Core concepts">
+<h1>Validation</h1>
+<p class="lead-p">Karbon validates input at two layers: declarative rules on route parameters (rejected before your handler runs), and a composable validator for request bodies that aggregates every violation.</p>
+
+<h2>Route parameter validation</h2>
+<p>Declare a rule next to the path in the method attribute. The macro injects the check after the role check and before your handler body, returning <code>400</code> if the value is invalid. The binding name must equal the path parameter name.</p>
+<pre>#[karbon::get("/{id}", id = "int:min=1")]
+#[karbon::get("/{slug}", slug = "slug")]
+#[karbon::get("/{status}", status = "enum:draft|published")]
+#[karbon::get("/{code}", code = "regex:^[A-Z]{2}[0-9]{2}$")]</pre>
+<div class="note">
+<p>The parameter's <b>type</b> is already enforced by the Axum extractor (<code>Path&lt;i64&gt;</code> → 400 on a non-integer). These rules add <b>value</b> constraints on top.</p>
+</div>
+
+<h3>Rule grammar</h3>
+<table>
+  <thead><tr><th>Rule</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>int</code>, <code>int:min=N</code>, <code>int:max=N</code></td><td>Integer, optionally bounded (combine: <code>int:min=1:max=100</code>)</td></tr>
+    <tr><td><code>string</code>, <code>string:minlen=N</code>, <code>string:maxlen=N</code></td><td>String length bounds</td></tr>
+    <tr><td><code>slug</code></td><td><code>^[a-z0-9-]+$</code></td></tr>
+    <tr><td><code>uuid</code></td><td>A canonical UUID</td></tr>
+    <tr><td><code>enum:a|b|c</code></td><td>One of the listed values</td></tr>
+    <tr><td><code>regex:^…$</code></td><td>Matches the pattern (compiled regexes are cached)</td></tr>
+  </tbody>
+</table>
+<p>You can also call the validator directly: <code>karbon::validation::route::validate("id", &amp;id, "int:min=1")?</code>.</p>
+
+<h2>The composable validator</h2>
+<p>For request bodies, <code>Validator</code> collects <b>all</b> violations per field instead of failing on the first one — ideal for forms.</p>
+<pre>use karbon::validation::{Validator, constraints::string::{Length, NotBlank}};
+
+let mut v = Validator::new();
+v.field("name", &amp;input.name, &amp;[&amp;NotBlank::new(), &amp;Length::new().min(2).max(50)]);
+v.check("age", input.age &gt;= 18, "Vous devez être majeur");
+v.nested("address", address_errors);    // nested → "address.city"
+v.into_result()?;                        // AppError::Validation listing everything, or Ok</pre>
+<p>Validation groups let you reuse a struct across create/update scenarios:</p>
+<pre>let mut v = Validator::for_groups(["create"]);
+v.field_in("create", "email", &amp;input.email, &amp;[&amp;NotBlank::new()]);</pre>
+
+<h2>Derive &amp; async validators</h2>
+<p>The <code>validator</code> derive (<code>validate_request</code>) covers attribute-based field rules, while <code>AsyncValidator</code> handles checks that need the database — uniqueness, for example:</p>
+<pre>// reject if the email already exists
+async fn validate(&amp;self, pool: &amp;DbPool) -&gt; AppResult&lt;()&gt; {
+    if User::exists(pool, "email", &amp;self.email).await? {
+        return Err(AppError::validation("email", "Email déjà utilisé"));
+    }
+    Ok(())
+}</pre>
+
+<h2>Forms</h2>
+<p>The form builder (Symfony-style) binds, validates and renders HTML with CSRF and auto-escaping in one place:</p>
+<pre>use karbon::form::{Form, Field};
+use karbon::validation::constraints::string::Length;
+
+let mut form = Form::new()
+    .add(Field::text("title", "Titre").required().constraint(Length::new().min(3)))
+    .add(Field::textarea("body", "Contenu").required())
+    .csrf(token);
+
+if form.handle(&amp;submitted) {
+    let title = form.value("title").unwrap_or_default();
+} else {
+    let html = form.render();   // re-render with errors
+}</pre>
+
+<div class="note ok">
+<p>Validation errors become <code>AppError::Validation</code>, which the framework turns into a <code>400</code> with a structured body. User-facing messages are written in French by convention.</p>
+</div>
+</article>
+</body>
+</html>

@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
-use serde::Serialize;
 use axum::extract::ws::{Message, WebSocket};
 use futures::{SinkExt, StreamExt};
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use tokio::sync::{RwLock, broadcast};
 
 /// Internal message routed through the broadcast channel
 #[derive(Debug, Clone)]
@@ -26,8 +26,8 @@ struct WireMessage {
 /// Manages WebSocket channels/rooms with typed messages.
 ///
 /// ```ignore
-/// use framework::channel::ChannelRegistry;
-/// use framework::http::ws::websocket_handler_with_state;
+/// use karbon::channel::ChannelRegistry;
+/// use karbon::http::ws::websocket_handler_with_state;
 ///
 /// let channels = ChannelRegistry::new();
 ///
@@ -86,7 +86,9 @@ impl ChannelRegistry {
 
     /// Get the number of connected clients in a channel
     pub async fn client_count(&self, channel: &str) -> usize {
-        self.rooms.read().await
+        self.rooms
+            .read()
+            .await
             .get(channel)
             .map(|s| s.len())
             .unwrap_or(0)
@@ -94,10 +96,7 @@ impl ChannelRegistry {
 
     /// Get all active channel names
     pub async fn active_channels(&self) -> Vec<String> {
-        self.rooms.read().await
-            .keys()
-            .cloned()
-            .collect()
+        self.rooms.read().await.keys().cloned().collect()
     }
 
     /// Handle a WebSocket connection with the channel protocol.
@@ -107,7 +106,9 @@ impl ChannelRegistry {
     /// - Leave:   `{"channel": "chat/room-1", "event": "leave", "payload": {}}`
     /// - Message: `{"channel": "chat/room-1", "event": "message", "payload": {"text": "hello"}}`
     pub async fn handle_socket(self, socket: WebSocket) {
-        let client_id = self.next_client_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let client_id = self
+            .next_client_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut rx = self.tx.subscribe();
         let (mut ws_tx, mut ws_rx) = socket.split();
 
@@ -133,7 +134,11 @@ impl ChannelRegistry {
                     "payload": serde_json::from_str::<serde_json::Value>(&msg.payload).unwrap_or_default(),
                 });
 
-                if ws_tx.send(Message::Text(wire.to_string().into())).await.is_err() {
+                if ws_tx
+                    .send(Message::Text(wire.to_string().into()))
+                    .await
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -143,6 +148,11 @@ impl ChannelRegistry {
         let rooms = self.rooms.clone();
         let tx = self.tx.clone();
 
+        // Per-connection abuse limits (DoS mitigation).
+        const MAX_MSG_BYTES: usize = 64 * 1024;
+        const MAX_CHANNELS_PER_CONN: usize = 100;
+        const MAX_CHANNEL_NAME: usize = 128;
+
         let mut recv_task = tokio::spawn(async move {
             while let Some(Ok(msg)) = ws_rx.next().await {
                 let text = match msg {
@@ -151,14 +161,34 @@ impl ChannelRegistry {
                     _ => continue,
                 };
 
+                // Drop oversized frames instead of parsing them.
+                if text.len() > MAX_MSG_BYTES {
+                    continue;
+                }
+
                 let Ok(wire) = serde_json::from_str::<WireMessage>(&text) else {
                     continue;
                 };
 
+                // Reject implausible channel names.
+                if wire.channel.len() > MAX_CHANNEL_NAME {
+                    continue;
+                }
+
                 match wire.event.as_str() {
                     "join" => {
-                        sub_write.write().await.insert(wire.channel.clone());
-                        rooms.write().await
+                        {
+                            let mut subs = sub_write.write().await;
+                            // Cap the number of channels a single connection can join.
+                            if !subs.contains(&wire.channel) && subs.len() >= MAX_CHANNELS_PER_CONN
+                            {
+                                continue;
+                            }
+                            subs.insert(wire.channel.clone());
+                        }
+                        rooms
+                            .write()
+                            .await
                             .entry(wire.channel.clone())
                             .or_default()
                             .insert(client_id);

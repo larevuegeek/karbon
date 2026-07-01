@@ -7,180 +7,378 @@
     <link rel="stylesheet" href="/_studio/styles.css?token={{TOKEN}}">
 </head>
 <body>
-    <header class="topbar">
-        <div class="topbar-left">
-            <div class="logo">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <rect width="24" height="24" rx="6" fill="#6366f1"/>
-                    <path d="M7 7h4l3 5-3 5H7l3-5L7 7z" fill="#fff"/>
-                    <path d="M13 7h4l-3 5 3 5h-4l-3-5 3-5z" fill="#c7d2fe"/>
-                </svg>
-                <span class="logo-text">Karbon <span class="logo-accent">Studio</span></span>
-            </div>
-            <div class="connection-status" id="connectionStatus">
-                <span class="status-dot"></span>
-                <span class="status-text">Connecting...</span>
-            </div>
+  <div class="studio">
+    <!-- ── Sidebar ─────────────────────────────── -->
+    <aside class="studio-side">
+        <div class="logo">
+            <svg class="logo-mark" width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <defs>
+                    <linearGradient id="kbHex" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+                        <stop stop-color="#8b7cff"/>
+                        <stop offset="1" stop-color="#22d3ee"/>
+                    </linearGradient>
+                </defs>
+                <path d="M16 1.6 28.5 8.8v14.4L16 30.4 3.5 23.2V8.8z" fill="url(#kbHex)"/>
+                <path d="M16 1.6 28.5 8.8v14.4L16 30.4 3.5 23.2V8.8z" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="1"/>
+                <path d="M12.5 10v12M12.5 16l6.2-6M12.5 16l6.2 6" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="logo-text">Karbon <span class="logo-accent">Studio</span></span>
         </div>
-        <div class="topbar-right">
-            <span class="uptime" id="uptime">--</span>
+
+        <nav class="tabs">
+            <button class="tab active" data-tab="overview">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zm-8 8A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3z"/></svg>
+                <span class="tab-label">Overview</span>
+            </button>
+            <button class="tab" data-tab="requests">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.5A.5.5 0 0 1 .5 1H2a.5.5 0 0 1 .485.379L2.89 3H14.5a.5.5 0 0 1 .491.592l-1.5 8A.5.5 0 0 1 13 12H4a.5.5 0 0 1-.491-.408L2.01 3.607 1.61 2H.5a.5.5 0 0 1-.5-.5z"/></svg>
+                <span class="tab-label">Requests</span>
+                <span class="tab-count" id="tabRequestCount">0</span>
+            </button>
+            <button class="tab" data-tab="database">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1c-1.573 0-3.022.289-4.096.777C2.875 2.245 2 2.993 2 4s.875 1.755 1.904 2.223C4.978 6.711 6.427 7 8 7s3.022-.289 4.096-.777C13.125 5.755 14 5.007 14 4s-.875-1.755-1.904-2.223C11.022 1.289 9.573 1 8 1z"/><path d="M2 7v2c0 1.007.875 1.755 1.904 2.223C4.978 11.711 6.427 12 8 12s3.022-.289 4.096-.777C13.125 10.755 14 10.007 14 9V7c-.236.224-.516.42-.804.582C12.022 8.289 10.573 8.5 8 8.5s-4.022-.211-5.196-.918A4.36 4.36 0 0 1 2 7z"/><path d="M2 12v1c0 1.007.875 1.755 1.904 2.223C4.978 15.711 6.427 16 8 16s3.022-.289 4.096-.777C13.125 14.755 14 14.007 14 13v-1c-.236.224-.516.42-.804.582-1.174.707-2.623.918-5.196.918s-4.022-.211-5.196-.918A4.36 4.36 0 0 1 2 12z"/></svg>
+                <span class="tab-label">Database</span>
+            </button>
+            <button class="tab" data-tab="routes">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M6 3.5A1.5 1.5 0 0 1 7.5 2h1A1.5 1.5 0 0 1 10 3.5v1A1.5 1.5 0 0 1 8.5 6v1H14a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-1 0V8h-5v.5a.5.5 0 0 1-1 0V8h-5v.5a.5.5 0 0 1-1 0v-1A.5.5 0 0 1 2 7h5.5V6A1.5 1.5 0 0 1 6 4.5v-1zM8.5 5a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1zM0 11.5A1.5 1.5 0 0 1 1.5 10h1A1.5 1.5 0 0 1 4 11.5v1A1.5 1.5 0 0 1 2.5 14h-1A1.5 1.5 0 0 1 0 12.5v-1zm1.5-.5a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1zm4.5.5A1.5 1.5 0 0 1 7.5 10h1a1.5 1.5 0 0 1 1.5 1.5v1A1.5 1.5 0 0 1 8.5 14h-1A1.5 1.5 0 0 1 6 12.5v-1zm1.5-.5a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1zm4.5.5a1.5 1.5 0 0 1 1.5-1.5h1a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v-1zm1.5-.5a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1z"/></svg>
+                <span class="tab-label">Routes</span>
+            </button>
+            <button class="tab" data-tab="terminal">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 3a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3zm2-1a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H2z"/><path d="M3.5 5.5a.5.5 0 0 1 .707 0l2 2a.5.5 0 0 1 0 .708l-2 2a.5.5 0 1 1-.707-.708L5.146 7.5 3.5 6.207a.5.5 0 0 1 0-.707zM7.5 10a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1H8a.5.5 0 0 1-.5-.5z"/></svg>
+                <span class="tab-label">Terminal</span>
+            </button>
+            <button class="tab" data-tab="docs">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M5 4a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm-.5 2.5A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zM5 8a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm0 2a.5.5 0 0 0 0 1h3a.5.5 0 0 0 0-1H5z"/><path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2zm10-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z"/></svg>
+                <span class="tab-label">Docs</span>
+            </button>
+
+            <div class="tab-divider"></div>
+
+            <button class="tab" data-tab="events">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
+                <span class="tab-label">Events</span>
+                <span class="tab-count" id="tabEventCount">0</span>
+            </button>
+            <button class="tab" data-tab="jobs">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 14s-1 0-1-1 1-4 6-4 6 3 6 4-1 1-1 1H3zm5-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
+                <span class="tab-label">Jobs</span>
+                <span class="tab-count" id="tabJobCount">0</span>
+            </button>
+            <button class="tab" data-tab="mails">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1H2zm13 2.383-4.758 2.855L15 11.114v-5.73zm-.034 6.878L9.271 8.82 8 9.583 6.728 8.82l-5.694 3.44A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.739zM1 11.114l4.758-2.876L1 5.383v5.73z"/></svg>
+                <span class="tab-label">Mails</span>
+                <span class="tab-count" id="tabMailCount">0</span>
+            </button>
+        </nav>
+
+        <div class="side-foot">
+            <a class="side-back" href="/" title="Back to the app">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/></svg>
+                Back to site
+            </a>
+            <div class="topbar-meta">
+                <span class="meta-pill" id="topVersion">v—</span>
+                <span class="meta-pill meta-env" id="topEnv">—</span>
+            </div>
+            <div class="uptime" id="uptime" title="Uptime">--</div>
+        </div>
+    </aside>
+
+    <!-- ── Main ─────────────────────────────── -->
+    <section class="studio-main">
+        <header class="main-head">
+            <div class="main-head-left">
+                <h1 class="page-title">Dashboard</h1>
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Connecting...</span>
+                </div>
+            </div>
             <button class="btn btn-ghost" onclick="clearData()" title="Clear all data">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4L4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4L4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
                 Clear
             </button>
-        </div>
-    </header>
+        </header>
 
-    <div class="stats-bar" id="statsBar">
-        <div class="stat-card">
-            <div class="stat-value" id="statRequests">0</div>
-            <div class="stat-label">Requests</div>
+        <div class="stats-bar" id="statsBar">
+            <div class="stat-card">
+                <div class="stat-label">Requests</div>
+                <div class="stat-value" id="statRequests">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Response</div>
+                <div class="stat-value" id="statAvgMs">0ms</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Error Rate</div>
+                <div class="stat-value" id="statErrors">0%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Events</div>
+                <div class="stat-value" id="statEvents">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Jobs</div>
+                <div class="stat-value" id="statJobs">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Mails</div>
+                <div class="stat-value" id="statMails">0</div>
+            </div>
         </div>
-        <div class="stat-card">
-            <div class="stat-value" id="statAvgMs">0ms</div>
-            <div class="stat-label">Avg Response</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" id="statErrors">0%</div>
-            <div class="stat-label">Error Rate</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" id="statEvents">0</div>
-            <div class="stat-label">Events</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" id="statJobs">0</div>
-            <div class="stat-label">Jobs</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" id="statMails">0</div>
-            <div class="stat-label">Mails</div>
-        </div>
-    </div>
 
-    <nav class="tabs">
-        <button class="tab active" data-tab="requests">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.5A.5.5 0 0 1 .5 1H2a.5.5 0 0 1 .485.379L2.89 3H14.5a.5.5 0 0 1 .491.592l-1.5 8A.5.5 0 0 1 13 12H4a.5.5 0 0 1-.491-.408L2.01 3.607 1.61 2H.5a.5.5 0 0 1-.5-.5z"/></svg>
-            Requests
-            <span class="tab-count" id="tabRequestCount">0</span>
-        </button>
-        <button class="tab" data-tab="events">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
-            Events
-            <span class="tab-count" id="tabEventCount">0</span>
-        </button>
-        <button class="tab" data-tab="jobs">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 14s-1 0-1-1 1-4 6-4 6 3 6 4-1 1-1 1H3zm5-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
-            Jobs
-            <span class="tab-count" id="tabJobCount">0</span>
-        </button>
-        <button class="tab" data-tab="mails">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0 0 0-1-1H2zm13 2.383-4.758 2.855L15 11.114v-5.73zm-.034 6.878L9.271 8.82 8 9.583 6.728 8.82l-5.694 3.44A1 1 0 0 0 2 13h12a1 1 0 0 0 .966-.739zM1 11.114l4.758-2.876L1 5.383v5.73z"/></svg>
-            Mails
-            <span class="tab-count" id="tabMailCount">0</span>
-        </button>
-    </nav>
-
-    <main class="content">
-        <!-- Requests panel -->
-        <div class="panel active" id="panel-requests">
-            <div class="panel-toolbar">
-                <input type="text" class="search-input" id="searchRequests" placeholder="Filter by path, method, status...">
-                <div class="filter-group">
-                    <button class="filter-btn active" data-filter="all">All</button>
-                    <button class="filter-btn" data-filter="2xx">2xx</button>
-                    <button class="filter-btn" data-filter="3xx">3xx</button>
-                    <button class="filter-btn" data-filter="4xx">4xx</button>
-                    <button class="filter-btn" data-filter="5xx">5xx</button>
+        <div class="workspace">
+        <main class="content">
+            <!-- Overview panel -->
+            <div class="panel active" id="panel-overview">
+                <div class="ov-grid">
+                    <div class="ov-card">
+                        <div class="ov-card-h">
+                            <svg width="16" height="16" viewBox="0 0 32 32" fill="none"><defs><linearGradient id="ovHex" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse"><stop stop-color="#8b7cff"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs><path d="M16 1.6 28.5 8.8v14.4L16 30.4 3.5 23.2V8.8z" fill="url(#ovHex)"/><path d="M12.5 10v12M12.5 16l6.2-6M12.5 16l6.2 6" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            Framework
+                        </div>
+                        <div class="detail-row"><span class="detail-key">Version</span><span class="detail-value" id="ovVersion">—</span></div>
+                        <div class="detail-row"><span class="detail-key">Environment</span><span class="detail-value" id="ovEnv">—</span></div>
+                        <div class="detail-row"><span class="detail-key">Database driver</span><span class="detail-value" id="ovDriver">—</span></div>
+                        <div class="detail-row"><span class="detail-key">Database</span><span class="detail-value" id="ovDb">—</span></div>
+                        <div class="detail-row"><span class="detail-key">Uptime</span><span class="detail-value" id="ovUptime">—</span></div>
+                    </div>
+                    <div class="ov-card">
+                        <div class="ov-card-h">Performance</div>
+                        <div class="detail-row"><span class="detail-key">Total requests</span><span class="detail-value" id="ovTotal">0</span></div>
+                        <div class="detail-row"><span class="detail-key">Error rate</span><span class="detail-value" id="ovErr">0%</span></div>
+                        <div class="detail-row"><span class="detail-key">Avg / Min / Max</span><span class="detail-value" id="ovLatency">— / — / —</span></div>
+                        <div class="ov-sub">Status distribution</div>
+                        <div class="ov-dist" id="ovStatusDist"></div>
+                        <div class="ov-sub">Methods</div>
+                        <div class="chips" id="ovMethods"></div>
+                    </div>
+                    <div class="ov-card ov-wide">
+                        <div class="ov-card-h">Enabled features <span class="tab-count" id="ovFeatCount">0</span></div>
+                        <div class="chips" id="ovFeatures"></div>
+                    </div>
+                    <div class="ov-card ov-wide">
+                        <div class="ov-card-h">Slowest endpoints</div>
+                        <div class="table-wrapper ov-table-wrap">
+                            <table class="data-table">
+                                <thead><tr><th class="col-method">Method</th><th class="col-path">Path</th><th class="col-status">Status</th><th class="col-duration">Duration</th></tr></thead>
+                                <tbody id="ovSlowBody"></tbody>
+                            </table>
+                            <div class="empty-inline" id="ovSlowEmpty">No requests recorded yet.</div>
+                        </div>
+                    </div>
+                    <div class="ov-card ov-wide">
+                        <div class="ov-card-h">Entities / tables <span class="tab-count" id="ovTablesCount">0</span></div>
+                        <div class="chips" id="ovTables"></div>
+                        <div class="empty-inline" id="ovTablesEmpty">No tables — set <code>DB_NAME</code> and run <code>karbon migrate</code>.</div>
+                    </div>
+                    <div class="ov-card ov-wide ov-links">
+                        <a href="/health" target="_blank" rel="noreferrer">/health</a>
+                        <a href="https://github.com/larevuegeek/karbon" target="_blank" rel="noreferrer">Documentation</a>
+                        <a href="https://github.com/larevuegeek/karbon" target="_blank" rel="noreferrer">GitHub</a>
+                    </div>
                 </div>
             </div>
-            <div class="table-wrapper">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th class="col-status">Status</th>
-                            <th class="col-method">Method</th>
-                            <th class="col-path">Path</th>
-                            <th class="col-duration">Duration</th>
-                            <th class="col-time">Time</th>
-                        </tr>
-                    </thead>
-                    <tbody id="requestsBody"></tbody>
-                </table>
-                <div class="empty-state" id="emptyRequests">
+
+            <!-- Requests panel -->
+            <div class="panel" id="panel-requests">
+                <div class="panel-toolbar">
+                    <input type="text" class="search-input" id="searchRequests" placeholder="Filter by path, method, status...">
+                    <div class="filter-group">
+                        <button class="filter-btn active" data-filter="all">All</button>
+                        <button class="filter-btn" data-filter="2xx">2xx</button>
+                        <button class="filter-btn" data-filter="3xx">3xx</button>
+                        <button class="filter-btn" data-filter="4xx">4xx</button>
+                        <button class="filter-btn" data-filter="5xx">5xx</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th class="col-status">Status</th>
+                                <th class="col-method">Method</th>
+                                <th class="col-path">Path</th>
+                                <th class="col-duration">Duration</th>
+                                <th class="col-time">Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="requestsBody"></tbody>
+                    </table>
+                    <div class="empty-state" id="emptyRequests">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
+                        <p>No requests yet</p>
+                        <span>Requests will appear here in real-time</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Events panel -->
+            <div class="panel" id="panel-events">
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Event Type</th>
+                                <th>Handlers</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="eventsBody"></tbody>
+                    </table>
+                    <div class="empty-state" id="emptyEvents">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
+                        <p>No events emitted</p>
+                        <span>EventBus events will appear here</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Jobs panel -->
+            <div class="panel" id="panel-jobs">
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Job Name</th>
+                                <th>Duration</th>
+                                <th>Attempt</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="jobsBody"></tbody>
+                    </table>
+                    <div class="empty-state" id="emptyJobs">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
+                        <p>No jobs recorded</p>
+                        <span>Background jobs will appear here</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mails panel -->
+            <div class="panel" id="panel-mails">
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>To</th>
+                                <th>Subject</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mailsBody"></tbody>
+                    </table>
+                    <div class="empty-state" id="emptyMails">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
+                        <p>No mails sent</p>
+                        <span>Outgoing emails will appear here</span>
+                    </div>
+                </div>
+            </div>
+            <!-- Database / schema browser panel -->
+            <div class="panel" id="panel-database">
+                <div class="db-toolbar">
+                    <span class="db-driver" id="dbDriver">—</span>
+                    <button class="btn btn-ghost" onclick="loadDatabase(true)" title="Refresh schema">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>
+                        Refresh
+                    </button>
+                </div>
+                <div class="db-layout" id="dbLayout">
+                    <aside class="db-tables" id="dbTables"></aside>
+                    <section class="db-detail" id="dbDetail">
+                        <div class="empty-inline">Select a table to inspect its columns.</div>
+                    </section>
+                </div>
+                <div class="empty-state" id="dbEmpty">
                     <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
-                    <p>No requests yet</p>
-                    <span>Requests will appear here in real-time</span>
+                    <p>No database connected</p>
+                    <span>Set <code>DB_NAME</code> in <code>.env</code> and run <code>karbon migrate</code></span>
                 </div>
             </div>
-        </div>
 
-        <!-- Events panel -->
-        <div class="panel" id="panel-events">
-            <div class="table-wrapper">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Event Type</th>
-                            <th>Handlers</th>
-                            <th>Time</th>
-                        </tr>
-                    </thead>
-                    <tbody id="eventsBody"></tbody>
-                </table>
-                <div class="empty-state" id="emptyEvents">
-                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
-                    <p>No events emitted</p>
-                    <span>EventBus events will appear here</span>
+            <!-- Routes panel -->
+            <div class="panel" id="panel-routes">
+                <div class="panel-toolbar">
+                    <input type="text" class="search-input" id="searchRoutes" placeholder="Filter routes by path, method, group...">
+                    <div class="filter-group" id="routeKindFilter">
+                        <button class="filter-btn active" data-kind="all">All</button>
+                        <button class="filter-btn" data-kind="api">API</button>
+                        <button class="filter-btn" data-kind="web">Web</button>
+                        <button class="filter-btn" data-kind="system">System</button>
+                    </div>
+                    <button class="filter-btn" onclick="loadRoutes(true)">Refresh</button>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead><tr><th class="col-status">Kind</th><th class="col-method">Method</th><th class="col-path">Path</th><th>Group</th></tr></thead>
+                        <tbody id="routesBody"></tbody>
+                    </table>
+                    <div class="empty-state" id="routesEmpty">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
+                        <p>No routes found</p>
+                        <span>Generate a controller, or ensure the app serves <code>/openapi.json</code></span>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Jobs panel -->
-        <div class="panel" id="panel-jobs">
-            <div class="table-wrapper">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Status</th>
-                            <th>Job Name</th>
-                            <th>Duration</th>
-                            <th>Attempt</th>
-                            <th>Time</th>
-                        </tr>
-                    </thead>
-                    <tbody id="jobsBody"></tbody>
-                </table>
-                <div class="empty-state" id="emptyJobs">
-                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
-                    <p>No jobs recorded</p>
-                    <span>Background jobs will appear here</span>
+            <!-- Terminal panel -->
+            <div class="panel" id="panel-terminal">
+                <form class="maker" id="makerForm" autocomplete="off">
+                    <div class="maker-top">
+                        <span class="maker-title">⚡ Make</span>
+                        <select id="makerKind" class="maker-field">
+                            <option value="entity">entity</option>
+                            <option value="crud" selected>crud</option>
+                            <option value="controller">controller</option>
+                            <option value="admin">admin</option>
+                        </select>
+                        <input type="text" id="makerName" class="maker-field maker-name" placeholder="Name (e.g. Post)" spellcheck="false" autocapitalize="off">
+                        <button type="button" class="maker-addbtn" id="makerAddField">+ field</button>
+                        <label class="maker-opt"><input type="checkbox" id="makerDry"> dry-run</label>
+                        <label class="maker-opt"><input type="checkbox" id="makerForce"> force</label>
+                        <button type="submit" class="filter-btn maker-go">Generate</button>
+                    </div>
+                    <div class="maker-fields" id="makerFields"></div>
+                </form>
+                <div class="term-quick">
+                    <span class="term-quick-label">Quick actions</span>
+                    <button class="term-chip" data-cmd="doctor">doctor</button>
+                    <button class="term-chip" data-cmd="migrate status">migrate status</button>
+                    <button class="term-chip" data-cmd="migrate">migrate</button>
+                    <button class="term-chip" data-cmd="migrate diff init">migrate diff</button>
+                    <button class="term-chip" data-cmd="generate entity Post --dry-run">generate entity (dry-run)</button>
+                    <button class="term-chip" data-cmd="docs build">docs build</button>
                 </div>
+                <div class="term-out" id="termOut"><div class="term-catalog" id="termCatalog"></div></div>
+                <form class="term-input" id="termForm" autocomplete="off">
+                    <span class="term-prompt">karbon</span>
+                    <input type="text" id="termCmd" list="termCommands" placeholder="type a command — e.g. generate crud Post" spellcheck="false" autocapitalize="off" autocomplete="off">
+                    <datalist id="termCommands"></datalist>
+                    <button type="submit" class="filter-btn term-run">Run</button>
+                </form>
             </div>
-        </div>
 
-        <!-- Mails panel -->
-        <div class="panel" id="panel-mails">
-            <div class="table-wrapper">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Status</th>
-                            <th>To</th>
-                            <th>Subject</th>
-                            <th>Time</th>
-                        </tr>
-                    </thead>
-                    <tbody id="mailsBody"></tbody>
-                </table>
-                <div class="empty-state" id="emptyMails">
-                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#374151" stroke-width="2" stroke-dasharray="4 4"/><path d="M24 16v8m0 4v.01" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/></svg>
-                    <p>No mails sent</p>
-                    <span>Outgoing emails will appear here</span>
+            <!-- Docs panel -->
+            <div class="panel" id="panel-docs">
+                <div class="docs-bar">
+                    <a href="/docs" target="_blank" rel="noreferrer" class="docs-swagger">⚡ API reference (Swagger) →</a>
+                    <a href="/openapi.json" target="_blank" rel="noreferrer" class="docs-swagger-sub">openapi.json</a>
+                </div>
+                <div class="docs-layout">
+                    <aside class="docs-nav" id="docsNav"></aside>
+                    <article class="docs-content kd-main" id="docsContent">
+                        <div class="empty-inline">Loading documentation…</div>
+                    </article>
                 </div>
             </div>
-        </div>
-    </main>
+        </main>
+        </div><!-- /workspace -->
+    </section><!-- /studio-main -->
+  </div><!-- /studio -->
 
     <!-- Request detail slide-over -->
     <div class="slideover" id="slideover">

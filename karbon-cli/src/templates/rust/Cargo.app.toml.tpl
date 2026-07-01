@@ -4,7 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-framework = { package = "karbon-framework", version = "0.1" }
+# Tip: add  features = ["studio"]  to enable the dev dashboard + debug toolbar.
+# (`karbon new --local <path>` does this automatically against a local checkout.)
+karbon = { package = "karbon-framework", version = "0.3" }
 axum.workspace = true
 tokio.workspace = true
 tower-http.workspace = true

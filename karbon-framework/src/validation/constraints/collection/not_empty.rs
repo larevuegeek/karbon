@@ -27,11 +27,7 @@ impl NotEmpty {
 impl CollectionConstraint for NotEmpty {
     fn validate_slice<T>(&self, value: &[T]) -> ConstraintResult {
         if value.is_empty() {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                "[]",
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, "[]"));
         }
         Ok(())
     }

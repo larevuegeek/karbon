@@ -111,11 +111,7 @@ impl Username {
 impl Constraint for Username {
     fn validate(&self, value: &str) -> ConstraintResult {
         if !self.is_valid_username(value) {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                value,
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, value));
         }
         Ok(())
     }

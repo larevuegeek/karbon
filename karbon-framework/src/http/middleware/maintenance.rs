@@ -1,4 +1,7 @@
-use axum::{extract::Request, http::StatusCode, middleware::Next, response::IntoResponse, response::Response};
+use axum::{
+    extract::Request, http::StatusCode, middleware::Next, response::IntoResponse,
+    response::Response,
+};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 

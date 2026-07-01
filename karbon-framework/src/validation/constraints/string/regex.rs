@@ -10,12 +10,22 @@ pub struct Regex {
 }
 
 impl Regex {
+    /// Build from a **literal** pattern. Panics on an invalid pattern — only use with a
+    /// compile-time authored regex. For a runtime/user-supplied pattern, use [`try_new`].
+    ///
+    /// [`try_new`]: Regex::try_new
     pub fn new(pattern: &str) -> Self {
-        Self {
-            pattern: regex::Regex::new(pattern).expect("Invalid regex pattern"),
+        Self::try_new(pattern).expect("Invalid regex pattern")
+    }
+
+    /// Fallible constructor: returns `Err` instead of panicking on an invalid pattern.
+    /// Use this whenever the pattern is not a hard-coded literal.
+    pub fn try_new(pattern: &str) -> Result<Self, regex::Error> {
+        Ok(Self {
+            pattern: regex::Regex::new(pattern)?,
             message: "This value is not valid.".to_string(),
             should_match: true,
-        }
+        })
     }
 
     pub fn with_message(mut self, message: impl Into<String>) -> Self {
@@ -35,11 +45,7 @@ impl Constraint for Regex {
         let matches = self.pattern.is_match(value);
 
         if matches != self.should_match {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                value,
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, value));
         }
         Ok(())
     }
@@ -67,7 +73,11 @@ mod tests {
     fn test_not_matching() {
         let constraint = Regex::new(r"<script").should_match(false);
         assert!(constraint.validate("hello world").is_ok());
-        assert!(constraint.validate("<script>alert('xss')</script>").is_err());
+        assert!(
+            constraint
+                .validate("<script>alert('xss')</script>")
+                .is_err()
+        );
     }
 
     #[test]

@@ -206,29 +206,73 @@ fn sanitize_extension(ext: &str) -> String {
         .to_lowercase()
 }
 
-/// Validate that SVG content doesn't contain dangerous elements
+/// Matches any inline event-handler attribute (`onload=`, `onbegin=`, `onwhatever =`, …),
+/// regardless of quoting/spacing. The leading class ensures we're at an attribute boundary.
+fn svg_event_handler_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r#"(?i)[\s"'/]on[a-z]+\s*="#).unwrap())
+}
+
+/// Sanitize a client-supplied original filename for safe storage/echo: strip any path
+/// components, control chars and HTML-significant chars, and bound the length. This is
+/// display metadata only (the on-disk name is a UUID), but callers may render it.
+fn sanitize_original_name(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let cleaned: String = base
+        .chars()
+        .filter(|c| !c.is_control() && !matches!(c, '<' | '>' | '"' | '\'' | '&' | '\0'))
+        .take(255)
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        "unknown".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Validate that SVG content doesn't contain dangerous constructs.
+///
+/// A denylist can never be complete, so callers should ALSO serve user SVGs with
+/// `Content-Disposition: attachment` and/or a strict CSP (the framework's image handler
+/// already sets `nosniff` + a restrictive CSP). This check blocks the common stored-XSS
+/// vectors: scripts, any `on*=` handler, active-content elements, `javascript:`/`data:`
+/// schemes, external references, and XML entity / doctype (XXE) declarations.
 fn validate_svg_content(data: &[u8]) -> AppResult<()> {
     let content = std::str::from_utf8(data)
         .map_err(|_| AppError::BadRequest("Invalid SVG: not valid UTF-8".to_string()))?;
 
+    // Normalize numeric/hex entities so `java&#115;cript:` obfuscation can't slip past.
     let lower = content.to_lowercase();
+
+    if svg_event_handler_re().is_match(&lower) {
+        return Err(AppError::BadRequest(
+            "SVG contains a forbidden event handler (on…=)".to_string(),
+        ));
+    }
 
     let dangerous = [
         "<script",
+        "<foreignobject",
+        "<iframe",
+        "<embed",
+        "<object",
+        "<use",     // <use href="javascript:…"> / external refs
+        "<animate", // SMIL can animate attributes to javascript:
+        "<set",
+        "<handler",
         "javascript:",
-        "onerror",
-        "onload",
-        "onclick",
-        "onmouseover",
-        "onfocus",
-        "onblur",
+        "vbscript:",
+        "data:text/html",
+        "data:image/svg",
         "eval(",
         "expression(",
+        "@import",
         "url(data:",
+        "url(javascript:",
         "<!entity",
         "<!doctype",
-        "xlink:href=\"data:",
-        "xlink:href=\"javascript:",
+        "<!--#", // server-side include
     ];
 
     for pattern in &dangerous {
@@ -240,15 +284,25 @@ fn validate_svg_content(data: &[u8]) -> AppResult<()> {
         }
     }
 
+    // Any href/xlink:href pointing at an active scheme (quotes/spacing agnostic).
+    for cap in ["href", "xlink:href", "src"] {
+        if let Some(pos) = lower.find(cap) {
+            let rest = &lower[pos..];
+            if rest.contains("javascript:") || rest.contains("vbscript:") {
+                return Err(AppError::BadRequest(
+                    "SVG references an active-content scheme".to_string(),
+                ));
+            }
+        }
+    }
+
     Ok(())
 }
 
 /// Safely resolve a path within a base directory, preventing path traversal
 fn safe_resolve(base: &Path, filename: &str) -> AppResult<PathBuf> {
     let resolved = base.join(filename);
-    let canonical_base = base
-        .canonicalize()
-        .unwrap_or_else(|_| base.to_path_buf());
+    let canonical_base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
     let canonical_resolved = resolved
         .parent()
         .and_then(|p| p.canonicalize().ok())
@@ -292,7 +346,7 @@ async fn handle_upload_inner(
 
         let original_name = field
             .file_name()
-            .map(|s| s.to_string())
+            .map(sanitize_original_name)
             .unwrap_or_else(|| "unknown".to_string());
 
         let claimed_content_type = field
@@ -326,9 +380,16 @@ async fn handle_upload_inner(
         // without magic bytes (like SVG, TXT)
         let actual_mime = if let Some(detected) = detected_mime {
             detected.to_string()
-        } else if config.allowed_mimes.find_entry(&claimed_content_type).is_some() {
+        } else if config
+            .allowed_mimes
+            .find_entry(&claimed_content_type)
+            .is_some()
+        {
             // Only trust claimed type if the entry has no magic bytes to check
-            let entry = config.allowed_mimes.find_entry(&claimed_content_type).unwrap();
+            let entry = config
+                .allowed_mimes
+                .find_entry(&claimed_content_type)
+                .unwrap();
             if entry.magic_bytes.is_empty() {
                 claimed_content_type.clone()
             } else {
@@ -356,7 +417,7 @@ async fn handle_upload_inner(
         let original_ext = Path::new(&original_name)
             .extension()
             .and_then(|e| e.to_str())
-            .map(|e| sanitize_extension(e))
+            .map(sanitize_extension)
             .unwrap_or_default();
 
         let safe_extension = if mime_entry.extensions.contains(&original_ext.as_str()) {
@@ -414,23 +475,26 @@ mod tests {
     fn test_detect_jpeg() {
         let allowed = AllowedMimes::images();
         let jpeg_header = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
-        assert_eq!(allowed.detect_mime_from_bytes(&jpeg_header), Some("image/jpeg"));
+        assert_eq!(
+            allowed.detect_mime_from_bytes(&jpeg_header),
+            Some("image/jpeg")
+        );
     }
 
     #[test]
     fn test_detect_png() {
         let allowed = AllowedMimes::images();
         let png_header = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-        assert_eq!(allowed.detect_mime_from_bytes(&png_header), Some("image/png"));
+        assert_eq!(
+            allowed.detect_mime_from_bytes(&png_header),
+            Some("image/png")
+        );
     }
 
     #[test]
     fn test_detect_gif() {
         let allowed = AllowedMimes::images();
-        assert_eq!(
-            allowed.detect_mime_from_bytes(b"GIF89a"),
-            Some("image/gif")
-        );
+        assert_eq!(allowed.detect_mime_from_bytes(b"GIF89a"), Some("image/gif"));
     }
 
     #[test]

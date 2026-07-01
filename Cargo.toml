@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["karbon-framework", "karbon-macros", "karbon-cli"]
+members = ["karbon-framework", "karbon-macros", "karbon-cli", "examples/minimal"]
 
 [workspace.package]
-version = "0.2.30"
+version = "0.3.0"
 edition = "2024"
 authors = ["LaRevueGeek"]
 license = "AGPL-3.0-or-later"
@@ -32,6 +32,9 @@ argon2 = "0.5"
 bcrypt = "0.19.0"
 sha2 = "0.11.0"
 uuid = { version = "1.23.0", features = ["v4", "serde"] }
+
+# Docs / markdown
+pulldown-cmark = "0.12"
 
 # Utils
 chrono = { version = "0.4", features = ["serde"] }

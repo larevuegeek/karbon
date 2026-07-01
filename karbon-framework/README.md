@@ -1,13 +1,13 @@
 # karbon-framework
 
-**Karbon** is a batteries-included Rust web framework built on [Axum](https://github.com/tokio-rs/axum). MySQL and PostgreSQL, JWT auth, CSRF, background jobs, events, i18n, and more — out of the box.
+**Karbon** is a batteries-included Rust web framework built on [Axum](https://github.com/tokio-rs/axum). MySQL, PostgreSQL and SQLite, JWT auth, CSRF, validation, forms, background jobs, message bus, events, cache, i18n, OpenAPI, and a `studio` dev dashboard — out of the box.
 
 ## Setup
 
 ```toml
 # Cargo.toml
 [dependencies]
-framework = { package = "karbon-framework", version = "0.1" }
+karbon = { package = "karbon-framework", version = "0.3" }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "mysql", "chrono"] }
 ```
 
@@ -22,7 +22,7 @@ JWT_SECRET=change-me-to-a-random-secret
 ```
 
 ```rust
-use framework::http::App;
+use karbon::http::App;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -33,10 +33,10 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-For **PostgreSQL**, swap the feature:
+For **PostgreSQL** (or `sqlite`), swap the feature:
 
 ```toml
-framework = { package = "karbon-framework", version = "0.1", default-features = false, features = ["postgres"] }
+karbon = { package = "karbon-framework", version = "0.3", default-features = false, features = ["postgres"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono"] }
 ```
 
@@ -47,9 +47,9 @@ sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chron
 Define routes with proc macros. The `#[require_role]` attribute auto-injects role checks.
 
 ```rust
-use framework::{controller, get, post, require_role};
-use framework::http::AppState;
-use framework::security::AuthGuard;
+use karbon::{controller, get, post, require_role};
+use karbon::http::AppState;
+use karbon::security::AuthGuard;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -60,6 +60,12 @@ impl PostController {
     async fn list(State(state): State<AppState>) -> AppResult<impl IntoResponse> {
         let posts = Post::find_all(state.db.pool(), Some(("created_at", "DESC"))).await?;
         Ok(Json(posts))
+    }
+
+    // Declarative path-parameter validation → 400 before the handler runs.
+    #[get("/{id}", id = "int:min=1")]
+    async fn show(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<impl IntoResponse> {
+        Ok(Json(Post::find_by_id(state.db.pool(), id).await?))
     }
 
     #[post("/")]
@@ -91,7 +97,7 @@ Implement `CrudRepository` to get free CRUD methods. Add `SOFT_DELETE = true` fo
 ```rust
 use sqlx::FromRow;
 use serde::Serialize;
-use framework::db::CrudRepository;
+use karbon::db::CrudRepository;
 
 #[derive(Debug, FromRow, Serialize)]
 pub struct Post {
@@ -128,7 +134,7 @@ let posts = Post::find_all_where(pool, &[("status", "published".into())], None).
 Derive macros that generate type-safe INSERT/UPDATE queries.
 
 ```rust
-use framework::Insertable;
+use karbon::Insertable;
 
 #[derive(Insertable)]
 #[table_name("posts")]
@@ -150,7 +156,7 @@ let id = NewPost {
 ```
 
 ```rust
-use framework::Updatable;
+use karbon::Updatable;
 
 #[derive(Updatable)]
 #[table_name("posts")]
@@ -185,7 +191,7 @@ tx.commit().await?;
 ### JWT
 
 ```rust
-use framework::security::{JwtManager, Claims};
+use karbon::security::{JwtManager, Claims};
 
 let jwt = JwtManager::new(&config.jwt_secret, config.jwt_expiration);
 let token = jwt.generate(&Claims { user_id: 1, username: "david".into(), roles: vec!["ROLE_ADMIN".into()] })?;
@@ -212,7 +218,7 @@ A user with `ROLE_SUPER_ADMIN` passes `auth.require_role("ROLE_ADMIN")`.
 ### Password Hashing
 
 ```rust
-use framework::security::Password;
+use karbon::security::Password;
 
 let hash = Password::hash("my-password")?;       // Argon2id
 let ok = Password::verify("my-password", &hash)?; // also supports bcrypt legacy
@@ -231,7 +237,7 @@ All built-in and applied automatically by `App::serve()`:
 Available as opt-in layers:
 
 ```rust
-use framework::http::middleware::{csrf_protection, RateLimitLayer};
+use karbon::http::middleware::{csrf_protection, RateLimitLayer};
 
 let app = Router::new()
     .route("/api/login", post(login))
@@ -251,7 +257,7 @@ let app = Router::new()
 In-process job queue with configurable workers and automatic retry.
 
 ```rust
-use framework::job::{Job, JobQueue};
+use karbon::job::{Job, JobQueue};
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
@@ -280,7 +286,7 @@ queue.push(SendEmailJob { to: "user@example.com".into(), subject: "Hello".into()
 Async pub/sub for decoupling logic.
 
 ```rust
-use framework::event::{Event, EventBus};
+use karbon::event::{Event, EventBus};
 
 struct UserCreated { user_id: i64, email: String }
 impl Event for UserCreated {}
@@ -305,7 +311,7 @@ bus.emit(UserCreated { user_id: 1, email: "david@example.com".into() }).await;
 Helpers for Axum WebSocket upgrade.
 
 ```rust
-use framework::http::ws::websocket_handler;
+use karbon::http::ws::websocket_handler;
 use axum::extract::ws::{WebSocket, Message};
 
 async fn handle_socket(mut socket: WebSocket) {
@@ -325,7 +331,7 @@ Router::new().route("/ws", get(|ws: WebSocketUpgrade| websocket_handler(ws, hand
 Simple translation system with interpolation and locale fallback.
 
 ```rust
-use framework::i18n::I18n;
+use karbon::i18n::I18n;
 
 let mut i18n = I18n::new("fr");
 
@@ -352,9 +358,9 @@ i18n.load_json("fr", r#"{"bye": "Au revoir"}"#)?;
 25+ built-in constraints for input validation.
 
 ```rust
-use framework::validation::constraints::string::*;
-use framework::validation::constraints::number::*;
-use framework::validation::constraints::security::*;
+use karbon::validation::constraints::string::*;
+use karbon::validation::constraints::number::*;
+use karbon::validation::constraints::security::*;
 
 // String constraints
 Length::new().min(3).max(100).validate("hello")?;
@@ -366,7 +372,7 @@ NotBlank::new().validate("hello")?;
 PasswordStrength::strong().validate("MyP@ssw0rd123")?;
 
 // Async validation (database checks)
-use framework::validation::AsyncValidator;
+use karbon::validation::AsyncValidator;
 
 AsyncValidator::new(pool)
     .unique("users", "email", &input.email, "Email already taken")
@@ -378,7 +384,7 @@ AsyncValidator::new(pool)
 ## Pagination
 
 ```rust
-use framework::db::{PaginatedQuery, Paginated, PaginationParams};
+use karbon::db::{PaginatedQuery, Paginated, PaginationParams};
 
 // In a handler — params come from query string: ?page=1&per_page=20&sort=id&order=desc&search=hello
 async fn list(Query(params): Query<PaginationParams>, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
@@ -397,8 +403,8 @@ async fn list(Query(params): Query<PaginationParams>, State(state): State<AppSta
 ## Database Seeder
 
 ```rust
-use framework::db::seeder::{Seeder, run_seeders};
-use framework::db::DbPool;
+use karbon::db::seeder::{Seeder, run_seeders};
+use karbon::db::DbPool;
 use std::pin::Pin;
 use std::future::Future;
 
@@ -407,7 +413,7 @@ struct UserSeeder;
 impl Seeder for UserSeeder {
     fn name(&self) -> &str { "users" }
 
-    fn seed<'a>(&'a self, pool: &'a DbPool) -> Pin<Box<dyn Future<Output = framework::AppResult<()>> + Send + 'a>> {
+    fn seed<'a>(&'a self, pool: &'a DbPool) -> Pin<Box<dyn Future<Output = karbon::AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
             NewUser { username: "admin".into(), email: "admin@example.com".into(), ... }.insert(pool).await?;
             Ok(())
@@ -421,7 +427,7 @@ run_seeders(pool, &[Box::new(UserSeeder)]).await?;
 ## Testing
 
 ```rust
-use framework::testing::TestApp;
+use karbon::testing::TestApp;
 
 #[tokio::test]
 async fn test_list_posts() {
@@ -456,7 +462,7 @@ async fn test_authenticated_request() {
 ## File Uploads
 
 ```rust
-use framework::storage::{UploadManager, UploadConfig};
+use karbon::storage::{UploadManager, UploadConfig};
 
 let config = UploadConfig {
     upload_dir: "./uploads".into(),
@@ -476,7 +482,7 @@ let file = manager.save(field).await?;
 Automatic image resizing, format conversion, and caching. Just add one line to your router.
 
 ```rust
-use framework::storage::ImgResizer;
+use karbon::storage::ImgResizer;
 
 // Quick setup
 app.nest_service("/files", ImgResizer::serve("./storage", "./cache/img"));
@@ -512,7 +518,7 @@ Query params: `?anchor=bottom-right` for crop anchor in cover mode.
 ### Image processor (programmatic)
 
 ```rust
-use framework::storage::{ImageProcessor, ResizeMode, CropAnchor, OutputFormat};
+use karbon::storage::{ImageProcessor, ResizeMode, CropAnchor, OutputFormat};
 
 ImageProcessor::new()
     .resize(800, 600)

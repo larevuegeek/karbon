@@ -20,7 +20,8 @@ impl Default for Count {
             exact: None,
             min_message: "This collection should contain {{ limit }} elements or more.".to_string(),
             max_message: "This collection should contain {{ limit }} elements or less.".to_string(),
-            exact_message: "This collection should contain exactly {{ limit }} elements.".to_string(),
+            exact_message: "This collection should contain exactly {{ limit }} elements."
+                .to_string(),
         }
     }
 }
@@ -73,24 +74,24 @@ impl CollectionConstraint for Count {
             return Ok(());
         }
 
-        if let Some(min) = self.min {
-            if len < min {
-                return Err(ConstraintViolation::new(
-                    self.name(),
-                    Self::format_message(&self.min_message, min),
-                    format!("count: {}", len),
-                ));
-            }
+        if let Some(min) = self.min
+            && len < min
+        {
+            return Err(ConstraintViolation::new(
+                self.name(),
+                Self::format_message(&self.min_message, min),
+                format!("count: {}", len),
+            ));
         }
 
-        if let Some(max) = self.max {
-            if len > max {
-                return Err(ConstraintViolation::new(
-                    self.name(),
-                    Self::format_message(&self.max_message, max),
-                    format!("count: {}", len),
-                ));
-            }
+        if let Some(max) = self.max
+            && len > max
+        {
+            return Err(ConstraintViolation::new(
+                self.name(),
+                Self::format_message(&self.max_message, max),
+                format!("count: {}", len),
+            ));
         }
 
         Ok(())

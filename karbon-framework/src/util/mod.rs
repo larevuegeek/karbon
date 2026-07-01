@@ -1,13 +1,15 @@
-mod slug;
 mod date;
-mod string;
+mod html;
+mod http;
 mod number;
 mod random;
-mod http;
+mod slug;
+mod string;
 
-pub use slug::Slug;
 pub use date::DateHelper;
-pub use string::StringHelper;
+pub use html::Html;
+pub use http::{HttpHelper, UserAgentInfo};
 pub use number::NumberHelper;
 pub use random::RandomHelper;
-pub use http::{HttpHelper, UserAgentInfo};
+pub use slug::Slug;
+pub use string::StringHelper;

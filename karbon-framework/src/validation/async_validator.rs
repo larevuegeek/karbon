@@ -70,7 +70,14 @@ impl<'a> AsyncValidator<'a> {
 
     /// Vérifie qu'une valeur est unique, en excluant un ID (pour les mises à jour).
     /// Retourne `Conflict` si un AUTRE enregistrement a déjà cette valeur.
-    pub fn unique_except(mut self, table: &str, column: &str, value: &str, except_id: i64, message: &str) -> Self {
+    pub fn unique_except(
+        mut self,
+        table: &str,
+        column: &str,
+        value: &str,
+        except_id: i64,
+        message: &str,
+    ) -> Self {
         self.rules.push(ValidationRule::Unique {
             table: table.to_string(),
             column: column.to_string(),
@@ -83,7 +90,14 @@ impl<'a> AsyncValidator<'a> {
 
     /// Comme `unique_except`, mais uniquement si la valeur est `Some`.
     /// Utile pour les mises à jour partielles avec des champs optionnels.
-    pub fn unique_except_if_some(self, table: &str, column: &str, value: &Option<String>, except_id: i64, message: &str) -> Self {
+    pub fn unique_except_if_some(
+        self,
+        table: &str,
+        column: &str,
+        value: &Option<String>,
+        except_id: i64,
+        message: &str,
+    ) -> Self {
         match value {
             Some(v) => self.unique_except(table, column, v, except_id, message),
             None => self,
@@ -106,15 +120,26 @@ impl<'a> AsyncValidator<'a> {
     pub async fn validate(self) -> AppResult<()> {
         for rule in &self.rules {
             match rule {
-                ValidationRule::Unique { table, column, value, except_id, message } => {
+                ValidationRule::Unique {
+                    table,
+                    column,
+                    value,
+                    except_id,
+                    message,
+                } => {
                     let sql = match except_id {
                         Some(_) => format!(
                             "SELECT COUNT(*) FROM {} WHERE {} = {} AND id != {}",
-                            table, column, placeholder(1), placeholder(2)
+                            table,
+                            column,
+                            placeholder(1),
+                            placeholder(2)
                         ),
                         None => format!(
                             "SELECT COUNT(*) FROM {} WHERE {} = {}",
-                            table, column, placeholder(1)
+                            table,
+                            column,
+                            placeholder(1)
                         ),
                     };
 
@@ -128,10 +153,17 @@ impl<'a> AsyncValidator<'a> {
                         return Err(AppError::Conflict(message.clone()));
                     }
                 }
-                ValidationRule::Exists { table, column, value, message } => {
+                ValidationRule::Exists {
+                    table,
+                    column,
+                    value,
+                    message,
+                } => {
                     let sql = format!(
                         "SELECT COUNT(*) FROM {} WHERE {} = {}",
-                        table, column, placeholder(1)
+                        table,
+                        column,
+                        placeholder(1)
                     );
                     let (count,): (i64,) = sqlx::query_as(&sql)
                         .bind(*value)

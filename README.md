@@ -2,22 +2,43 @@
 
 **Karbon** is a full-stack Rust + frontend (SvelteKit or Next.js) framework with a unified CLI. Build, develop, and deploy from a single command.
 
+## Why Karbon?
+
+If you like the productivity of **Laravel / Symfony / Django** but want the
+**performance, type-safety and single-binary deployment of Rust**, Karbon is for you.
+
+- **Productive, not bare-metal** — controllers, an ORM, auth, validation, jobs,
+  events, i18n and code generators come built-in. You write features, not plumbing.
+- **One binary, one CLI** — `karbon new → dev → build → serve → deploy`. No glue scripts.
+- **Familiar conventions** — Symfony-style role hierarchy, environments (`APP_ENV`
+  with cascading `.env` files), `generate crud` scaffolding.
+- **Deploy anywhere** — VPS (rsync + PM2/systemd), Docker, or PaaS (Fly/Render/Railway)
+  out of the box. See the [deployment guide](docs/DEPLOY.md).
+- **Safe by default** — Argon2, JWT rotation, CSRF, SQL-injection-safe query builder,
+  upload hardening, XSS escaping.
+
+> Karbon is young and pre-1.0 — the API may change. See the [CHANGELOG](CHANGELOG.md) for what's
+> shipped and where it's heading (CMS &amp; shop skeletons, themeable admin, …).
+
 ## Features
 
-- **Unified CLI** — `karbon dev`, `karbon build`, `karbon serve`, `karbon migrate`, `karbon deploy`
+- **Unified CLI** — `karbon dev / build / serve / migrate / deploy / generate / doctor / docs`
 - **Rust backend** — Axum-based, with controllers, entities, repositories, auth, file uploads
 - **SvelteKit or Next.js frontend** — SSR, TypeScript, Tailwind CSS
 - **Single-port production** — Reverse proxy built into the Rust binary
-- **Code generators** — `karbon generate crud Post` scaffolds entity + repo + controller + migration
-- **MySQL & PostgreSQL** — Switch database with a single feature flag
-- **Realtime Channels** — Typed WebSocket rooms/channels with pub/sub
-- **Typed Query Builder** — Fluent SQL SELECT with parameterized conditions
-- **Feature Flags** — Runtime-toggleable feature flags, no database required
-- **Inertia.js Adapter** — Controllers return pages, not JSON — seamless Axum ↔ Svelte/React bridge
-- **LiveWire Components** — Server-rendered HTML with real-time updates via WebSocket, zero JS framework
-- **HMR** — Hot Module Replacement in dev mode, CSS hot-swap + auto-reload
-- **Studio** — Dev dashboard with real-time request/event/job/mail monitoring
-- **Batteries included** — JWT, Argon2, CSRF, compression, rate limiting, soft delete, background jobs, events, i18n, WebSocket, and more
+- **Code generators** — `karbon generate crud Post title:string body:text` scaffolds entity +
+  repo + controller + migration from **typed custom fields**, with **field-aware admin** UI
+- **MySQL, PostgreSQL & SQLite** — switch with a feature flag; generators emit driver-correct DDL
+- **Hot reload** — `karbon dev` recompiles & restarts the backend on save (frontend keeps Vite HMR)
+- **Declarative route validation** — `#[karbon::get("/{id}", id = "int:min=1")]` → 400 before the handler
+- **OpenAPI & Swagger UI** — generated `/openapi.json` (params, tags) + `/docs` explorer
+- **Studio dev cockpit** — Overview/perf, schema browser, **route explorer**, integrated
+  **terminal** (whitelisted CLI + scaffolding form), and **live docs**, all in the browser
+- **`karbon doctor`** — offline project diagnostics (CI-friendly exit code) + `--db` checks
+- **Living docs** — `karbon docs build` renders `docs/**.md` to a static site; same source in Studio
+- **Realtime Channels** · **Typed Query Builder** · **Feature Flags** · **Inertia.js** · **LiveWire** · **HMR**
+- **Batteries included** — JWT, Argon2, CSRF, compression, rate limiting, soft delete, background
+  jobs, message bus, events, cache (memory/file/Redis), i18n, forms, image pipeline, and more
 
 ## Quick Start
 
@@ -47,12 +68,19 @@ karbon serve
 | `karbon dev` | Start dev servers (Rust + Vite, hot-reload) |
 | `karbon build` | Build for production |
 | `karbon serve` | Run production build (single port, reverse proxy) |
-| `karbon generate entity <Name>` | Generate entity + migration |
-| `karbon generate controller <Name>` | Generate admin controller |
-| `karbon generate crud <Name>` | Generate entity + repo + controller + migration |
-| `karbon g crud <Name>` | Short alias |
-| `karbon migrate` | Run SQL migrations from `migration/` directory |
+| `karbon generate entity <Name> [field:type…]` | Generate entity + migration (typed fields) |
+| `karbon generate controller <Name>` | Generate a controller (validated `{id}` routes) |
+| `karbon generate crud <Name> [field:type…]` | Generate entity + repo + controller + migration |
+| `karbon generate admin <Name>` | Generate a field-aware CRUD back-office |
+| `karbon g crud <Name> --dry-run` | Short alias; `--dry-run` (plan) / `--force` (overwrite) |
+| `karbon migrate` | Apply pending (versioned) migrations |
+| `karbon migrate status` / `rollback` | Show migration status / roll back the last one |
+| `karbon migrate diff [name]` | Generate a migration from the entity ↔ database diff |
+| `karbon doctor` / `doctor --db` | Diagnose the project (offline; `--db` checks connectivity) |
+| `karbon docs build` | Render `docs/**.md` to a static site (`docs/_site/`) |
 | `karbon deploy docker` | Generate optimized multi-stage Dockerfile |
+| `karbon deploy paas` | Generate Fly.io / Render / Procfile config |
+| `karbon deploy fly` / `railway` | Deploy via the platform CLI |
 | `karbon deploy publish` | Publish artifacts (rsync, local or SSH) |
 | `karbon deploy publish:build` | Build + publish |
 
@@ -62,7 +90,7 @@ MySQL is the default. To use PostgreSQL, change the feature flag:
 
 ```toml
 # Cargo.toml of your project
-karbon = { package = "karbon-framework", version = "0.2", default-features = false, features = ["postgres"] }
+karbon = { package = "karbon-framework", version = "0.3", default-features = false, features = ["postgres"] }
 ```
 
 Set the matching port in `.env`:

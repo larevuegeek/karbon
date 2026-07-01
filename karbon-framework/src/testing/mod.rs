@@ -6,7 +6,6 @@ use crate::db::{Database, DbPool};
 use crate::http::AppState;
 use crate::mail::Mailer;
 
-
 /// Test application helper. Boots the app on a random port for integration tests.
 ///
 /// ```ignore
@@ -30,7 +29,7 @@ pub struct TestApp {
 impl TestApp {
     /// Spawn the app on a random port. Requires DATABASE_URL or DB_* env vars.
     pub async fn spawn(router: axum::Router<AppState>) -> Self {
-        dotenvy::dotenv().ok();
+        crate::config::load_env();
         let config = Config::from_env();
         let db = Database::connect(&config)
             .await
@@ -87,7 +86,7 @@ impl TestApp {
     /// GET request
     pub async fn get(&self, path: &str) -> reqwest::Response {
         self.client
-            .get(&self.url(path))
+            .get(self.url(path))
             .send()
             .await
             .expect("Failed to send GET request")
@@ -96,7 +95,7 @@ impl TestApp {
     /// POST request with JSON body
     pub async fn post_json<T: serde::Serialize>(&self, path: &str, body: &T) -> reqwest::Response {
         self.client
-            .post(&self.url(path))
+            .post(self.url(path))
             .json(body)
             .send()
             .await
@@ -106,7 +105,7 @@ impl TestApp {
     /// PUT request with JSON body
     pub async fn put_json<T: serde::Serialize>(&self, path: &str, body: &T) -> reqwest::Response {
         self.client
-            .put(&self.url(path))
+            .put(self.url(path))
             .json(body)
             .send()
             .await
@@ -116,7 +115,7 @@ impl TestApp {
     /// DELETE request
     pub async fn delete(&self, path: &str) -> reqwest::Response {
         self.client
-            .delete(&self.url(path))
+            .delete(self.url(path))
             .send()
             .await
             .expect("Failed to send DELETE request")
@@ -125,7 +124,7 @@ impl TestApp {
     /// GET request with auth header
     pub async fn get_auth(&self, path: &str, token: &str) -> reqwest::Response {
         self.client
-            .get(&self.url(path))
+            .get(self.url(path))
             .bearer_auth(token)
             .send()
             .await

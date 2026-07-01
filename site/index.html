@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Karbon — the batteries-included Rust full-stack framework</title>
+<meta name="description" content="Karbon: a full-stack Rust framework (Axum + SvelteKit/Next.js) with a unified CLI, a browser dev cockpit, an auto admin, schema-diff migrations and deploy-anywhere. The productivity of Laravel, the robustness of Rust.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute"><defs>
+<linearGradient id="kg" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop stop-color="#8b7cff"/><stop offset="1" stop-color="#22d3ee"/></linearGradient>
+</defs></svg>
+
+<div class="topbar">
+  <span class="tag">New</span>
+  <span>Schema-diff migrations &amp; the Studio cockpit are here — <a href="docs/migrations.html">read the docs →</a></span>
+</div>
+
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="index.html">
+    <svg width="27" height="27" viewBox="0 0 32 32" fill="none"><path d="M16 1.6 28.5 8.8v14.4L16 30.4 3.5 23.2V8.8z" fill="url(#kg)"/><path d="M12.5 10v12M12.5 16l6.2-6M12.5 16l6.2 6" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>Karbon</span>
+  </a>
+  <nav class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#how">How it works</a>
+    <a href="#editions">Editions</a>
+    <a href="docs/index.html">Docs</a>
+    <a class="btn btn-ghost" href="https://github.com/larevuegeek/karbon">GitHub ★</a>
+  </nav>
+</div></header>
+
+<main>
+<section class="hero"><div class="wrap">
+  <div class="hexwrap">
+    <svg width="80" height="80" viewBox="0 0 32 32" fill="none"><path d="M16 1.6 28.5 8.8v14.4L16 30.4 3.5 23.2V8.8z" fill="url(#kg)"/><path d="M16 1.6 28.5 8.8v14.4L16 30.4 3.5 23.2V8.8z" fill="none" stroke="#fff" stroke-opacity=".18"/><path d="M12.5 10v12M12.5 16l6.2-6M12.5 16l6.2 6" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+  <div class="badge"><span class="dotpulse"></span> Rust · Axum · SvelteKit / Next.js</div>
+  <h1>The <span class="g">batteries-included</span><br>Rust full-stack framework</h1>
+  <p class="lead">The productivity of Laravel &amp; Symfony, the safety and single-binary deployment of Rust. One CLI to develop, scaffold, migrate and deploy.</p>
+  <div class="cta">
+    <a class="btn btn-primary" href="docs/quickstart.html">Get started →</a>
+    <a class="btn btn-ghost" href="docs/index.html">Read the docs</a>
+  </div>
+  <div class="install">
+    <span class="pfx">$</span>
+    <code id="inst">cargo install karbon-cli</code>
+    <button class="copy" data-copy="cargo install karbon-cli">Copy</button>
+  </div>
+
+  <div class="mockup reveal">
+    <div class="mk-bar">
+      <span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span>
+      <span class="mk-url">localhost:3005/_studio</span>
+    </div>
+    <div class="mk-body">
+      <div class="mk-side">
+        <div class="mlogo"><svg width="18" height="18" viewBox="0 0 32 32" fill="none"><path d="M16 1.6 28.5 8.8v14.4L16 30.4 3.5 23.2V8.8z" fill="url(#kg)"/></svg> Studio</div>
+        <div class="mk-nav on"><span class="i"></span> Overview</div>
+        <div class="mk-nav"><span class="i"></span> Requests</div>
+        <div class="mk-nav"><span class="i"></span> Database</div>
+        <div class="mk-nav"><span class="i"></span> Routes</div>
+        <div class="mk-nav"><span class="i"></span> Terminal</div>
+        <div class="mk-nav"><span class="i"></span> Docs</div>
+      </div>
+      <div class="mk-main">
+        <div class="mk-h">Overview · production-ready in dev</div>
+        <div class="mk-cards">
+          <div class="mk-card"><div class="l">Avg latency</div><div class="v g">2.4<span style="font-size:.9rem">ms</span></div></div>
+          <div class="mk-card"><div class="l">Requests</div><div class="v">18.2k</div></div>
+          <div class="mk-card"><div class="l">Entities</div><div class="v">7</div></div>
+        </div>
+        <div class="mk-chart">
+          <i style="height:38%"></i><i style="height:55%"></i><i style="height:42%"></i><i style="height:70%"></i>
+          <i style="height:60%"></i><i style="height:88%"></i><i style="height:52%"></i><i style="height:74%"></i>
+          <i style="height:46%"></i><i style="height:64%"></i><i style="height:81%"></i><i style="height:58%"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<section style="padding-top:8px"><div class="wrap">
+  <div class="cloud reveal">
+    <span>Rust</span><span class="sep"></span>
+    <span>Axum</span><span class="sep"></span>
+    <span>Tokio</span><span class="sep"></span>
+    <span>sqlx</span><span class="sep"></span>
+    <span>SvelteKit</span><span class="sep"></span>
+    <span>Next.js</span><span class="sep"></span>
+    <span>PostgreSQL</span><span class="sep"></span>
+    <span>MySQL</span><span class="sep"></span>
+    <span>SQLite</span>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="stat reveal">
+    <div><b class="g">1</b><span>binary to deploy</span></div>
+    <div><b class="g">3</b><span>databases supported</span></div>
+    <div><b class="g">9</b><span>CLI commands &amp; generators</span></div>
+    <div><b class="g">0</b><span>runtime, GC or VM</span></div>
+  </div>
+</div></section>
+
+<section id="features"><div class="wrap">
+  <div class="eyebrow">Everything in the box</div>
+  <h2>A framework, not a starter kit</h2>
+  <p class="sub">Controllers, an ORM, auth, validation, jobs, a dev cockpit and code generators — built in. You write features, not plumbing.</p>
+  <div class="grid reveal">
+    <div class="card"><div class="ic">⌘</div><h3>Unified CLI</h3><p><code>new → dev → build → serve → deploy</code>, plus generators, migrations and diagnostics.</p><a class="more" href="docs/cli.html">CLI reference →</a></div>
+    <div class="card"><div class="ic">🎛️</div><h3>Studio dev cockpit</h3><p>A browser dashboard: live performance, schema &amp; route explorers, an integrated terminal and live docs.</p><a class="more" href="docs/studio.html">Explore Studio →</a></div>
+    <div class="card"><div class="ic">🛠️</div><h3>Field-aware admin</h3><p><code>generate crud Post title:string</code> scaffolds entity, repo, controller and a typed admin UI.</p><a class="more" href="docs/generators.html">Generators →</a></div>
+    <div class="card"><div class="ic">🔀</div><h3>Schema-diff migrations</h3><p>Entities are the source of truth. <code>migrate diff</code> compares them to the live database and writes the delta.</p><a class="more" href="docs/migrations.html">Migrations →</a></div>
+    <div class="card"><div class="ic">🛡️</div><h3>Declarative validation</h3><p>Validate path params on the route — <code>int:min=1</code>, <code>enum:</code>, <code>regex:</code> — rejected with 400 before your handler.</p><a class="more" href="docs/validation.html">Validation →</a></div>
+    <div class="card"><div class="ic">🗄️</div><h3>Multi-driver ORM</h3><p>MySQL, PostgreSQL &amp; SQLite behind one feature flag. A typed, injection-safe query builder.</p><a class="more" href="docs/database.html">Database →</a></div>
+    <div class="card"><div class="ic">📘</div><h3>OpenAPI &amp; Swagger</h3><p>A generated <code>/openapi.json</code> and a <code>/docs</code> Swagger UI, straight from your controllers.</p><a class="more" href="docs/routing.html">Routing →</a></div>
+    <div class="card"><div class="ic">🚀</div><h3>Deploy anywhere</h3><p>VPS (rsync + PM2/systemd), Docker, or PaaS (Fly / Render / Railway). A single binary, configs generated.</p><a class="more" href="docs/deployment.html">Deployment →</a></div>
+    <div class="card"><div class="ic">⚡</div><h3>Realtime &amp; jobs</h3><p>WebSocket channels, background jobs, a message bus, events, cache, i18n, forms, mail and images.</p><a class="more" href="docs/realtime.html">Realtime →</a></div>
+  </div>
+</div></section>
+
+<section id="code"><div class="wrap">
+  <div class="eyebrow">Show me the code</div>
+  <h2>Conventions you already know</h2>
+  <p class="sub">Symfony-style controllers and role hierarchy, declarative route validation, and a diff-based migration workflow.</p>
+  <div class="split reveal">
+    <div class="code">
+      <div class="code-bar"><span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span><span style="margin-left:6px" class="mono">controller/post.rs</span></div>
+<pre><span class="tok-c">// Role check + path-param validation injected by the macro.</span>
+<span class="tok-k">#[karbon::controller(</span>prefix <span class="tok-k">=</span> <span class="tok-s">"/api/v1/posts"</span><span class="tok-k">)]</span>
+<span class="tok-k">impl</span> <span class="tok-a">PostController</span> {
+    <span class="tok-k">#[karbon::get(</span><span class="tok-s">"/{id}"</span>, id <span class="tok-k">=</span> <span class="tok-s">"int:min=1"</span><span class="tok-k">)]</span>
+    <span class="tok-k">async fn</span> <span class="tok-f">show</span>(State(s): State&lt;AppState&gt;, Path(id): Path&lt;<span class="tok-m">i64</span>&gt;)
+        -&gt; <span class="tok-a">AppResult</span>&lt;<span class="tok-k">impl</span> IntoResponse&gt; {
+        <span class="tok-a">Ok</span>(Json(Post::find_by_id(s.db.pool(), id).<span class="tok-k">await</span>?))
+    }
+}</pre>
+    </div>
+    <div class="code">
+      <div class="code-bar"><span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span><span style="margin-left:6px" class="mono">terminal</span></div>
+<pre><span class="tok-c"># Scaffold from typed fields — no migration written here.</span>
+$ <span class="tok-a">karbon</span> generate crud Post title:string body:text published:bool
+
+<span class="tok-c"># Entities are the source of truth — diff them vs the DB.</span>
+$ <span class="tok-a">karbon</span> migrate diff init
+  <span class="tok-s">+</span> table posts
+  <span class="tok-s">✓</span> 1 change → migration/0001_init.sql
+
+$ <span class="tok-a">karbon</span> migrate            <span class="tok-c"># apply</span>
+$ <span class="tok-a">karbon</span> dev                <span class="tok-c"># hot-reload + Studio cockpit</span></pre>
+    </div>
+  </div>
+</div></section>
+
+<section id="cockpit"><div class="wrap">
+  <div class="spot reveal">
+    <div class="txt">
+      <div class="eyebrow" style="justify-content:flex-start">The dev cockpit</div>
+      <h3>See your whole app while you build it</h3>
+      <p>Studio is a browser dashboard embedded in dev mode — not a separate service to run. Live metrics, a schema and route explorer, and an integrated terminal that scaffolds for you.</p>
+      <ul>
+        <li>Live latency, status &amp; endpoint breakdowns</li>
+        <li>Schema browser and a classified route map</li>
+        <li>A whitelisted terminal with a visual field builder</li>
+        <li>Your project docs, rendered inline</li>
+      </ul>
+      <p style="margin-top:20px"><a class="btn btn-ghost" href="docs/studio.html">Explore Studio →</a></p>
+    </div>
+    <div class="code">
+      <div class="code-bar"><span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span><span style="margin-left:6px" class="mono">Studio · Terminal</span></div>
+<pre><span class="tok-c">// scaffold without leaving the browser</span>
+<span class="tok-f">karbon</span> g crud Product name:string price:float in_stock:bool
+
+  <span class="tok-s">✓</span> entity      app/src/entity/product.rs
+  <span class="tok-s">✓</span> repository  app/src/repository/product.rs
+  <span class="tok-s">✓</span> controller  app/src/controller/product.rs
+  <span class="tok-s">✓</span> routes      wired into main.rs
+
+<span class="tok-f">karbon</span> migrate diff init   <span class="tok-c"># → migration/0001_init.sql</span></pre>
+    </div>
+  </div>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <div class="eyebrow">Five minutes</div>
+  <h2>From zero to running</h2>
+  <p class="sub">One command scaffolds a full-stack app with a welcome page, the Studio dashboard and the dev tooling.</p>
+  <div class="steps reveal">
+    <div class="step"><b>Install</b><span class="mono">cargo install karbon-cli</span></div>
+    <div class="step"><b>Create</b><span class="mono">karbon new my-app</span></div>
+    <div class="step"><b>Develop</b><span class="mono">karbon dev</span> — backend + frontend hot-reload</div>
+    <div class="step"><b>Deploy</b><span class="mono">karbon deploy docker</span> — or fly / railway / VPS</div>
+  </div>
+  <p style="text-align:center;margin-top:26px"><a class="btn btn-ghost" href="docs/quickstart.html">Full quickstart guide →</a></p>
+</div></section>
+
+<section id="editions"><div class="wrap">
+  <div class="eyebrow">Pick your skeleton</div>
+  <h2>Start at the right size</h2>
+  <p class="sub"><code class="mono">karbon new my-app --skeleton &lt;…&gt;</code> scaffolds exactly what you need — nothing more.</p>
+  <div class="editions reveal">
+    <div class="ed">
+      <h3>Micro</h3>
+      <div class="price">Backend-only</div>
+      <ul>
+        <li>Single Rust binary, no frontend</li>
+        <li>HTML welcome page served by Axum</li>
+        <li>Optional database (runs without one)</li>
+        <li>Ideal for APIs &amp; microservices</li>
+      </ul>
+      <span class="tag mono">--skeleton micro</span>
+    </div>
+    <div class="ed feat">
+      <span class="tagline">Default</span>
+      <h3>Full</h3>
+      <div class="price">Backend + frontend</div>
+      <ul>
+        <li>SvelteKit (default) or Next.js</li>
+        <li>Hot-reload dev, single-port prod</li>
+        <li>Studio cockpit + live profiler home</li>
+        <li>Reverse proxy &amp; SSR built in</li>
+      </ul>
+      <span class="tag mono">--frontend svelte | nextjs</span>
+    </div>
+    <div class="ed">
+      <h3>Blog template</h3>
+      <div class="price">Starter content app</div>
+      <ul>
+        <li>Post CRUD + admin scaffolded</li>
+        <li>Migrations &amp; entities ready</li>
+        <li>A worked example to learn from</li>
+        <li>CMS &amp; shop templates on the roadmap</li>
+      </ul>
+      <span class="tag mono">--template blog</span>
+    </div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="band reveal">
+    <h2 style="margin-top:0">Build it in Rust. Ship it like Laravel.</h2>
+    <p class="sub" style="margin-bottom:1.7rem">Karbon is pre-1.0 and moving fast. Try it, star it, and shape where it goes.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="docs/index.html">Read the docs</a>
+      <a class="btn btn-ghost" href="https://github.com/larevuegeek/karbon">Star on GitHub</a>
+    </div>
+  </div>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  <div class="foot-grid">
+    <div>
+      <a class="brand" href="index.html">
+        <svg width="24" height="24" viewBox="0 0 32 32" fill="none"><path d="M16 1.6 28.5 8.8v14.4L16 30.4 3.5 23.2V8.8z" fill="url(#kg)"/><path d="M12.5 10v12M12.5 16l6.2-6M12.5 16l6.2 6" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Karbon</span>
+      </a>
+      <p style="color:var(--mut);max-width:280px;margin-top:14px">The batteries-included Rust full-stack framework. Axum + SvelteKit/Next.js, one CLI.</p>
+    </div>
+    <div><h4>Docs</h4><a href="docs/installation.html">Installation</a><a href="docs/quickstart.html">Quickstart</a><a href="docs/cli.html">CLI reference</a><a href="docs/deployment.html">Deployment</a></div>
+    <div><h4>Concepts</h4><a href="docs/routing.html">Routing</a><a href="docs/database.html">Database</a><a href="docs/migrations.html">Migrations</a><a href="docs/security.html">Security</a></div>
+    <div><h4>Project</h4><a href="https://github.com/larevuegeek/karbon">GitHub</a><a href="https://crates.io/crates/karbon-framework">crates.io</a><a href="https://docs.rs/karbon-framework">docs.rs</a></div>
+  </div>
+  <div class="foot-bottom"><span>© Karbon · AGPL-3.0 · Extracted from LaRevueGeek.com</span></div>
+</div></footer>
+
+<script>
+document.querySelectorAll('.copy').forEach(function(b){
+  b.addEventListener('click',function(){
+    navigator.clipboard.writeText(b.dataset.copy).then(function(){
+      var t=b.textContent;b.textContent='Copied ✓';setTimeout(function(){b.textContent=t;},1400);
+    });
+  });
+});
+var io=new IntersectionObserver(function(es){
+  es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+},{rootMargin:'0px 0px -8% 0px'});
+document.querySelectorAll('.reveal').forEach(function(el){io.observe(el);});
+</script>
+</body>
+</html>

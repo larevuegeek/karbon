@@ -50,7 +50,11 @@ impl Url {
         }
 
         // Extract host (before path, query, fragment)
-        let host_end = rest.find('/').or_else(|| rest.find('?')).or_else(|| rest.find('#')).unwrap_or(rest.len());
+        let host_end = rest
+            .find('/')
+            .or_else(|| rest.find('?'))
+            .or_else(|| rest.find('#'))
+            .unwrap_or(rest.len());
         let host_part = &rest[..host_end];
 
         if host_part.is_empty() {
@@ -86,11 +90,7 @@ impl Url {
 impl Constraint for Url {
     fn validate(&self, value: &str) -> ConstraintResult {
         if !self.is_valid_url(value) {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                value,
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, value));
         }
         Ok(())
     }
@@ -111,9 +111,21 @@ mod tests {
         assert!(constraint.validate("https://example.com").is_ok());
         assert!(constraint.validate("https://example.com/path").is_ok());
         assert!(constraint.validate("https://example.com:8080").is_ok());
-        assert!(constraint.validate("https://sub.domain.example.com").is_ok());
-        assert!(constraint.validate("https://example.com/path?query=1").is_ok());
-        assert!(constraint.validate("https://example.com/path#fragment").is_ok());
+        assert!(
+            constraint
+                .validate("https://sub.domain.example.com")
+                .is_ok()
+        );
+        assert!(
+            constraint
+                .validate("https://example.com/path?query=1")
+                .is_ok()
+        );
+        assert!(
+            constraint
+                .validate("https://example.com/path#fragment")
+                .is_ok()
+        );
     }
 
     #[test]

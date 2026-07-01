@@ -26,9 +26,9 @@ struct ServerPatch {
 /// The client connects via WebSocket and sends events back to the server.
 ///
 /// ```ignore
-/// use framework::livewire::{LiveComponent, live_render, live_socket};
+/// use karbon::livewire::{LiveComponent, live_render, live_socket};
 ///
-/// #[framework::get("/counter")]
+/// #[karbon::get("/counter")]
 /// async fn counter_page() -> impl IntoResponse {
 ///     let component = Counter { count: 0 };
 ///     live_render(component, "/ws/counter")

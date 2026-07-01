@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quickstart — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Quickstart" data-cat="Get started">
+<h1>Quickstart</h1>
+<p class="lead-p">Scaffold a full-stack app, add an entity, generate its admin, run the migration and start the dev server — in about five minutes.</p>
+
+<h2>1. Create a project</h2>
+<pre>karbon new my-app          # SvelteKit frontend (default)
+cd my-app</pre>
+<p>Other starting points:</p>
+<pre>karbon new my-app --frontend nextjs   # Next.js instead of SvelteKit
+karbon new my-app --skeleton micro    # backend-only, no frontend
+karbon new my-app --template blog     # Post CRUD + admin pre-scaffolded</pre>
+<p>A <code>full</code> project contains a Rust backend (<code>app/</code>), a frontend, a <code>karbon.toml</code> config and a starter <code>docs/</code> folder. See <a href="structure.html">Project structure</a> for the full layout.</p>
+
+<h2>2. Configure the environment</h2>
+<p>Copy the example env file and set your database (or leave it blank to run without one):</p>
+<pre>cp .env.example .env</pre>
+<p>For a quick start with zero setup, SQLite needs nothing but a path. For MySQL/PostgreSQL, set <code>DB_*</code> or a single <code>DATABASE_URL</code>. Karbon loads <code>.env</code> files in cascade (<code>.env</code> → <code>.env.{env}</code> → <code>.env.local</code>), Symfony-style. See <a href="configuration.html">Configuration</a>.</p>
+
+<div class="note">
+<p><b>No database?</b> Leave <code>DB_NAME</code> empty and the app starts without connecting. Perfect for prototypes and static pages.</p>
+</div>
+
+<h2>3. Generate an entity + CRUD</h2>
+<p>Scaffold an entity, repository and controller from typed fields in one command:</p>
+<pre>karbon generate crud Post title:string body:text published:bool</pre>
+<p>Field syntax is <code>name:type</code>, with a trailing <code>?</code> for nullable columns. Available types: <code>string</code>, <code>text</code>, <code>int</code>, <code>bigint</code>, <code>float</code>, <code>bool</code>, <code>datetime</code>, <code>date</code>, <code>json</code>. Run <code>generate entity Post -i</code> for an interactive, Symfony-style field assistant. See <a href="generators.html">Generators</a>.</p>
+
+<h2>4. Generate the admin UI</h2>
+<pre>karbon generate admin Post</pre>
+<p>This produces a field-aware back-office (list, create/edit forms, delete) under <code>/admin/posts</code>, guarded by <code>ROLE_ADMIN</code>, with typed DTOs derived from your entity's fields.</p>
+
+<h2>5. Create and run the migration</h2>
+<p>Generators don't write migrations — your <b>entities are the source of truth</b>. Diff them against the database to produce the migration, then apply it:</p>
+<pre>karbon migrate diff init   # writes migration/0001_init.sql from the entity ↔ DB diff
+karbon migrate             # applies pending migrations</pre>
+<p>Later, when you add a field to an entity, run <code>karbon migrate diff add_field</code> to generate the <code>ALTER TABLE</code>. The diff is additive and never drops or alters existing columns. See <a href="migrations.html">Migrations</a>.</p>
+
+<h2>6. Start developing</h2>
+<pre>karbon dev</pre>
+<p>This compiles and runs the backend, starts the frontend dev server, and watches both for changes — saving a Rust file recompiles and restarts the backend automatically. Your app is now live with hot-reload.</p>
+
+<div class="note ok">
+<p><b>Open the cockpit.</b> In dev, Studio is available at <code>http://localhost:3005/_studio</code> — live metrics, a schema and route explorer, and an integrated terminal that can run generators and migrations for you. See <a href="studio.html">Studio</a>.</p>
+</div>
+
+<h2>7. Build &amp; deploy</h2>
+<pre>karbon build                 # production build (frontend + cargo --release)
+karbon serve                 # run production on a single port (reverse proxy built in)
+karbon deploy docker         # generate a multi-stage Dockerfile
+karbon deploy publish:build  # build &amp; rsync to a VPS (PM2 / systemd)</pre>
+<p>See <a href="deployment.html">Deployment</a> for VPS, Docker and PaaS targets.</p>
+
+<h2>Next steps</h2>
+<ul>
+  <li><a href="routing.html">Routing &amp; controllers</a> — how requests map to handlers.</li>
+  <li><a href="database.html">Database &amp; ORM</a> — repositories, the query builder and relations.</li>
+  <li><a href="security.html">Security &amp; auth</a> — JWT, roles and the <code>AuthGuard</code>.</li>
+  <li><a href="cli.html">CLI reference</a> — every command and flag.</li>
+</ul>
+</article>
+</body>
+</html>

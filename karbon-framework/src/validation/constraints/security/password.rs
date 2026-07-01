@@ -26,7 +26,8 @@ impl Default for Password {
     fn default() -> Self {
         Self {
             min_strength: PasswordStrength::Medium,
-            message: "The password strength is too low. Please use a stronger password.".to_string(),
+            message: "The password strength is too low. Please use a stronger password."
+                .to_string(),
             min_length: 8,
         }
     }
@@ -61,8 +62,8 @@ impl Password {
         let has_special = value.chars().any(|c| !c.is_alphanumeric());
 
         let common_patterns = [
-            "password", "123456", "qwerty", "abc123", "letmein", "admin",
-            "welcome", "monkey", "dragon", "master", "azerty",
+            "password", "123456", "qwerty", "abc123", "letmein", "admin", "welcome", "monkey",
+            "dragon", "master", "azerty",
         ];
         let lower = value.to_lowercase();
         let has_common = common_patterns.iter().any(|p| lower.contains(p));

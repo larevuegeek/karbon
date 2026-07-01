@@ -50,11 +50,9 @@ impl InsertBuilder {
     where
         E: sqlx::Executor<'e, Database = Db>,
     {
-        let placeholders: Vec<String> = (1..=self.columns.len())
-            .map(placeholder)
-            .collect();
+        let placeholders: Vec<String> = (1..=self.columns.len()).map(placeholder).collect();
 
-        #[cfg(feature = "mysql")]
+        #[cfg(any(feature = "mysql", feature = "sqlite"))]
         let sql = format!(
             "INSERT INTO {} ({}) VALUES ({})",
             self.table,
@@ -72,10 +70,14 @@ impl InsertBuilder {
 
         #[cfg(feature = "mysql")]
         {
-            let result = sqlx::query_with(&sql, self.args)
-                .execute(executor)
-                .await?;
+            let result = sqlx::query_with(&sql, self.args).execute(executor).await?;
             Ok(result.last_insert_id())
+        }
+
+        #[cfg(feature = "sqlite")]
+        {
+            let result = sqlx::query_with(&sql, self.args).execute(executor).await?;
+            Ok(result.last_insert_rowid() as u64)
         }
 
         #[cfg(feature = "postgres")]
@@ -122,7 +124,8 @@ impl UpdateBuilder {
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
         self.param_count += 1;
-        self.set_clauses.push(format!("{} = {}", column, placeholder(self.param_count)));
+        self.set_clauses
+            .push(format!("{} = {}", column, placeholder(self.param_count)));
         self.args.add(value).unwrap();
         self
     }
@@ -140,7 +143,8 @@ impl UpdateBuilder {
     {
         if let Some(v) = value {
             self.param_count += 1;
-            self.set_clauses.push(format!("{} = {}", column, placeholder(self.param_count)));
+            self.set_clauses
+                .push(format!("{} = {}", column, placeholder(self.param_count)));
             self.args.add(v).unwrap();
         }
         self
@@ -152,7 +156,8 @@ impl UpdateBuilder {
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
         self.param_count += 1;
-        self.where_clauses.push(format!("{} = {}", column, placeholder(self.param_count)));
+        self.where_clauses
+            .push(format!("{} = {}", column, placeholder(self.param_count)));
         self.args.add(value).unwrap();
         self
     }
@@ -169,7 +174,8 @@ impl UpdateBuilder {
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
         self.param_count += 1;
-        self.where_clauses.push(format!("{} != {}", column, placeholder(self.param_count)));
+        self.where_clauses
+            .push(format!("{} != {}", column, placeholder(self.param_count)));
         self.args.add(value).unwrap();
         self
     }
@@ -196,9 +202,7 @@ impl UpdateBuilder {
             where_clause,
         );
 
-        let result = sqlx::query_with(&sql, self.args)
-            .execute(executor)
-            .await?;
+        let result = sqlx::query_with(&sql, self.args).execute(executor).await?;
 
         Ok(result.rows_affected())
     }
@@ -234,7 +238,8 @@ impl DeleteBuilder {
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
         self.param_count += 1;
-        self.where_clauses.push(format!("{} = {}", column, placeholder(self.param_count)));
+        self.where_clauses
+            .push(format!("{} = {}", column, placeholder(self.param_count)));
         self.args.add(value).unwrap();
         self
     }
@@ -258,9 +263,7 @@ impl DeleteBuilder {
 
         let sql = format!("DELETE FROM {}{}", self.table, where_clause);
 
-        let result = sqlx::query_with(&sql, self.args)
-            .execute(executor)
-            .await?;
+        let result = sqlx::query_with(&sql, self.args).execute(executor).await?;
 
         Ok(result.rows_affected())
     }
@@ -296,7 +299,8 @@ impl CountBuilder {
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
         self.param_count += 1;
-        self.where_clauses.push(format!("{} = {}", column, placeholder(self.param_count)));
+        self.where_clauses
+            .push(format!("{} = {}", column, placeholder(self.param_count)));
         self.args.add(value).unwrap();
         self
     }
@@ -307,7 +311,8 @@ impl CountBuilder {
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
         self.param_count += 1;
-        self.where_clauses.push(format!("{} != {}", column, placeholder(self.param_count)));
+        self.where_clauses
+            .push(format!("{} != {}", column, placeholder(self.param_count)));
         self.args.add(value).unwrap();
         self
     }

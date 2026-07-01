@@ -14,27 +14,36 @@ pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
 
     let mut children: Vec<Child> = Vec::new();
 
-    // ── Step 1: Start frontend SSR (Node) in background ──
-    let frontend_child = start_frontend_ssr(config, root)?;
-    children.push(frontend_child);
+    let has_frontend = config.frontend.is_some();
 
-    // ── Step 2: Start backend with reverse proxy to frontend ──
+    // ── Step 1: Start frontend SSR (Node) in background, if any ──
+    if has_frontend {
+        let frontend_child = start_frontend_ssr(config, root)?;
+        children.push(frontend_child);
+    }
+
+    // ── Step 2: Start backend (with reverse proxy to frontend if present) ──
     let backend_child = start_backend(config, root)?;
     children.push(backend_child);
 
     println!(
-        "\n  {} Application running → {}  (single port)",
+        "\n  {} Application running → {}  ({})",
         "●".green().bold(),
-        format!("http://localhost:{}", config.backend.port).cyan().bold()
+        format!("http://localhost:{}", config.backend.port)
+            .cyan()
+            .bold(),
+        if has_frontend {
+            "single port"
+        } else {
+            "API-only"
+        }
     );
-    println!(
-        "    {} /api/*   → Rust (Axum)",
-        "├".dimmed()
-    );
-    println!(
-        "    {} /*       → Frontend SSR (proxied)",
-        "└".dimmed()
-    );
+    if has_frontend {
+        println!("    {} /api/*   → Rust (Axum)", "├".dimmed());
+        println!("    {} /*       → Frontend SSR (proxied)", "└".dimmed());
+    } else {
+        println!("    {} /*       → Rust (Axum)", "└".dimmed());
+    }
     println!("\n  {} to stop\n", "Ctrl+C".bold().yellow());
 
     wait_for_any(&mut children);
@@ -43,7 +52,8 @@ pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
 }
 
 fn start_frontend_ssr(config: &KarbonConfig, root: &Path) -> Result<Child, String> {
-    let frontend_dir = config.frontend_dir(root);
+    let frontend = config.frontend.as_ref().ok_or("No [frontend] configured")?;
+    let frontend_dir = root.join(&frontend.dir);
     let build_dir = frontend_dir.join("build");
 
     if !build_dir.exists() {
@@ -53,17 +63,17 @@ fn start_frontend_ssr(config: &KarbonConfig, root: &Path) -> Result<Child, Strin
         ));
     }
 
-    let parts: Vec<&str> = config.frontend.serve_cmd.split_whitespace().collect();
+    let parts: Vec<&str> = frontend.serve_cmd.split_whitespace().collect();
     let args: Vec<String> = parts[1..].iter().map(|s| s.to_string()).collect();
 
     // Set PORT env for the Node SSR server
     let mut env = HashMap::new();
-    env.insert("PORT".to_string(), config.frontend.port.to_string());
+    env.insert("PORT".to_string(), frontend.port.to_string());
 
     println!(
         "  {} Frontend SSR (internal) → :{} ",
         "→".blue(),
-        config.frontend.port
+        frontend.port
     );
 
     spawn_command_with_env(parts[0], &args, &frontend_dir, "frontend-ssr", &env)
@@ -83,22 +93,26 @@ fn start_backend(config: &KarbonConfig, root: &Path) -> Result<Child, String> {
         ));
     }
 
-    // Pass frontend URL to the backend so it enables reverse proxy
-    let frontend_url = format!("http://localhost:{}", config.frontend.port);
+    // Pass frontend URL to the backend so it enables reverse proxy (only if a
+    // frontend is configured — backend-only projects serve everything directly).
     let mut env = HashMap::new();
-    env.insert("KARBON_FRONTEND_URL".to_string(), frontend_url);
+    if let Some(frontend) = &config.frontend {
+        env.insert(
+            "KARBON_FRONTEND_URL".to_string(),
+            format!("http://localhost:{}", frontend.port),
+        );
+    }
 
     println!(
-        "  {} Backend API + Proxy    → :{}",
+        "  {} Backend{} → :{}",
         "→".blue(),
+        if config.frontend.is_some() {
+            " API + Proxy   "
+        } else {
+            " API           "
+        },
         config.backend.port
     );
 
-    spawn_command_with_env(
-        binary.to_str().unwrap(),
-        &[],
-        root,
-        "backend",
-        &env,
-    )
+    spawn_command_with_env(binary.to_str().unwrap(), &[], root, "backend", &env)
 }

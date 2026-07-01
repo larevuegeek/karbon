@@ -1,8 +1,8 @@
+use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::{broadcast, RwLock};
-use serde::Serialize;
+use tokio::sync::{RwLock, broadcast};
 
 const MAX_REQUESTS: usize = 500;
 const MAX_EVENTS: usize = 200;
@@ -19,12 +19,7 @@ const SENSITIVE_HEADERS: &[&str] = &[
 ];
 
 /// Sensitive patterns in header values
-const SENSITIVE_PATTERNS: &[&str] = &[
-    "secret",
-    "password",
-    "token",
-    "key",
-];
+const SENSITIVE_PATTERNS: &[&str] = &["secret", "password", "token", "key"];
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -191,6 +186,7 @@ impl StudioCollector {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn record_request(
         &self,
         method: String,
@@ -359,11 +355,25 @@ impl StudioCollector {
     }
 
     pub async fn get_requests(&self) -> Vec<RequestRecord> {
-        self.data.read().await.requests.iter().rev().cloned().collect()
+        self.data
+            .read()
+            .await
+            .requests
+            .iter()
+            .rev()
+            .cloned()
+            .collect()
     }
 
     pub async fn get_events(&self) -> Vec<EventRecord> {
-        self.data.read().await.events.iter().rev().cloned().collect()
+        self.data
+            .read()
+            .await
+            .events
+            .iter()
+            .rev()
+            .cloned()
+            .collect()
     }
 
     pub async fn get_jobs(&self) -> Vec<JobRecord> {

@@ -54,12 +54,11 @@ impl Hostname {
         }
 
         // TLD must not be all-numeric
-        if self.require_tld {
-            if let Some(tld) = labels.last() {
-                if tld.chars().all(|c| c.is_ascii_digit()) {
-                    return false;
-                }
-            }
+        if self.require_tld
+            && let Some(tld) = labels.last()
+            && tld.chars().all(|c| c.is_ascii_digit())
+        {
+            return false;
         }
 
         true
@@ -69,11 +68,7 @@ impl Hostname {
 impl Constraint for Hostname {
     fn validate(&self, value: &str) -> ConstraintResult {
         if !self.is_valid_hostname(value) {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                value,
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, value));
         }
         Ok(())
     }

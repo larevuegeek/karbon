@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 pub struct KarbonConfig {
     pub app: AppConfig,
     pub backend: BackendConfig,
-    pub frontend: FrontendConfig,
+    /// Frontend config — absent for backend-only ("micro") projects.
+    #[serde(default)]
+    pub frontend: Option<FrontendConfig>,
     #[serde(default)]
     pub proxy: ProxyConfig,
     #[serde(default)]
@@ -31,6 +33,7 @@ pub struct BackendConfig {
     #[serde(default = "default_backend_port")]
     pub port: u16,
     #[serde(default = "default_true")]
+    #[allow(dead_code)] // parsed from karbon.toml; reserved for future watch toggling
     pub watch: bool,
 }
 
@@ -84,8 +87,12 @@ pub struct DeployConfig {
     pub host: Option<String>,
 }
 
-fn default_manager() -> String { "pm2".to_string() }
-fn default_pm2_config() -> String { "ecosystem.config.cjs".to_string() }
+fn default_manager() -> String {
+    "pm2".to_string()
+}
+fn default_pm2_config() -> String {
+    "ecosystem.config.cjs".to_string()
+}
 
 impl Default for ProxyConfig {
     fn default() -> Self {
@@ -95,29 +102,45 @@ impl Default for ProxyConfig {
     }
 }
 
-fn default_backend_port() -> u16 { 3005 }
-fn default_frontend_port() -> u16 { 3004 }
-fn default_true() -> bool { true }
-fn default_dev_cmd() -> String { "npm run dev".to_string() }
-fn default_build_cmd() -> String { "npm run build".to_string() }
-fn default_serve_cmd() -> String { "node build/index.js".to_string() }
+fn default_backend_port() -> u16 {
+    3005
+}
+fn default_frontend_port() -> u16 {
+    3004
+}
+fn default_true() -> bool {
+    true
+}
+fn default_dev_cmd() -> String {
+    "npm run dev".to_string()
+}
+fn default_build_cmd() -> String {
+    "npm run build".to_string()
+}
+fn default_serve_cmd() -> String {
+    "node build/index.js".to_string()
+}
 fn default_backend_routes() -> Vec<String> {
-    vec!["/api".to_string(), "/files".to_string(), "/health".to_string()]
+    vec![
+        "/api".to_string(),
+        "/files".to_string(),
+        "/health".to_string(),
+    ]
 }
 
 impl KarbonConfig {
     /// Load karbon.toml from the project root (searches upward)
     pub fn load() -> Result<(Self, PathBuf), String> {
-        let mut dir = std::env::current_dir()
-            .map_err(|e| format!("Cannot get current dir: {e}"))?;
+        let mut dir =
+            std::env::current_dir().map_err(|e| format!("Cannot get current dir: {e}"))?;
 
         loop {
             let config_path = dir.join("karbon.toml");
             if config_path.exists() {
                 let content = std::fs::read_to_string(&config_path)
                     .map_err(|e| format!("Cannot read {}: {e}", config_path.display()))?;
-                let config: KarbonConfig = toml::from_str(&content)
-                    .map_err(|e| format!("Invalid karbon.toml: {e}"))?;
+                let config: KarbonConfig =
+                    toml::from_str(&content).map_err(|e| format!("Invalid karbon.toml: {e}"))?;
                 return Ok((config, dir));
             }
             if !dir.pop() {
@@ -126,8 +149,8 @@ impl KarbonConfig {
         }
     }
 
-    /// Absolute path to the frontend directory
-    pub fn frontend_dir(&self, root: &Path) -> PathBuf {
-        root.join(&self.frontend.dir)
+    /// Absolute path to the frontend directory (None for backend-only projects).
+    pub fn frontend_dir(&self, root: &Path) -> Option<PathBuf> {
+        self.frontend.as_ref().map(|f| root.join(&f.dir))
     }
 }

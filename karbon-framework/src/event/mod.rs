@@ -46,15 +46,17 @@ impl EventBus {
         Fut: Future<Output = ()> + Send + 'static,
     {
         let handler = Arc::new(handler);
-        let handler: BoxHandler = Arc::new(move |event: &dyn Any| -> Pin<Box<dyn Future<Output = ()> + Send>> {
-            if let Some(e) = event.downcast_ref::<Arc<E>>() {
-                let e = e.clone();
-                let h = handler.clone();
-                Box::pin(async move { h(e).await })
-            } else {
-                Box::pin(async {})
-            }
-        });
+        let handler: BoxHandler = Arc::new(
+            move |event: &dyn Any| -> Pin<Box<dyn Future<Output = ()> + Send>> {
+                if let Some(e) = event.downcast_ref::<Arc<E>>() {
+                    let e = e.clone();
+                    let h = handler.clone();
+                    Box::pin(async move { h(e).await })
+                } else {
+                    Box::pin(async {})
+                }
+            },
+        );
 
         let mut handlers = self.handlers.write().await;
         handlers.entry(TypeId::of::<E>()).or_default().push(handler);
@@ -65,10 +67,7 @@ impl EventBus {
         let event = Arc::new(event);
         let handlers = self.handlers.read().await;
         if let Some(list) = handlers.get(&TypeId::of::<E>()) {
-            let futures: Vec<_> = list
-                .iter()
-                .map(|h| h(&event as &dyn Any))
-                .collect();
+            let futures: Vec<_> = list.iter().map(|h| h(&event as &dyn Any)).collect();
             futures::future::join_all(futures).await;
         }
     }

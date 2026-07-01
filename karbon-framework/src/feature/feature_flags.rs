@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
 
 /// A single feature flag with optional metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,19 +44,20 @@ impl FeatureFlags {
 
     /// Register a feature flag with an initial state
     pub async fn register(&self, name: &str, enabled: bool, description: &str) {
-        self.store.write().await.insert(name.to_string(), FeatureFlag {
-            name: name.to_string(),
-            enabled,
-            description: description.to_string(),
-            updated_at: Utc::now(),
-        });
+        self.store.write().await.insert(
+            name.to_string(),
+            FeatureFlag {
+                name: name.to_string(),
+                enabled,
+                description: description.to_string(),
+                updated_at: Utc::now(),
+            },
+        );
     }
 
     /// Check if a feature is enabled (returns false if not registered)
     pub async fn is_enabled(&self, name: &str) -> bool {
-        self.store.read().await
-            .get(name)
-            .is_some_and(|f| f.enabled)
+        self.store.read().await.get(name).is_some_and(|f| f.enabled)
     }
 
     /// Enable a feature flag
@@ -112,12 +113,15 @@ impl FeatureFlags {
     pub async fn register_many(&self, flags: &[(&str, bool, &str)]) {
         let mut store = self.store.write().await;
         for (name, enabled, description) in flags {
-            store.insert(name.to_string(), FeatureFlag {
-                name: name.to_string(),
-                enabled: *enabled,
-                description: description.to_string(),
-                updated_at: Utc::now(),
-            });
+            store.insert(
+                name.to_string(),
+                FeatureFlag {
+                    name: name.to_string(),
+                    enabled: *enabled,
+                    description: description.to_string(),
+                    updated_at: Utc::now(),
+                },
+            );
         }
     }
 }

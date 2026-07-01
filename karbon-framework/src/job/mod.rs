@@ -4,6 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+mod persistent;
+pub use persistent::{PersistentJob, PersistentQueue, PersistentQueueBuilder};
+
 /// Trait for background jobs.
 ///
 /// ```ignore
@@ -25,10 +28,14 @@ pub trait Job: Send + Sync + 'static {
     fn execute(&self) -> Pin<Box<dyn Future<Output = Result<(), anyhow::Error>> + Send + '_>>;
 
     /// Number of retries on failure (default: 0)
-    fn max_retries(&self) -> u32 { 0 }
+    fn max_retries(&self) -> u32 {
+        0
+    }
 
     /// Delay between retries (default: 5s)
-    fn retry_delay(&self) -> Duration { Duration::from_secs(5) }
+    fn retry_delay(&self) -> Duration {
+        Duration::from_secs(5)
+    }
 }
 
 /// In-process background job queue using tokio tasks.
@@ -65,7 +72,9 @@ impl JobQueue {
                 let sem = semaphore.clone();
 
                 tokio::spawn(async move {
-                    let Ok(_permit) = sem.acquire().await else { return };
+                    let Ok(_permit) = sem.acquire().await else {
+                        return;
+                    };
                     let name = job.name().to_string();
                     let max_retries = job.max_retries();
 

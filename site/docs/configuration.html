@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Configuration" data-cat="Operate">
+<h1>Configuration &amp; environments</h1>
+<p class="lead-p">Configuration comes from environment variables, loaded from <code>.env</code> files in cascade, and from <code>karbon.toml</code> for project-level settings. The active environment is selected by <code>APP_ENV</code>.</p>
+
+<h2>Environment files</h2>
+<p><code>App::new()</code> calls <code>config::load_env()</code> automatically, loading files in Symfony-style cascade — later files override earlier ones, but never an already-set variable:</p>
+<pre>.env  →  .env.{APP_ENV}  →  .env.local  →  .env.{APP_ENV}.local</pre>
+<p>So you commit shared defaults in <code>.env</code>, environment-specific values in <code>.env.{env}</code>, and machine/secret overrides in the <code>*.local</code> files (which you git-ignore).</p>
+
+<h2>APP_ENV</h2>
+<p><code>config::Environment</code> plus the helpers on <code>Config</code> let you branch on the environment:</p>
+<pre>config.is_development()
+config.is_test()
+config.is_production()</pre>
+<p>Studio links are relaxed in development; internal error details are hidden in production.</p>
+
+<h2>Common variables</h2>
+<table>
+  <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>APP_ENV</code></td><td><code>development</code> / <code>test</code> / <code>production</code></td></tr>
+    <tr><td><code>DATABASE_URL</code></td><td>Full connection URL (alternative to the <code>DB_*</code> set)</td></tr>
+    <tr><td><code>DB_HOST</code>, <code>DB_PORT</code>, <code>DB_NAME</code>, <code>DB_USER</code>, <code>DB_PASSWORD</code></td><td>Database connection parts. Empty <code>DB_NAME</code> → no DB</td></tr>
+    <tr><td><code>JWT_SECRET</code></td><td>JWT signing secret. Empty → auth disabled</td></tr>
+    <tr><td><code>KARBON_FRONTEND_URL</code></td><td>Reverse-proxy target for non-API requests (set by <code>serve</code>)</td></tr>
+    <tr><td><code>KARBON_BIN</code></td><td>Path to the <code>karbon</code> binary (set by <code>dev</code>, used by Studio)</td></tr>
+    <tr><td>SMTP / mail vars</td><td>Mailer configuration (host, port, credentials)</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+<p><b>Optional everything.</b> <code>DB_USER</code> and <code>JWT_SECRET</code> are no longer mandatory. Leave <code>DB_NAME</code> empty to run without a database; leave <code>JWT_SECRET</code> empty to run without auth. <code>Config::has_database()</code> reports the mode.</p>
+</div>
+
+<h2>karbon.toml</h2>
+<p>Project-level settings the CLI reads:</p>
+<pre>[app]
+name = "my-app"
+
+[backend]
+extra_packages = []        # extra binaries to build &amp; deploy alongside the main one
+
+[frontend]
+framework = "svelte"       # or "nextjs"; omit for a micro skeleton
+
+[deploy]
+path = "/var/www/my-app"
+user = "www-data"
+manager = "pm2"            # "pm2" or "systemd"
+host = "user@server"       # omit for a local deploy</pre>
+<p>On the CLI side, <code>KarbonConfig.frontend</code> is an <code>Option</code>, so the absence of a <code>[frontend]</code> section is what makes a project backend-only.</p>
+
+<h2>AppState</h2>
+<p>Your handlers receive shared state through <code>State&lt;AppState&gt;</code>:</p>
+<pre>pub struct AppState {
+    pub db: Database,
+    pub config: Config,
+    pub mailer: Option&lt;Mailer&gt;,
+    pub role_hierarchy: RoleHierarchy,
+}</pre>
+
+<div class="note ok">
+<p><b>Validate config offline.</b> <code>karbon doctor</code> checks for missing or inconsistent configuration before you deploy; <code>doctor --db</code> additionally probes the connection and pending migrations.</p>
+</div>
+</article>
+</body>
+</html>

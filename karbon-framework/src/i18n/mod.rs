@@ -148,13 +148,17 @@ mod tests {
         let mut i18n = I18n::new("fr");
         i18n.add_translations("fr", &[("welcome", "Bienvenue {name}")]);
 
-        assert_eq!(i18n.t_with("welcome", &[("name", "David")]), "Bienvenue David");
+        assert_eq!(
+            i18n.t_with("welcome", &[("name", "David")]),
+            "Bienvenue David"
+        );
     }
 
     #[test]
     fn test_load_json() {
         let mut i18n = I18n::new("fr");
-        i18n.load_json("fr", r#"{"hello": "Bonjour", "bye": "Au revoir"}"#).unwrap();
+        i18n.load_json("fr", r#"{"hello": "Bonjour", "bye": "Au revoir"}"#)
+            .unwrap();
 
         assert_eq!(i18n.t("hello"), "Bonjour");
         assert_eq!(i18n.t("bye"), "Au revoir");

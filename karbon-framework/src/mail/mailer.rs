@@ -1,9 +1,7 @@
 use lettre::{
-    message::{
-        header::ContentType, Attachment, Mailbox, MultiPart, SinglePart,
-    },
-    transport::smtp::authentication::Credentials,
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+    message::{Attachment, Mailbox, MultiPart, SinglePart, header::ContentType},
+    transport::smtp::authentication::Credentials,
 };
 
 use crate::config::Config;
@@ -19,10 +17,7 @@ pub struct Mailer {
 impl Mailer {
     /// Create a new mailer from app config
     pub fn new(config: &Config) -> AppResult<Self> {
-        let credentials = Credentials::new(
-            config.smtp_user.clone(),
-            config.smtp_password.clone(),
-        );
+        let credentials = Credentials::new(config.smtp_user.clone(), config.smtp_password.clone());
 
         let transport = AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp_host)
             .map_err(|e| AppError::Internal(format!("SMTP config error: {}", e)))?
@@ -92,7 +87,11 @@ pub struct MailAttachment {
 
 impl MailAttachment {
     /// Create an attachment from raw bytes
-    pub fn new(filename: impl Into<String>, content_type: impl Into<String>, data: Vec<u8>) -> Self {
+    pub fn new(
+        filename: impl Into<String>,
+        content_type: impl Into<String>,
+        data: Vec<u8>,
+    ) -> Self {
         Self {
             filename: filename.into(),
             content_type: content_type.into(),
@@ -108,8 +107,9 @@ impl MailAttachment {
             .unwrap_or("attachment")
             .to_string();
 
-        let data = std::fs::read(path)
-            .map_err(|e| AppError::Internal(format!("Failed to read attachment '{}': {}", filename, e)))?;
+        let data = std::fs::read(path).map_err(|e| {
+            AppError::Internal(format!("Failed to read attachment '{}': {}", filename, e))
+        })?;
 
         let content_type = Self::guess_content_type(&filename);
 
@@ -121,11 +121,7 @@ impl MailAttachment {
     }
 
     fn guess_content_type(filename: &str) -> String {
-        let ext = filename
-            .rsplit('.')
-            .next()
-            .unwrap_or("")
-            .to_lowercase();
+        let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
 
         match ext.as_str() {
             "pdf" => "application/pdf",
@@ -304,8 +300,7 @@ impl MailBuilder {
     }
 
     fn build_message(self) -> AppResult<Message> {
-        let mut builder = Message::builder()
-            .from(parse_mailbox(&self.from)?);
+        let mut builder = Message::builder().from(parse_mailbox(&self.from)?);
 
         // Recipients
         for addr in &self.to {
@@ -333,31 +328,26 @@ impl MailBuilder {
 
         if has_attachments {
             // Mixed multipart: body + attachments
-            let body_part = Self::make_body_part(
-                &self.text_body,
-                &self.html_body,
-                has_text,
-                has_html,
-            );
+            let body_part =
+                Self::make_body_part(&self.text_body, &self.html_body, has_text, has_html);
 
             let mut mixed = MultiPart::mixed().multipart(body_part);
 
             for att in self.attachments {
                 let content_type = ContentType::parse(&att.content_type)
                     .unwrap_or(ContentType::parse("application/octet-stream").unwrap());
-                let attachment_part = Attachment::new(att.filename)
-                    .body(att.data, content_type);
+                let attachment_part = Attachment::new(att.filename).body(att.data, content_type);
                 mixed = mixed.singlepart(attachment_part);
             }
 
-            builder.multipart(mixed)
+            builder
+                .multipart(mixed)
                 .map_err(|e| AppError::Internal(format!("Email build error: {}", e)))
         } else if has_text && has_html {
-            let alternative = MultiPart::alternative_plain_html(
-                self.text_body.unwrap(),
-                self.html_body.unwrap(),
-            );
-            builder.multipart(alternative)
+            let alternative =
+                MultiPart::alternative_plain_html(self.text_body.unwrap(), self.html_body.unwrap());
+            builder
+                .multipart(alternative)
                 .map_err(|e| AppError::Internal(format!("Email build error: {}", e)))
         } else if has_html {
             builder
@@ -384,11 +374,9 @@ impl MailBuilder {
                 html_body.clone().unwrap(),
             )
         } else if has_html {
-            MultiPart::alternative()
-                .singlepart(SinglePart::html(html_body.clone().unwrap()))
+            MultiPart::alternative().singlepart(SinglePart::html(html_body.clone().unwrap()))
         } else {
-            MultiPart::alternative()
-                .singlepart(SinglePart::plain(text_body.clone().unwrap()))
+            MultiPart::alternative().singlepart(SinglePart::plain(text_body.clone().unwrap()))
         }
     }
 }

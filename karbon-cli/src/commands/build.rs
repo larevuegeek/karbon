@@ -2,7 +2,7 @@ use crate::config::KarbonConfig;
 use colored::Colorize;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
     println!(
@@ -13,8 +13,10 @@ pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
 
     let total: Instant = Instant::now();
 
-    // ── Step 1: Build frontend ──
-    build_frontend(config, root)?;
+    // ── Step 1: Build frontend (skipped for backend-only / micro projects) ──
+    if config.frontend.is_some() {
+        build_frontend(config, root)?;
+    }
 
     // ── Step 2: Build backend ──
     build_backend(config, root)?;
@@ -30,7 +32,8 @@ pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
 }
 
 fn build_frontend(config: &KarbonConfig, root: &Path) -> Result<(), String> {
-    let frontend_dir = config.frontend_dir(root);
+    let frontend = config.frontend.as_ref().ok_or("No [frontend] configured")?;
+    let frontend_dir = root.join(&frontend.dir);
 
     println!("  {} Building frontend...", "→".blue());
     let start = Instant::now();
@@ -41,7 +44,7 @@ fn build_frontend(config: &KarbonConfig, root: &Path) -> Result<(), String> {
         run_cmd("npm", &["install"], &frontend_dir)?;
     }
 
-    let parts: Vec<&str> = config.frontend.build_cmd.split_whitespace().collect();
+    let parts: Vec<&str> = frontend.build_cmd.split_whitespace().collect();
     run_cmd(parts[0], &parts[1..], &frontend_dir)?;
 
     println!(
@@ -81,7 +84,11 @@ fn run_cmd(cmd: &str, args: &[&str], dir: &Path) -> Result<(), String> {
         .map_err(|e| format!("Failed to run `{cmd}`: {e}"))?;
 
     if !status.success() {
-        return Err(format!("`{cmd} {}` failed with exit code {:?}", args.join(" "), status.code()));
+        return Err(format!(
+            "`{cmd} {}` failed with exit code {:?}",
+            args.join(" "),
+            status.code()
+        ));
     }
     Ok(())
 }

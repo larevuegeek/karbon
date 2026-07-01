@@ -1,10 +1,12 @@
 //! Template engine backed by Tera.
 
-use std::sync::Arc;
-use tera::{Context, Tera};
+use super::filters;
+use super::renderer::Renderer;
 use crate::error::{AppError, AppResult};
 use crate::mail::Mailer;
-use super::filters;
+use serde_json::Value;
+use std::sync::Arc;
+use tera::{Context, Tera};
 
 /// Template engine wrapping Tera with custom filters and helpers.
 ///
@@ -89,9 +91,8 @@ impl TemplateEngine {
 
     /// Render a template from a raw string (not from file).
     pub fn render_str(&self, template: &str, context: &Context) -> AppResult<String> {
-        Tera::one_off(template, context, false).map_err(|e| {
-            AppError::Internal(format!("Template string render error: {}", e))
-        })
+        Tera::one_off(template, context, false)
+            .map_err(|e| AppError::Internal(format!("Template string render error: {}", e)))
     }
 
     /// Render and send an email (HTML + auto plain text fallback).
@@ -122,7 +123,13 @@ impl TemplateEngine {
 
         if has_txt {
             let text = self.render(&txt_name, context)?;
-            mailer.compose().to(to)?.subject(subject).text_and_html(&text, &html).send().await
+            mailer
+                .compose()
+                .to(to)?
+                .subject(subject)
+                .text_and_html(&text, &html)
+                .send()
+                .await
         } else {
             mailer.send_html(to, subject, &html).await
         }
@@ -156,9 +163,8 @@ impl TemplateEngine {
     /// Reload templates from disk (useful in development).
     pub fn reload(&mut self) -> AppResult<()> {
         let glob = format!("{}/**/*", self.template_dir);
-        let mut tera = Tera::new(&glob).map_err(|e| {
-            AppError::Internal(format!("Template reload failed: {}", e))
-        })?;
+        let mut tera = Tera::new(&glob)
+            .map_err(|e| AppError::Internal(format!("Template reload failed: {}", e)))?;
         filters::register_all(&mut tera);
         self.tera = Arc::new(tera);
         tracing::info!("Templates reloaded from '{}'", self.template_dir);
@@ -172,7 +178,10 @@ impl TemplateEngine {
 
     /// List all loaded template names.
     pub fn template_names(&self) -> Vec<String> {
-        self.tera.get_template_names().map(|s| s.to_string()).collect()
+        self.tera
+            .get_template_names()
+            .map(|s| s.to_string())
+            .collect()
     }
 
     /// Get the template directory path.
@@ -187,5 +196,30 @@ impl std::fmt::Debug for TemplateEngine {
             .field("template_dir", &self.template_dir)
             .field("templates_count", &self.tera.get_template_names().count())
             .finish()
+    }
+}
+
+impl Renderer for TemplateEngine {
+    fn render(&self, name: &str, context: &Value) -> AppResult<String> {
+        let ctx = Context::from_value(context.clone())
+            .map_err(|e| AppError::Internal(format!("Invalid template context: {e}")))?;
+        self.tera
+            .render(name, &ctx)
+            .map_err(|e| AppError::Internal(format!("Template render error '{name}': {e}")))
+    }
+
+    fn render_str(&self, source: &str, context: &Value) -> AppResult<String> {
+        let ctx = Context::from_value(context.clone())
+            .map_err(|e| AppError::Internal(format!("Invalid template context: {e}")))?;
+        Tera::one_off(source, &ctx, false)
+            .map_err(|e| AppError::Internal(format!("Template string render error: {e}")))
+    }
+
+    fn has_template(&self, name: &str) -> bool {
+        self.tera.get_template_names().any(|n| n == name)
+    }
+
+    fn template_names(&self) -> Vec<String> {
+        self.tera.get_template_names().map(String::from).collect()
     }
 }

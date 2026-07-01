@@ -30,11 +30,7 @@ impl NotNull {
 impl Constraint for NotNull {
     fn validate(&self, value: &str) -> ConstraintResult {
         if value.is_empty() {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                value,
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, value));
         }
         Ok(())
     }

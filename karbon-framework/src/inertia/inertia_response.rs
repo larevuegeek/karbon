@@ -1,4 +1,4 @@
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use serde::Serialize;
 
@@ -64,9 +64,9 @@ const DEFAULT_TEMPLATE: &str = r#"<!DOCTYPE html>
 /// Main Inertia helper for building responses from controllers.
 ///
 /// ```ignore
-/// use framework::inertia::Inertia;
+/// use karbon::inertia::Inertia;
 ///
-/// #[framework::get("/dashboard")]
+/// #[karbon::get("/dashboard")]
 /// async fn dashboard(State(state): State<AppState>) -> impl IntoResponse {
 ///     Inertia::render("Dashboard", serde_json::json!({
 ///         "user": current_user,
@@ -127,10 +127,9 @@ impl InertiaResponse {
             response
                 .headers_mut()
                 .insert(INERTIA_HEADER, "true".parse().unwrap());
-            response.headers_mut().insert(
-                "vary",
-                "X-Inertia".parse().unwrap(),
-            );
+            response
+                .headers_mut()
+                .insert("vary", "X-Inertia".parse().unwrap());
             response
         } else {
             // Full page — render HTML with embedded page data

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Routing & controllers — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Routing & controllers" data-cat="Core concepts">
+<h1>Routing &amp; controllers</h1>
+<p class="lead-p">Controllers are <code>impl</code> blocks annotated with macros. The macro generates the router, the route prefix and the OpenAPI paths, and injects role checks and route validation into your handlers.</p>
+
+<h2>Defining a controller</h2>
+<pre>use karbon::prelude::*;
+
+pub struct PostController;
+
+#[karbon::controller(prefix = "/admin/posts", role = "ROLE_ADMIN")]
+impl PostController {
+    #[karbon::get("/")]
+    async fn list(auth: AuthGuard, State(state): State&lt;AppState&gt;)
+        -&gt; AppResult&lt;impl IntoResponse&gt; {
+        let posts = Post::find_all(state.db.pool()).await?;
+        Ok(Json(posts))
+    }
+
+    #[karbon::post("/")]
+    async fn create(State(state): State&lt;AppState&gt;, Json(input): Json&lt;NewPost&gt;)
+        -&gt; AppResult&lt;impl IntoResponse&gt; {
+        let id = input.insert(state.db.pool()).await?;
+        Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
+    }
+}</pre>
+
+<p>The <code>#[karbon::controller]</code> macro generates three associated items:</p>
+<ul>
+  <li><code>PostController::router()</code> — an Axum <code>Router&lt;AppState&gt;</code> with every annotated handler mounted.</li>
+  <li><code>PostController::prefix()</code> — the route prefix string.</li>
+  <li><code>PostController::openapi_paths()</code> — <code>Vec&lt;(method, full_path)&gt;</code> for OpenAPI aggregation.</li>
+</ul>
+
+<h2>HTTP method attributes</h2>
+<p>One attribute per route: <code>#[karbon::get]</code>, <code>post</code>, <code>put</code>, <code>delete</code>, <code>patch</code>. The path is relative to the controller prefix.</p>
+<pre>#[karbon::get("/{id}")]
+#[karbon::put("/{id}")]
+#[karbon::delete("/{id}")]</pre>
+
+<h2>Mounting routes</h2>
+<p>Routes are mounted in <code>main.rs</code> with <code>.nest(prefix, router)</code> — never <code>.merge()</code>. You usually don't write this by hand: the generators insert the wiring at marker comments.</p>
+<pre>let app = Router::new()
+    // karbon:routes
+    .nest(PostController::prefix(), PostController::router())
+    .with_state(state);</pre>
+<div class="note">
+<p>The markers <code>// karbon:routes</code>, <code>// karbon:api-routes</code>, <code>// karbon:openapi-api</code> and <code>// karbon:openapi-root</code> tell <code>karbon generate</code> where to insert new routes and OpenAPI paths. Keep them in <code>main.rs</code>.</p>
+</div>
+
+<h2>Role protection</h2>
+<p>Set a controller-wide role with <code>role = "…"</code>, or guard a single handler with <code>#[require_role]</code> (per-route overrides the controller default). The check is injected at the top of the handler, before your code runs, and respects the role hierarchy (a <code>ROLE_SUPER_ADMIN</code> passes a <code>ROLE_ADMIN</code> check).</p>
+<pre>#[karbon::controller(prefix = "/admin", role = "ROLE_ADMIN")]
+impl AdminController {
+    #[karbon::get("/")]
+    async fn dashboard(auth: AuthGuard) -&gt; AppResult&lt;impl IntoResponse&gt; { /* ROLE_ADMIN */ }
+
+    #[karbon::get("/super")]
+    #[require_role("ROLE_SUPER_ADMIN")]              // overrides the controller default
+    async fn super_only(auth: AuthGuard) -&gt; AppResult&lt;impl IntoResponse&gt; { /* … */ }
+}</pre>
+
+<div class="note warn">
+<p><b>⚠️ A role requires an <code>auth: AuthGuard</code> parameter — and it's enforced.</b> The macro
+injects <code>auth.require_role("…")?</code> using the handler's <code>AuthGuard</code>. If a route
+carries a role (<code>#[require_role]</code> or a controller-level <code>role</code>) but has
+<b>no</b> <code>auth: AuthGuard</code> parameter, the macro <b>refuses to compile</b> — rather than
+silently leaving the route unprotected. Add <code>auth: AuthGuard</code>.</p>
+<p>For a public route inside a role area, don't set a controller-level <code>role</code>; put
+<code>#[require_role("…")]</code> only on the protected routes and leave the public ones without a role.</p>
+</div>
+
+<p>Inject an <code>AuthGuard</code> extractor to read the authenticated user and check roles imperatively. For app-wide URL rules, see the <a href="security.html">firewall (access control)</a>.</p>
+
+<h2>Validating path parameters</h2>
+<p>Declare validation rules <b>on the route</b>. The macro injects a check that runs after the role check and before your handler, returning <code>400</code> if the value is invalid. The binding name must match the path parameter name.</p>
+<pre>#[karbon::get("/{id}", id = "int:min=1")]              // integer ≥ 1
+#[karbon::get("/{slug}", slug = "slug")]               // ^[a-z0-9-]+$
+#[karbon::get("/{status}", status = "enum:draft|published")]
+#[karbon::get("/{code}", code = "regex:^[A-Z]{2}[0-9]{2}$")]</pre>
+<p>The grammar covers <code>int</code>, <code>string</code>, <code>slug</code>, <code>uuid</code>, <code>enum:</code> and <code>regex:</code>, with optional bounds. The full reference is on the <a href="validation.html">Validation</a> page.</p>
+
+<h2>Responses &amp; errors</h2>
+<p>Handlers return <code>AppResult&lt;impl IntoResponse&gt;</code>. The <code>?</code> operator turns an <code>AppError</code> into the right HTTP status (validation → 400, unauthorized → 401/403, not found → 404, …). In production, internal error details are hidden from the client.</p>
+<pre>async fn show(State(s): State&lt;AppState&gt;, Path(id): Path&lt;i64&gt;)
+    -&gt; AppResult&lt;impl IntoResponse&gt; {
+    let post = Post::find_by_id(s.db.pool(), id).await?
+        .ok_or_else(|| AppError::not_found("Article introuvable"))?;
+    Ok(Json(post))
+}</pre>
+<div class="note">
+<p><b>Convention:</b> user-facing error messages are written in French; internal logs in English.</p>
+</div>
+
+<h2>OpenAPI &amp; Swagger UI</h2>
+<p>Because the macro emits <code>openapi_paths()</code>, the framework can build an OpenAPI 3.0 document from your controllers — including path parameters, tags derived from the path, and summaries. Skeletons serve <code>/openapi.json</code> and a Swagger UI at <code>/docs</code>.</p>
+<pre>let spec = karbon::openapi::spec("My API", "1.0.0", &amp;routes);
+// served at /openapi.json; Swagger UI at /docs</pre>
+
+<h2>Modules &amp; bundles</h2>
+<p>For larger apps, group routes into a <code>Module</code> (contributes routes) or a <code>Bundle</code> (routes plus a <code>boot(&amp;AppState)</code> startup hook — a compile-time plugin).</p>
+<pre>impl karbon::http::Module for BlogModule {
+    fn name(&amp;self) -&gt; &amp;str { "blog" }
+    fn prefix(&amp;self) -&gt; Option&lt;&amp;'static str&gt; { Some("/blog") }
+    fn routes(&amp;self) -&gt; Router&lt;AppState&gt; { /* … */ }
+}
+
+App::new().router(base).module(BlogModule).serve().await?;</pre>
+</article>
+</body>
+</html>

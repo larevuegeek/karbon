@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project structure — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Project structure" data-cat="Get started">
+<h1>Project structure</h1>
+<p class="lead-p">A <code>karbon new</code> project keeps the Rust backend, the frontend and the tooling config in predictable places. Here's what each part is for.</p>
+
+<h2>A full-stack project</h2>
+<pre>my-app/
+├── karbon.toml            # project config (frontend, backend, deploy)
+├── .env / .env.example    # environment variables (cascade loaded)
+├── app/                   # the Rust backend crate
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs        # entry point — App::new()…serve(); route markers live here
+│       ├── entity/        # entities (the source of truth for migrations)
+│       ├── repository/    # CrudRepository impls
+│       ├── controller/    # #[karbon::controller] handlers
+│       └── welcome.html   # welcome page (micro skeleton)
+├── frontend/              # SvelteKit (or Next.js) app
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── src/
+├── migration/             # versioned .sql migrations
+└── docs/                  # Markdown docs → karbon docs build → docs/_site/</pre>
+
+<div class="note">
+<p>A <b><code>--skeleton micro</code></b> project has no <code>frontend/</code> and no <code>[frontend]</code> section in <code>karbon.toml</code>; the backend serves an HTML welcome page directly. <code>dev</code>, <code>build</code>, <code>serve</code> and <code>deploy</code> all handle the no-frontend case.</p>
+</div>
+
+<h2>karbon.toml</h2>
+<p>The single config file that the CLI reads. A typical full project:</p>
+<pre>[app]
+name = "my-app"
+
+[backend]
+# extra binaries to build &amp; deploy alongside the main one
+extra_packages = []
+
+[frontend]
+framework = "svelte"      # or "nextjs"; absent for micro skeletons
+
+[deploy]
+path = "/var/www/my-app"
+manager = "pm2"           # "pm2" or "systemd"
+host = "user@server"      # omit for a local deploy</pre>
+<p>See <a href="configuration.html">Configuration</a> for the full reference and <a href="deployment.html">Deployment</a> for the <code>[deploy]</code> options.</p>
+
+<h2>The backend crate (app/)</h2>
+<p><code>app/src/main.rs</code> is the kernel: it builds the <code>App</code>, mounts modules and routes, and serves. The generators keep it in sync using <b>marker comments</b> — you rarely edit route wiring by hand:</p>
+<pre>// karbon:routes        → web/admin controllers are nested here
+// karbon:api-routes    → API controllers are nested here
+// karbon:openapi-api    → OpenAPI path aggregation (API)
+// karbon:openapi-root   → OpenAPI path aggregation (root)</pre>
+<p>When you run <code>generate controller</code>, <code>crud</code> or <code>admin</code>, the new routes and OpenAPI paths are inserted at these markers automatically. Routes are mounted with <code>.nest(prefix, router)</code>, never <code>.merge()</code>.</p>
+
+<h3>entity/</h3>
+<p>Plain Rust structs with an <code>id</code> field and a <code>#[table_name("…")]</code>. They are the <b>source of truth</b> for the schema: <code>karbon migrate diff</code> parses them and compares against the live database. See <a href="database.html">Database &amp; ORM</a>.</p>
+
+<h3>controller/</h3>
+<p>Each controller is an <code>impl</code> block annotated with <code>#[karbon::controller(prefix = "…")]</code>. The macro generates the router, prefix and OpenAPI paths. See <a href="routing.html">Routing &amp; controllers</a>.</p>
+
+<h2>The framework crate</h2>
+<p>Your project depends on the framework under the alias <code>karbon</code> so the macros (which emit <code>karbon::</code> paths) resolve:</p>
+<pre>[dependencies]
+karbon = { package = "karbon-framework", version = "0.2", features = ["…"] }</pre>
+<p>Feature flags pick the database driver (<code>postgres</code>, <code>sqlite</code> — MySQL is default), the template engine, and optional components (<code>studio</code>, <code>redis</code>, <code>scraping</code>, …). The scaffolding writes the right alias and imports for you.</p>
+
+<h2>docs/</h2>
+<p>Markdown files here are rendered two ways: <code>karbon docs build</code> turns them into a static site under <code>docs/_site/</code>, and the same sources feed the <b>Docs</b> tab inside Studio. New projects ship a starter <code>docs/index.md</code>.</p>
+</article>
+</body>
+</html>

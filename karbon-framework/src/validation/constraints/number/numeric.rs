@@ -43,11 +43,7 @@ impl Constraint for Numeric {
         };
 
         if !valid {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                value,
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, value));
         }
         Ok(())
     }

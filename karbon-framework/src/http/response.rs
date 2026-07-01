@@ -23,10 +23,7 @@ impl JsonResponse {
 
     /// Simple message response
     pub fn message(status: StatusCode, msg: &str) -> impl IntoResponse {
-        (
-            status,
-            axum::Json(serde_json::json!({ "message": msg })),
-        )
+        (status, axum::Json(serde_json::json!({ "message": msg })))
     }
 
     /// Success message shorthand

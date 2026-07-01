@@ -1,7 +1,7 @@
 //! Custom Tera filters for common operations.
 
 use std::collections::HashMap;
-use tera::{Value, Result as TeraResult};
+use tera::{Result as TeraResult, Value};
 
 /// Format a date string to French locale: "17 mars 2026"
 pub fn date_fr(value: &Value, _args: &HashMap<String, Value>) -> TeraResult<Value> {
@@ -24,11 +24,27 @@ pub fn date_fr(value: &Value, _args: &HashMap<String, Value>) -> TeraResult<Valu
 
 fn format_date_fr(dt: &chrono::NaiveDateTime) -> String {
     let months = [
-        "", "janvier", "février", "mars", "avril", "mai", "juin",
-        "juillet", "août", "septembre", "octobre", "novembre", "décembre"
+        "",
+        "janvier",
+        "février",
+        "mars",
+        "avril",
+        "mai",
+        "juin",
+        "juillet",
+        "août",
+        "septembre",
+        "octobre",
+        "novembre",
+        "décembre",
     ];
     let month = dt.format("%m").to_string().parse::<usize>().unwrap_or(0);
-    format!("{} {} {}", dt.format("%d"), months.get(month).unwrap_or(&""), dt.format("%Y"))
+    format!(
+        "{} {} {}",
+        dt.format("%d"),
+        months.get(month).unwrap_or(&""),
+        dt.format("%Y")
+    )
 }
 
 /// Format datetime to French: "17 mars 2026 à 14h30"
@@ -36,10 +52,20 @@ pub fn datetime_fr(value: &Value, _args: &HashMap<String, Value>) -> TeraResult<
     let s = value.as_str().unwrap_or("");
 
     if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
-        return Ok(Value::String(format!("{} à {}h{}", format_date_fr(&dt), dt.format("%H"), dt.format("%M"))));
+        return Ok(Value::String(format!(
+            "{} à {}h{}",
+            format_date_fr(&dt),
+            dt.format("%H"),
+            dt.format("%M")
+        )));
     }
     if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
-        return Ok(Value::String(format!("{} à {}h{}", format_date_fr(&dt), dt.format("%H"), dt.format("%M"))));
+        return Ok(Value::String(format!(
+            "{} à {}h{}",
+            format_date_fr(&dt),
+            dt.format("%H"),
+            dt.format("%M")
+        )));
     }
 
     Ok(Value::String(s.to_string()))
@@ -54,9 +80,7 @@ pub fn currency(value: &Value, _args: &HashMap<String, Value>) -> TeraResult<Val
 /// Truncate text to N characters with ellipsis
 pub fn truncate_text(value: &Value, args: &HashMap<String, Value>) -> TeraResult<Value> {
     let s = value.as_str().unwrap_or("");
-    let len = args.get("length")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(150) as usize;
+    let len = args.get("length").and_then(|v| v.as_u64()).unwrap_or(150) as usize;
 
     if s.len() <= len {
         return Ok(Value::String(s.to_string()));

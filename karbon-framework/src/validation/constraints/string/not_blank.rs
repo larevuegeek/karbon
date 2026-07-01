@@ -29,11 +29,7 @@ impl NotBlank {
 impl Constraint for NotBlank {
     fn validate(&self, value: &str) -> ConstraintResult {
         if value.trim().is_empty() {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                value,
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, value));
         }
         Ok(())
     }

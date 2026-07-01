@@ -4,9 +4,13 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use std::collections::HashMap;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// Once the map grows past this many keys, expired windows are swept out. Bounds the
+/// memory a flood of distinct IPs (e.g. spoofed IPv6) can consume.
+const SWEEP_THRESHOLD: usize = 20_000;
 use tokio::sync::Mutex;
 use tower::{Layer, Service};
 
@@ -31,6 +35,7 @@ pub struct RateLimitLayer {
     max_requests: u32,
     window: Duration,
     store: Arc<Mutex<HashMap<IpAddr, (u32, Instant)>>>,
+    trusted_proxies: Arc<Vec<String>>,
 }
 
 impl RateLimitLayer {
@@ -39,12 +44,20 @@ impl RateLimitLayer {
             max_requests,
             window,
             store: Arc::new(Mutex::new(HashMap::new())),
+            trusted_proxies: Arc::new(Vec::new()),
         }
     }
 
     /// Per-minute shorthand
     pub fn per_minute(max: u32) -> Self {
         Self::new(max, Duration::from_secs(60))
+    }
+
+    /// Trust `X-Forwarded-For` only when the direct peer is one of these proxy IPs
+    /// (or `*`). Without this, the socket peer IP is used (safe when Karbon is the edge).
+    pub fn trust_proxies(mut self, proxies: Vec<String>) -> Self {
+        self.trusted_proxies = Arc::new(proxies);
+        self
     }
 }
 
@@ -57,6 +70,7 @@ impl<S> Layer<S> for RateLimitLayer {
             max_requests: self.max_requests,
             window: self.window,
             store: self.store.clone(),
+            trusted_proxies: self.trusted_proxies.clone(),
         }
     }
 }
@@ -67,6 +81,7 @@ pub struct RateLimitService<S> {
     max_requests: u32,
     window: Duration,
     store: Arc<Mutex<HashMap<IpAddr, (u32, Instant)>>>,
+    trusted_proxies: Arc<Vec<String>>,
 }
 
 impl<S> Service<Request> for RateLimitService<S>
@@ -91,17 +106,28 @@ where
         let max = self.max_requests;
         let window = self.window;
         let store = self.store.clone();
+        let trusted = self.trusted_proxies.clone();
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            // Extract IP from proxy headers or fallback to loopback
-            let ip: IpAddr = crate::util::HttpHelper::client_ip(
-                request.headers(),
-                "127.0.0.1".parse().unwrap(),
-            );
+            // Use the socket peer IP by default (unspoofable). If that peer is a configured
+            // trusted proxy, resolve the real client from X-Forwarded-For instead — so
+            // rate-limiting is correct behind nginx/Cloudflare yet safe when Karbon is edge.
+            let peer: IpAddr = request
+                .extensions()
+                .get::<axum::extract::ConnectInfo<SocketAddr>>()
+                .map(|ci| ci.0.ip())
+                .unwrap_or_else(|| "127.0.0.1".parse().unwrap());
+            let ip: IpAddr =
+                crate::util::HttpHelper::client_ip_trusted(request.headers(), peer, &trusted);
 
             let mut map = store.lock().await;
             let now = Instant::now();
+
+            // Evict expired windows once the map gets large (bounded memory).
+            if map.len() > SWEEP_THRESHOLD {
+                map.retain(|_, (_, started)| now.duration_since(*started) <= window);
+            }
 
             let (count, started) = map.entry(ip).or_insert((0, now));
 
@@ -115,11 +141,7 @@ where
 
             if *count > max {
                 drop(map);
-                return Ok((
-                    StatusCode::TOO_MANY_REQUESTS,
-                    "Rate limit exceeded",
-                )
-                    .into_response());
+                return Ok((StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded").into_response());
             }
             drop(map);
 

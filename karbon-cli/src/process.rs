@@ -1,17 +1,16 @@
+// Windows FFI type aliases (HANDLE, BOOL, …) intentionally use uppercase names
+// to match the Win32 API.
+#![allow(clippy::upper_case_acronyms)]
+
 use colored::Colorize;
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Spawn a child process with inherited stdio
-pub fn spawn_command(
-    cmd: &str,
-    args: &[String],
-    dir: &Path,
-    label: &str,
-) -> Result<Child, String> {
+pub fn spawn_command(cmd: &str, args: &[String], dir: &Path, label: &str) -> Result<Child, String> {
     spawn_command_with_env(cmd, args, dir, label, &HashMap::new())
 }
 
@@ -98,12 +97,7 @@ fn assign_to_job(child: &Child) {
 
     unsafe extern "system" {
         fn CreateJobObjectW(attrs: HANDLE, name: *const u16) -> HANDLE;
-        fn SetInformationJobObject(
-            job: HANDLE,
-            class: u32,
-            info: *const u8,
-            len: u32,
-        ) -> BOOL;
+        fn SetInformationJobObject(job: HANDLE, class: u32, info: *const u8, len: u32) -> BOOL;
         fn AssignProcessToJobObject(job: HANDLE, process: HANDLE) -> BOOL;
     }
 
@@ -143,7 +137,7 @@ fn assign_to_job(child: &Child) {
 
 /// Wait for any child to exit, then kill the rest.
 /// Also handles Ctrl+C to gracefully stop all children.
-pub fn wait_for_any(children: &mut Vec<Child>) {
+pub fn wait_for_any(children: &mut [Child]) {
     // Save console mode before children can modify it (Vite/Node change raw mode)
     #[cfg(windows)]
     let saved_console_mode = save_console_mode();
@@ -244,8 +238,25 @@ fn restore_console_mode(modes: (u32, u32)) {
     }
 }
 
+/// Kill a single child process (and its tree on Windows), then reap it.
+pub fn kill_child(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+}
+
 /// Kill all children. On Windows, uses taskkill /T to kill process trees.
-fn kill_all(children: &mut Vec<Child>) {
+fn kill_all(children: &mut [Child]) {
     for child in children.iter_mut() {
         #[cfg(windows)]
         {

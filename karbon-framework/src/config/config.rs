@@ -24,6 +24,14 @@ pub struct Config {
     // CORS
     pub cors_origins: Vec<String>,
 
+    // CSRF (double-submit + same-site Origin check). Enabled by default.
+    pub csrf_enabled: bool,
+
+    // Trusted reverse proxies (IPs). When the direct peer is one of these, the
+    // `X-Forwarded-*` headers it sets are trusted (client IP, proto, host). Empty = trust
+    // none (Karbon is the edge). `*` = always behind a trusted proxy.
+    pub trusted_proxies: Vec<String>,
+
     // Upload
     pub upload_dir: String,
     pub upload_max_size: u64, // bytes
@@ -39,11 +47,11 @@ pub struct Config {
     pub smtp_password: String,
 
     // Rate limiting
-    pub rate_limit_max: u32,        // max requests per window
-    pub rate_limit_window: u64,     // window in seconds
+    pub rate_limit_max: u32,    // max requests per window
+    pub rate_limit_window: u64, // window in seconds
 
     // Body size
-    pub body_max_size: usize,       // max request body in bytes
+    pub body_max_size: usize, // max request body in bytes
 
     // Site
     pub site_name: String,
@@ -66,20 +74,35 @@ impl Config {
             db_port: env_parse("DB_PORT", 3306),
             #[cfg(feature = "postgres")]
             db_port: env_parse("DB_PORT", 5432),
-            db_name: env_required("DB_NAME"),
-            db_user: env_required("DB_USER"),
+            #[cfg(feature = "sqlite")]
+            db_port: 0,
+            // DB_NAME empty → the app runs without a database (see `has_database`).
+            db_name: env_or("DB_NAME", ""),
+            db_user: env_or("DB_USER", ""),
             db_password: env_or("DB_PASSWORD", ""),
             db_max_connections: env_parse("DB_MAX_CONNECTIONS", 10),
 
-            // JWT
-            jwt_secret: env_required("JWT_SECRET"),
-            jwt_expiration: env_parse("JWT_EXPIRATION", 900),              // 15min
+            // JWT — empty means auth is unavailable (tokens can't be verified).
+            jwt_secret: env_or("JWT_SECRET", ""),
+            jwt_expiration: env_parse("JWT_EXPIRATION", 900), // 15min
             refresh_token_expiration: env_parse("REFRESH_TOKEN_EXPIRATION", 2_592_000), // 30 days
 
-            // CORS
-            cors_origins: env_or("CORS_ORIGINS", "*")
+            // CORS — default deny (empty ⇒ restrictive same-origin fallback). Set
+            // CORS_ORIGINS explicitly to allow cross-origin clients; "*" allows any.
+            cors_origins: env_or("CORS_ORIGINS", "")
                 .split(',')
                 .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+
+            // CSRF protection (opt-out with CSRF_ENABLED=false)
+            csrf_enabled: env_parse("CSRF_ENABLED", true),
+
+            // Trusted reverse proxies (comma list of IPs, or "*"). Empty = trust none.
+            trusted_proxies: env_or("TRUSTED_PROXIES", "")
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
                 .collect(),
 
             // Upload
@@ -126,6 +149,8 @@ impl Config {
             jwt_expiration: 3600,
             refresh_token_expiration: 86400,
             cors_origins: vec!["*".into()],
+            csrf_enabled: true,
+            trusted_proxies: Vec::new(),
             upload_dir: "/tmp".into(),
             upload_max_size: 10_485_760,
             cdn_url: "".into(),
@@ -143,9 +168,30 @@ impl Config {
         }
     }
 
+    /// Resolved application environment.
+    pub fn environment(&self) -> super::Environment {
+        super::Environment::from_name(&self.environment)
+    }
+
     /// Check if running in production
     pub fn is_production(&self) -> bool {
-        self.environment == "production"
+        self.environment().is_production()
+    }
+
+    /// Check if running in development
+    pub fn is_development(&self) -> bool {
+        self.environment().is_development()
+    }
+
+    /// Whether a database is configured (i.e. `DB_NAME` is set). When false, the
+    /// app runs without connecting to a database.
+    pub fn has_database(&self) -> bool {
+        !self.db_name.is_empty()
+    }
+
+    /// Check if running in the test environment
+    pub fn is_test(&self) -> bool {
+        self.environment().is_test()
     }
 
     /// Get full database URL
@@ -165,16 +211,24 @@ impl Config {
             self.db_user, self.db_password, self.db_host, self.db_port, self.db_name
         )
     }
+
+    /// Get full database URL.
+    ///
+    /// For SQLite, `DB_NAME` is the database **file path** (e.g. `app.db` or
+    /// `:memory:`). `?mode=rwc` creates the file if it does not exist.
+    #[cfg(feature = "sqlite")]
+    pub fn database_url(&self) -> String {
+        if self.db_name.is_empty() || self.db_name == ":memory:" {
+            "sqlite::memory:".to_string()
+        } else {
+            format!("sqlite://{}?mode=rwc", self.db_name)
+        }
+    }
 }
 
 /// Get an env var or return a default value
 fn env_or(key: &str, default: &str) -> String {
     env::var(key).unwrap_or_else(|_| default.to_string())
-}
-
-/// Get a required env var, panic if missing
-fn env_required(key: &str) -> String {
-    env::var(key).unwrap_or_else(|_| panic!("Environment variable {} is required", key))
 }
 
 /// Parse an env var into a type, with a default

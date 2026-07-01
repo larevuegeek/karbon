@@ -14,7 +14,7 @@ use super::inertia_response::{INERTIA_HEADER, INERTIA_VERSION_HEADER, InertiaCon
 ///    requests (Inertia protocol requirement).
 ///
 /// ```ignore
-/// use framework::inertia::{inertia_middleware, InertiaConfig};
+/// use karbon::inertia::{inertia_middleware, InertiaConfig};
 ///
 /// let config = InertiaConfig::new(include_str!("../templates/app.html"))
 ///     .version("1.0.0");
@@ -28,22 +28,15 @@ pub async fn inertia_middleware(request: Request, next: Next) -> Response {
     let is_inertia = request.headers().contains_key(INERTIA_HEADER);
 
     // Version conflict check
-    if is_inertia {
-        if let Some(config) = request.extensions().get::<InertiaConfig>() {
-            if let Some(client_version) = request.headers().get(INERTIA_VERSION_HEADER) {
-                if let Ok(client_ver) = client_version.to_str() {
-                    if !config.version.is_empty() && client_ver != config.version {
-                        // Version mismatch → force full page reload
-                        return (
-                            StatusCode::CONFLICT,
-                            [(INERTIA_HEADER, "true")],
-                            "",
-                        )
-                            .into_response();
-                    }
-                }
-            }
-        }
+    if is_inertia
+        && let Some(config) = request.extensions().get::<InertiaConfig>()
+        && let Some(client_version) = request.headers().get(INERTIA_VERSION_HEADER)
+        && let Ok(client_ver) = client_version.to_str()
+        && !config.version.is_empty()
+        && client_ver != config.version
+    {
+        // Version mismatch → force full page reload
+        return (StatusCode::CONFLICT, [(INERTIA_HEADER, "true")], "").into_response();
     }
 
     let method = request.method().clone();

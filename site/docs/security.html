@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security & auth — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Security & auth" data-cat="Build">
+<h1>Security &amp; auth</h1>
+<p class="lead-p">Authentication is JWT-based with refresh-token rotation; authorization uses a Symfony-style role hierarchy resolved by an <code>AuthGuard</code> extractor. Sensible security defaults are on out of the box.</p>
+
+<h2>Passwords</h2>
+<p>Passwords are hashed with Argon2id (with bcrypt support for legacy hashes). Password policy requires at least 12 characters with upper, lower and a digit.</p>
+<pre>use karbon::security::Password;
+
+let hash = Password::hash("correct horse battery staple")?;
+let ok   = Password::verify("…", &amp;hash)?;</pre>
+
+<h2>JWT &amp; refresh tokens</h2>
+<ul>
+  <li>Access tokens: HS256, 15-minute lifetime.</li>
+  <li>Refresh tokens: 30-day lifetime, with rotation on each use.</li>
+  <li>Refresh tokens are stored SHA-256-hashed in the database — never in clear text.</li>
+</ul>
+<p>The signing secret comes from <code>JWT_SECRET</code>. Leaving it empty disables auth entirely (useful for prototypes).</p>
+
+<h2>AuthGuard</h2>
+<p><code>AuthGuard</code> is an Axum extractor that verifies the JWT and resolves the role hierarchy. Inject it into a handler to require — and read — an authenticated user.</p>
+<pre>#[karbon::get("/me")]
+async fn me(auth: AuthGuard) -&gt; AppResult&lt;impl IntoResponse&gt; {
+    auth.require_role("ROLE_USER")?;
+    Ok(Json(json!({ "id": auth.user_id(), "roles": auth.roles() })))
+}</pre>
+
+<div class="note warn">
+<p><b>⚠️ A route that carries a role must take an <code>auth: AuthGuard</code> parameter — enforced.</b>
+If a route has a role (<code>#[require_role("…")]</code> or a controller-level <code>role = "…"</code>)
+but no <code>auth: AuthGuard</code>, the macro <b>refuses to compile</b> instead of silently leaving it
+unprotected. Add <code>auth: AuthGuard</code>.</p>
+</div>
+
+<h2>Role hierarchy</h2>
+<p>Roles inherit downward, so checking a lower role passes for a higher one:</p>
+<pre>ROLE_SUPER_ADMIN → ROLE_ADMIN → ROLE_REDACTEUR, ROLE_MODERATEUR → ROLE_USER</pre>
+<p><code>auth.require_role("ROLE_ADMIN")</code> succeeds for a <code>ROLE_SUPER_ADMIN</code>. Protect a whole controller with <code>role = "…"</code>, or a single handler with <code>#[require_role]</code>. See <a href="routing.html">Routing</a>.</p>
+
+<h2>Firewall (access control)</h2>
+<p>For app-wide rules, install a Symfony-style firewall: declarative URL-pattern → roles, enforced
+centrally before your handlers. Rules are checked top-to-bottom, first match wins.</p>
+<pre>use karbon::security::AccessControl;
+
+App::new().router(base)
+    .firewall(AccessControl::new()
+        .public("^/login")
+        .public("^/health")
+        .rule("^/admin", ["ROLE_ADMIN"])          // /admin* → ROLE_ADMIN
+        .rule("^/api/account", ["ROLE_USER"])      // → ROLE_USER (or higher)
+        .default_deny(false))                      // unmatched → allowed (default)
+    .serve().await?;</pre>
+<p>Decisions: unmatched + <code>default_deny(false)</code> → allow · unmatched + <code>default_deny(true)</code>
+→ 403 · public → allow · matched but unauthenticated → 401 · matched but missing role → 403. The
+firewall composes with per-controller and per-route guards (defense in depth), and respects the role hierarchy.</p>
+
+<h2>Built-in middleware</h2>
+<table>
+  <thead><tr><th>Middleware</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td>Compression</td><td>gzip/brotli on every response</td></tr>
+    <tr><td>Request ID</td><td>A unique <code>X-Request-Id</code> per request, propagated to the response</td></tr>
+    <tr><td>CSRF</td><td>Cookie-based double-submit protection for unsafe methods</td></tr>
+    <tr><td>Rate limit</td><td><code>RateLimitLayer::per_minute(60)</code> per IP (opt-in)</td></tr>
+    <tr><td>Body size limit</td><td>Caps request body size</td></tr>
+    <tr><td>Maintenance</td><td><code>set_maintenance(true)</code> → 503 on all requests</td></tr>
+    <tr><td>Request logger</td><td>Logs method / path / status / duration</td></tr>
+    <tr><td>Graceful shutdown</td><td>Ctrl+C / SIGTERM drains connections cleanly</td></tr>
+  </tbody>
+</table>
+<div class="note warn">
+<p><b>Rate limiting is opt-in</b> by design — behind a reverse proxy or NAT, a naive per-IP limit can punish many users sharing one address. Enable it once you know your topology.</p>
+</div>
+
+<h2>Input &amp; transport hardening</h2>
+<ul>
+  <li><b>Route validation</b> — declarative rules reject bad path params with 400 before the handler. See <a href="validation.html">Validation</a>.</li>
+  <li><b>Uploads</b> — magic-byte type checks, SVG sanitization, path-traversal protection, decompression-bomb limits on images.</li>
+  <li><b>SQL</b> — <code>SelectBuilder</code> binds all values and validates identifiers; the derive macros bind too.</li>
+  <li><b>HTML</b> — <code>util::Html::sanitize</code> / <code>strip_tags</code> (ammonia) for user content; Inertia and LiveWire escape embedded props.</li>
+  <li><b>CORS</b> — configurable, with a restrictive fallback when unset.</li>
+  <li><b>Cookies</b> — httpOnly + SameSite=Lax, and Secure over HTTPS.</li>
+  <li><b>Production errors</b> — internal error details are hidden from clients.</li>
+</ul>
+
+<div class="note ok">
+<p><b>Diagnostics.</b> <code>karbon doctor</code> flags missing or weak security config offline; <code>doctor --db</code> also checks the database. See the <a href="cli.html">CLI reference</a>.</p>
+</div>
+</article>
+</body>
+</html>

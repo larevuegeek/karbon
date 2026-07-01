@@ -71,28 +71,27 @@ impl DateRange {
 
 impl Constraint for DateRange {
     fn validate(&self, value: &str) -> ConstraintResult {
-        let date = NaiveDate::parse_from_str(value, &self.format).map_err(|_| {
-            ConstraintViolation::new(self.name(), &self.invalid_message, value)
-        })?;
+        let date = NaiveDate::parse_from_str(value, &self.format)
+            .map_err(|_| ConstraintViolation::new(self.name(), &self.invalid_message, value))?;
 
-        if let Some(min) = self.min {
-            if date < min {
-                return Err(ConstraintViolation::new(
-                    self.name(),
-                    self.min_message.replace("{{ limit }}", &min.to_string()),
-                    value,
-                ));
-            }
+        if let Some(min) = self.min
+            && date < min
+        {
+            return Err(ConstraintViolation::new(
+                self.name(),
+                self.min_message.replace("{{ limit }}", &min.to_string()),
+                value,
+            ));
         }
 
-        if let Some(max) = self.max {
-            if date > max {
-                return Err(ConstraintViolation::new(
-                    self.name(),
-                    self.max_message.replace("{{ limit }}", &max.to_string()),
-                    value,
-                ));
-            }
+        if let Some(max) = self.max
+            && date > max
+        {
+            return Err(ConstraintViolation::new(
+                self.name(),
+                self.max_message.replace("{{ limit }}", &max.to_string()),
+                value,
+            ));
         }
 
         Ok(())

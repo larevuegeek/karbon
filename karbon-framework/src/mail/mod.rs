@@ -1,3 +1,3 @@
 mod mailer;
 
-pub use mailer::{Mailer, MailBuilder, MailAttachment, Priority};
+pub use mailer::{MailAttachment, MailBuilder, Mailer, Priority};

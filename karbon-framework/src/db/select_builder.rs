@@ -1,23 +1,19 @@
-use super::{placeholder, DbPool, DbRow};
+use super::{DbPool, DbRow, placeholder};
 use sqlx::Row;
 
 /// Validate a SQL identifier (table name, column name, alias).
-/// Allows: alphanumeric, underscore, dot (for table.column), star (*).
-/// Rejects anything that could be SQL injection.
+/// Strict: ASCII letters/digits/underscore, dotted segments, or `*`. No spaces/Unicode.
 fn validate_identifier(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-    s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.' || c == '*' || c == ' ')
+    super::is_valid_identifier(s)
 }
 
 /// Validate a column list (e.g., "id, name, email, u.created_at").
-/// Allows commas and spaces in addition to identifier chars.
+/// Each comma-separated entry must be a valid identifier.
 fn validate_column_list(s: &str) -> bool {
-    if s.is_empty() {
+    if s.trim().is_empty() {
         return false;
     }
-    s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.' || c == '*' || c == ' ' || c == ',')
+    s.split(',').all(|c| super::is_valid_identifier(c.trim()))
 }
 
 /// Validate a JOIN clause.
@@ -27,7 +23,11 @@ fn validate_join(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    !s.contains(';') && !s.contains('\'') && !s.contains('"') && !s.contains("--") && !s.contains("/*")
+    !s.contains(';')
+        && !s.contains('\'')
+        && !s.contains('"')
+        && !s.contains("--")
+        && !s.contains("/*")
 }
 
 /// Sort direction
@@ -49,7 +49,7 @@ impl std::fmt::Display for Order {
 /// A typed, fluent SELECT query builder with parameterized conditions.
 ///
 /// ```ignore
-/// use framework::db::{SelectBuilder, Order};
+/// use karbon::db::{SelectBuilder, Order};
 ///
 /// let users: Vec<User> = SelectBuilder::table("users")
 ///     .columns("id, name, email, created_at")
@@ -114,31 +114,45 @@ pub trait IntoBindValue {
 }
 
 impl IntoBindValue for i32 {
-    fn into_bind_value(self) -> BindValue { BindValue::Int(self as i64) }
+    fn into_bind_value(self) -> BindValue {
+        BindValue::Int(self as i64)
+    }
 }
 
 impl IntoBindValue for i64 {
-    fn into_bind_value(self) -> BindValue { BindValue::Int(self) }
+    fn into_bind_value(self) -> BindValue {
+        BindValue::Int(self)
+    }
 }
 
 impl IntoBindValue for u32 {
-    fn into_bind_value(self) -> BindValue { BindValue::Int(self as i64) }
+    fn into_bind_value(self) -> BindValue {
+        BindValue::Int(self as i64)
+    }
 }
 
 impl IntoBindValue for f64 {
-    fn into_bind_value(self) -> BindValue { BindValue::Float(self) }
+    fn into_bind_value(self) -> BindValue {
+        BindValue::Float(self)
+    }
 }
 
 impl IntoBindValue for bool {
-    fn into_bind_value(self) -> BindValue { BindValue::Bool(self) }
+    fn into_bind_value(self) -> BindValue {
+        BindValue::Bool(self)
+    }
 }
 
 impl IntoBindValue for &str {
-    fn into_bind_value(self) -> BindValue { BindValue::String(self.to_string()) }
+    fn into_bind_value(self) -> BindValue {
+        BindValue::String(self.to_string())
+    }
 }
 
 impl IntoBindValue for String {
-    fn into_bind_value(self) -> BindValue { BindValue::String(self) }
+    fn into_bind_value(self) -> BindValue {
+        BindValue::String(self)
+    }
 }
 
 impl IntoBindValue for chrono::DateTime<chrono::Utc> {
@@ -170,50 +184,62 @@ impl SelectBuilder {
 
     /// Add a JOIN clause. Must not contain SQL injection vectors (;, quotes, comments).
     pub fn join(mut self, join_clause: &str) -> Self {
-        assert!(validate_join(join_clause), "Invalid JOIN clause: contains forbidden characters");
+        assert!(
+            validate_join(join_clause),
+            "Invalid JOIN clause: contains forbidden characters"
+        );
         self.joins.push(join_clause.to_string());
         self
     }
 
     pub fn where_eq<V: IntoBindValue>(mut self, column: &str, value: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions.push(Condition::Eq(column.to_string(), value.into_bind_value()));
+        self.conditions
+            .push(Condition::Eq(column.to_string(), value.into_bind_value()));
         self
     }
 
     pub fn where_ne<V: IntoBindValue>(mut self, column: &str, value: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions.push(Condition::Ne(column.to_string(), value.into_bind_value()));
+        self.conditions
+            .push(Condition::Ne(column.to_string(), value.into_bind_value()));
         self
     }
 
     pub fn where_gt<V: IntoBindValue>(mut self, column: &str, value: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions.push(Condition::Gt(column.to_string(), value.into_bind_value()));
+        self.conditions
+            .push(Condition::Gt(column.to_string(), value.into_bind_value()));
         self
     }
 
     pub fn where_gte<V: IntoBindValue>(mut self, column: &str, value: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions.push(Condition::Gte(column.to_string(), value.into_bind_value()));
+        self.conditions
+            .push(Condition::Gte(column.to_string(), value.into_bind_value()));
         self
     }
 
     pub fn where_lt<V: IntoBindValue>(mut self, column: &str, value: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions.push(Condition::Lt(column.to_string(), value.into_bind_value()));
+        self.conditions
+            .push(Condition::Lt(column.to_string(), value.into_bind_value()));
         self
     }
 
     pub fn where_lte<V: IntoBindValue>(mut self, column: &str, value: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions.push(Condition::Lte(column.to_string(), value.into_bind_value()));
+        self.conditions
+            .push(Condition::Lte(column.to_string(), value.into_bind_value()));
         self
     }
 
     pub fn where_like<V: IntoBindValue>(mut self, column: &str, pattern: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions.push(Condition::Like(column.to_string(), pattern.into_bind_value()));
+        self.conditions.push(Condition::Like(
+            column.to_string(),
+            pattern.into_bind_value(),
+        ));
         self
     }
 
@@ -225,28 +251,36 @@ impl SelectBuilder {
 
     pub fn where_not_null(mut self, column: &str) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions.push(Condition::IsNotNull(column.to_string()));
+        self.conditions
+            .push(Condition::IsNotNull(column.to_string()));
         self
     }
 
-    pub fn where_in<V: IntoBindValue>(mut self, column: &str, values: &[V]) -> Self
-    where V: Clone {
+    pub fn where_in<V: IntoBindValue + Clone>(mut self, column: &str, values: &[V]) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        let bind_values: Vec<BindValue> = values.iter().map(|v| v.clone().into_bind_value()).collect();
-        self.conditions.push(Condition::In(column.to_string(), bind_values));
+        let bind_values: Vec<BindValue> =
+            values.iter().map(|v| v.clone().into_bind_value()).collect();
+        self.conditions
+            .push(Condition::In(column.to_string(), bind_values));
         self
     }
 
     /// Add a raw WHERE clause. **WARNING**: This is NOT parameterized.
     /// Only use with hardcoded strings, NEVER with user input.
     pub fn where_raw(mut self, raw: &str) -> Self {
-        assert!(validate_join(raw), "where_raw contains forbidden characters");
+        assert!(
+            validate_join(raw),
+            "where_raw contains forbidden characters"
+        );
         self.conditions.push(Condition::Raw(raw.to_string()));
         self
     }
 
     pub fn order_by(mut self, column: &str, direction: Order) -> Self {
-        assert!(validate_identifier(column), "Invalid ORDER BY column: {column}");
+        assert!(
+            validate_identifier(column),
+            "Invalid ORDER BY column: {column}"
+        );
         self.order.push((column.to_string(), direction));
         self
     }
@@ -262,7 +296,10 @@ impl SelectBuilder {
     }
 
     pub fn group_by(mut self, clause: &str) -> Self {
-        assert!(validate_column_list(clause), "Invalid GROUP BY clause: {clause}");
+        assert!(
+            validate_column_list(clause),
+            "Invalid GROUP BY clause: {clause}"
+        );
         self.group_by_val = Some(clause.to_string());
         self
     }
@@ -315,22 +352,27 @@ impl SelectBuilder {
         let order_clause = if self.order.is_empty() {
             String::new()
         } else {
-            let parts: Vec<String> = self.order.iter()
+            let parts: Vec<String> = self
+                .order
+                .iter()
                 .map(|(col, dir)| format!("{} {}", col, dir))
                 .collect();
             format!(" ORDER BY {}", parts.join(", "))
         };
 
-        let group = self.group_by_val
+        let group = self
+            .group_by_val
             .as_ref()
             .map(|g| format!(" GROUP BY {}", g))
             .unwrap_or_default();
 
-        let limit = self.limit_val
+        let limit = self
+            .limit_val
             .map(|l| format!(" LIMIT {}", l))
             .unwrap_or_default();
 
-        let offset = self.offset_val
+        let offset = self
+            .offset_val
             .map(|o| format!(" OFFSET {}", o))
             .unwrap_or_default();
 
@@ -349,7 +391,8 @@ impl SelectBuilder {
         let joins = self.joins.join(" ");
         let where_clause = self.build_where(&mut binds, &mut idx);
 
-        let group = self.group_by_val
+        let group = self
+            .group_by_val
             .as_ref()
             .map(|g| format!(" GROUP BY {}", g))
             .unwrap_or_default();
@@ -367,8 +410,10 @@ impl SelectBuilder {
             return String::new();
         }
 
-        let parts: Vec<String> = self.conditions.iter().map(|c| {
-            match c {
+        let parts: Vec<String> = self
+            .conditions
+            .iter()
+            .map(|c| match c {
                 Condition::Eq(col, val) => {
                     let ph = placeholder(*idx);
                     *idx += 1;
@@ -414,17 +459,20 @@ impl SelectBuilder {
                 Condition::IsNull(col) => format!("{} IS NULL", col),
                 Condition::IsNotNull(col) => format!("{} IS NOT NULL", col),
                 Condition::In(col, vals) => {
-                    let placeholders: Vec<String> = vals.iter().map(|v| {
-                        let ph = placeholder(*idx);
-                        *idx += 1;
-                        binds.push(v.clone());
-                        ph
-                    }).collect();
+                    let placeholders: Vec<String> = vals
+                        .iter()
+                        .map(|v| {
+                            let ph = placeholder(*idx);
+                            *idx += 1;
+                            binds.push(v.clone());
+                            ph
+                        })
+                        .collect();
                     format!("{} IN ({})", col, placeholders.join(", "))
                 }
                 Condition::Raw(raw) => raw.clone(),
-            }
-        }).collect();
+            })
+            .collect();
 
         format!(" WHERE {}", parts.join(" AND "))
     }
@@ -432,9 +480,9 @@ impl SelectBuilder {
 
 // Helper: bind a value to a query_as
 fn bind_value<'q, T>(
-    query: sqlx::query::QueryAs<'q, super::Db, T, super::DbArguments>,
+    query: sqlx::query::QueryAs<'q, super::Db, T, <super::Db as sqlx::Database>::Arguments<'q>>,
     value: &'q BindValue,
-) -> sqlx::query::QueryAs<'q, super::Db, T, super::DbArguments>
+) -> sqlx::query::QueryAs<'q, super::Db, T, <super::Db as sqlx::Database>::Arguments<'q>>
 where
     T: for<'r> sqlx::FromRow<'r, DbRow>,
 {
@@ -448,9 +496,9 @@ where
 
 // Helper: bind a value to a raw query
 fn bind_value_raw<'q>(
-    query: sqlx::query::Query<'q, super::Db, super::DbArguments>,
+    query: sqlx::query::Query<'q, super::Db, <super::Db as sqlx::Database>::Arguments<'q>>,
     value: &'q BindValue,
-) -> sqlx::query::Query<'q, super::Db, super::DbArguments> {
+) -> sqlx::query::Query<'q, super::Db, <super::Db as sqlx::Database>::Arguments<'q>> {
     match value {
         BindValue::Int(v) => query.bind(*v),
         BindValue::Float(v) => query.bind(*v),

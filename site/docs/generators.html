@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generators & scaffolding — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Generators & scaffolding" data-cat="Build">
+<h1>Generators &amp; scaffolding</h1>
+<p class="lead-p">The <code>karbon generate</code> family scaffolds entities, repositories, controllers and a field-aware admin — and wires the routes into <code>main.rs</code> for you. Generators never write migrations; you diff entities instead.</p>
+
+<h2>Field syntax</h2>
+<p>Fields are <code>name:type</code>, with a trailing <code>?</code> for a nullable column:</p>
+<pre>title:string  body:text  views:int  price:float  published:bool
+published_at:datetime  meta:json  summary:text?</pre>
+<table>
+  <thead><tr><th>Type</th><th>Rust</th><th>Typical column</th></tr></thead>
+  <tbody>
+    <tr><td><code>string</code></td><td><code>String</code></td><td>VARCHAR(255)</td></tr>
+    <tr><td><code>text</code></td><td><code>String</code></td><td>TEXT</td></tr>
+    <tr><td><code>int</code></td><td><code>i32</code></td><td>INT</td></tr>
+    <tr><td><code>bigint</code></td><td><code>i64</code></td><td>BIGINT</td></tr>
+    <tr><td><code>float</code></td><td><code>f64</code></td><td>DOUBLE / REAL</td></tr>
+    <tr><td><code>bool</code></td><td><code>bool</code></td><td>BOOLEAN</td></tr>
+    <tr><td><code>datetime</code></td><td><code>DateTime&lt;Utc&gt;</code></td><td>DATETIME / TIMESTAMP</td></tr>
+    <tr><td><code>date</code></td><td><code>NaiveDate</code></td><td>DATE</td></tr>
+    <tr><td><code>json</code></td><td><code>serde_json::Value</code></td><td>JSON</td></tr>
+  </tbody>
+</table>
+<p>A trailing <code>?</code> makes the field <code>Option&lt;T&gt;</code> and the column nullable.</p>
+
+<h2>generate entity</h2>
+<pre>karbon generate entity Post title:string body:text published:bool</pre>
+<p>Creates the entity struct in <code>app/src/entity/</code>. It does <b>not</b> create a migration — run <code>karbon migrate diff</code> afterwards.</p>
+
+<h3>Interactive assistant</h3>
+<p>Omit the fields (or pass <code>-i</code>/<code>--interactive</code>) to launch a Symfony-style field assistant that prompts for each field by name, type and nullability:</p>
+<pre>karbon generate entity Post -i</pre>
+<p>The assistant activates automatically when no fields are given and you're on a TTY. It's also exposed in the Studio Terminal as a visual field builder (rows of name + type + nullable).</p>
+
+<h2>generate controller</h2>
+<pre>karbon generate controller Post</pre>
+<p>Generates a controller stub with validated <code>{id}</code> routes (<code>id = "int:min=1"</code>) and mounts it in <code>main.rs</code>.</p>
+
+<h2>generate crud</h2>
+<pre>karbon generate crud Post title:string body:text</pre>
+<p>The all-in-one: entity + repository + controller, wired into routes and OpenAPI. Run <code>migrate diff</code> next to create the schema.</p>
+
+<h2>generate admin</h2>
+<pre>karbon generate admin Post</pre>
+<p>Produces a field-aware <code>PostAdminController</code> (prefix <code>/admin/posts</code>, <code>ROLE_ADMIN</code>). It reads the entity's fields and generates the list view, create/edit forms, and typed <code>New</code>/<code>Update</code> DTOs with per-type coercion (string/number/bool/date/json, nullable handled). CSRF is wired via a small <code>X-CSRF-Token</code> script, and <code>{id}</code> routes are validated. Run it after <code>generate crud</code>.</p>
+
+<h2>Common flags</h2>
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>--dry-run</code></td><td>Print the plan; write nothing</td></tr>
+    <tr><td><code>--force</code></td><td>Overwrite existing files</td></tr>
+    <tr><td><code>-i</code> / <code>--interactive</code></td><td>Force the interactive field assistant</td></tr>
+  </tbody>
+</table>
+<p><code>karbon g</code> is the short alias for <code>karbon generate</code>.</p>
+
+<h2>Route wiring</h2>
+<p>Generators insert routes and OpenAPI paths at the marker comments in <code>main.rs</code> (<code>// karbon:routes</code>, <code>// karbon:api-routes</code>, <code>// karbon:openapi-*</code>), nesting each controller under its prefix. You don't edit the wiring by hand. See <a href="routing.html">Routing &amp; controllers</a>.</p>
+
+<div class="note ok">
+<p><b>Typical flow:</b> <code>generate crud</code> → <code>generate admin</code> → <code>migrate diff</code> → <code>migrate</code> → <code>dev</code>.</p>
+</div>
+</article>
+</body>
+</html>

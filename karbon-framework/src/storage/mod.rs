@@ -1,10 +1,10 @@
-mod upload;
-mod thumbnail;
 mod img_resizer;
+mod thumbnail;
+mod upload;
 
-pub use upload::{handle_upload, UploadedFile, AllowedMimes, UploadConfig};
-pub use thumbnail::{
-    generate_thumbnail, ImageProcessor, ResizeMode, CropAnchor, CropRegion,
-    Rotation, FlipDirection, OutputFormat, PngCompression, Watermark,
-};
 pub use img_resizer::{ImgResizer, ImgResizerConfig};
+pub use thumbnail::{
+    CropAnchor, CropRegion, FlipDirection, ImageProcessor, OutputFormat, PngCompression,
+    ResizeMode, Rotation, Watermark, generate_thumbnail,
+};
+pub use upload::{AllowedMimes, UploadConfig, UploadedFile, handle_upload};

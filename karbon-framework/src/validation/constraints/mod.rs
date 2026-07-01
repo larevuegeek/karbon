@@ -17,7 +17,11 @@ pub struct ConstraintViolation {
 }
 
 impl ConstraintViolation {
-    pub fn new(constraint: &'static str, message: impl Into<String>, invalid_value: impl Into<String>) -> Self {
+    pub fn new(
+        constraint: &'static str,
+        message: impl Into<String>,
+        invalid_value: impl Into<String>,
+    ) -> Self {
         Self {
             constraint,
             message: message.into(),
@@ -34,20 +38,23 @@ impl std::fmt::Display for ConstraintViolation {
 
 impl std::error::Error for ConstraintViolation {}
 
-/// Trait for all validation constraints operating on string values
-pub trait Constraint {
+/// Trait for all validation constraints operating on string values.
+///
+/// `Send + Sync` so boxed constraints (`Box<dyn Constraint>`, e.g. inside a
+/// [`crate::form::Form`]) can be held across `.await` points in handlers.
+pub trait Constraint: Send + Sync {
     fn validate(&self, value: &str) -> ConstraintResult;
     fn name(&self) -> &'static str;
 }
 
 /// Trait for validation constraints operating on numeric values
-pub trait NumericConstraint {
+pub trait NumericConstraint: Send + Sync {
     fn validate_f64(&self, value: f64) -> ConstraintResult;
     fn name(&self) -> &'static str;
 }
 
 /// Trait for validation constraints operating on collections
-pub trait CollectionConstraint {
+pub trait CollectionConstraint: Send + Sync {
     fn validate_slice<T>(&self, value: &[T]) -> ConstraintResult;
     fn name(&self) -> &'static str;
 }

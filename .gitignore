@@ -9,3 +9,9 @@ Cargo.lock
 .vscode/
 .claude/
 CLAUDE.md
+
+# Internal working docs (not part of the public repo)
+AGENTS.md
+ROADMAP.md
+ROADMAP-V2.md
+SECURITY-AUDIT.md

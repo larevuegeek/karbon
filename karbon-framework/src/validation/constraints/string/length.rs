@@ -82,24 +82,24 @@ impl Constraint for Length {
             return Ok(());
         }
 
-        if let Some(min) = self.min {
-            if len < min {
-                return Err(ConstraintViolation::new(
-                    self.name(),
-                    self.format_message(&self.min_message, min),
-                    value,
-                ));
-            }
+        if let Some(min) = self.min
+            && len < min
+        {
+            return Err(ConstraintViolation::new(
+                self.name(),
+                self.format_message(&self.min_message, min),
+                value,
+            ));
         }
 
-        if let Some(max) = self.max {
-            if len > max {
-                return Err(ConstraintViolation::new(
-                    self.name(),
-                    self.format_message(&self.max_message, max),
-                    value,
-                ));
-            }
+        if let Some(max) = self.max
+            && len > max
+        {
+            return Err(ConstraintViolation::new(
+                self.name(),
+                self.format_message(&self.max_message, max),
+                value,
+            ));
         }
 
         Ok(())

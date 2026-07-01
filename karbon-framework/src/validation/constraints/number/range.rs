@@ -61,24 +61,24 @@ impl Range {
 
 impl NumericConstraint for Range {
     fn validate_f64(&self, value: f64) -> ConstraintResult {
-        if let Some(min) = self.min {
-            if value < min {
-                return Err(ConstraintViolation::new(
-                    self.name(),
-                    Self::format_message(&self.min_message, min),
-                    value.to_string(),
-                ));
-            }
+        if let Some(min) = self.min
+            && value < min
+        {
+            return Err(ConstraintViolation::new(
+                self.name(),
+                Self::format_message(&self.min_message, min),
+                value.to_string(),
+            ));
         }
 
-        if let Some(max) = self.max {
-            if value > max {
-                return Err(ConstraintViolation::new(
-                    self.name(),
-                    Self::format_message(&self.max_message, max),
-                    value.to_string(),
-                ));
-            }
+        if let Some(max) = self.max
+            && value > max
+        {
+            return Err(ConstraintViolation::new(
+                self.name(),
+                Self::format_message(&self.max_message, max),
+                value.to_string(),
+            ));
         }
 
         Ok(())

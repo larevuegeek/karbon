@@ -45,11 +45,7 @@ impl DateTime {
 impl Constraint for DateTime {
     fn validate(&self, value: &str) -> ConstraintResult {
         if chrono::NaiveDateTime::parse_from_str(value, &self.format).is_err() {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                value,
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, value));
         }
         Ok(())
     }

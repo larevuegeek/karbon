@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Introduction — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Introduction" data-cat="Get started">
+<h1>Karbon documentation</h1>
+<p class="lead-p">Karbon is a batteries-included full-stack framework for Rust. It pairs an Axum-based web core with a SvelteKit or Next.js frontend, and ties them together with a single CLI that develops, scaffolds, migrates and deploys your app.</p>
+
+<div class="note">
+<p><b>The pitch:</b> the productivity of Laravel and Symfony, with the safety, performance and single-binary deployment of Rust. No runtime, no garbage collector, no VM — just one compiled executable.</p>
+</div>
+
+<h2>Why Karbon</h2>
+<p>Rust has excellent libraries, but assembling a productive full-stack app usually means wiring a dozen crates together by hand: a router, an ORM, auth, validation, migrations, background jobs, a frontend build, a deploy pipeline. Karbon makes those decisions for you and exposes them behind familiar conventions.</p>
+<ul>
+  <li><b>One CLI for the whole lifecycle</b> — <code>new</code>, <code>dev</code>, <code>build</code>, <code>serve</code>, <code>generate</code>, <code>migrate</code>, <code>deploy</code>, <code>doctor</code>.</li>
+  <li><b>Convention over configuration</b> — Symfony-style controllers, a role hierarchy, an entity-first ORM.</li>
+  <li><b>A real dev cockpit</b> — Studio, a browser dashboard with live metrics, a schema/route explorer and an integrated terminal.</li>
+  <li><b>Safe by default</b> — Argon2 passwords, JWT with refresh rotation, CSRF, declarative route validation, injection-safe queries.</li>
+  <li><b>Ship a single binary</b> — to a VPS, Docker, or a PaaS, with configs generated for you.</li>
+</ul>
+
+<h2>What's in the box</h2>
+<table>
+  <thead><tr><th>Area</th><th>What you get</th></tr></thead>
+  <tbody>
+    <tr><td>HTTP</td><td>Controllers via macros, middleware (compression, CSRF, rate limit, request-id), reverse proxy, graceful shutdown</td></tr>
+    <tr><td>Database</td><td>MySQL / PostgreSQL / SQLite, <code>CrudRepository</code>, a typed <code>SelectBuilder</code>, <code>Insertable</code>/<code>Updatable</code> derives, relations</td></tr>
+    <tr><td>Migrations</td><td>Versioned, native (sqlx), and a Doctrine-style <code>migrate diff</code> from your entities</td></tr>
+    <tr><td>Security</td><td>JWT + refresh rotation, Argon2id, role hierarchy, <code>AuthGuard</code>, declarative route validation, secure uploads</td></tr>
+    <tr><td>Realtime</td><td>WebSocket channels &amp; rooms, LiveWire components, Inertia.js adapter, HMR</td></tr>
+    <tr><td>Async work</td><td>Background jobs, a Symfony-Messenger-style message bus, an event bus, persistent queues</td></tr>
+    <tr><td>Building blocks</td><td>Forms, a composable validator, cache (memory/file/Redis), mail, i18n, image processing, scraping</td></tr>
+    <tr><td>Tooling</td><td>Code generators, Studio cockpit, OpenAPI + Swagger UI, embedded docs, <code>doctor</code> diagnostics</td></tr>
+  </tbody>
+</table>
+
+<h2>How this documentation is organised</h2>
+<ul>
+  <li><b>Get started</b> — install the CLI, scaffold your first app, and learn the project layout.</li>
+  <li><b>Core concepts</b> — the CLI, routing, the database layer, migrations and validation.</li>
+  <li><b>Build</b> — generators, security &amp; auth, realtime/background work, and the frontend.</li>
+  <li><b>Operate</b> — the Studio cockpit, configuration &amp; environments, and deployment.</li>
+</ul>
+
+<div class="note ok">
+<p><b>New here?</b> Start with <a href="installation.html">Installation</a>, then walk through the <a href="quickstart.html">Quickstart</a> to build a working app in a few minutes.</p>
+</div>
+
+<h2>Status &amp; license</h2>
+<p>Karbon is published on crates.io as three crates — <code>karbon-framework</code>, <code>karbon-macros</code> and <code>karbon-cli</code> — and is pre-1.0: the API evolves between minor versions. It was extracted from <a href="https://larevuegeek.com">LaRevueGeek.com</a>, a Rust + SvelteKit magazine, and is released under the AGPL-3.0 license.</p>
+</article>
+</body>
+</html>

@@ -1,13 +1,17 @@
-/// All templates are embedded at compile time via include_str!
+//! All templates are embedded at compile time via include_str!
 
 pub const KARBON_TOML: &str = include_str!("karbon.toml.tpl");
+pub const KARBON_TOML_MICRO: &str = include_str!("karbon.micro.toml.tpl");
 pub const ENV_EXAMPLE: &str = include_str!("env.example.tpl");
 pub const GITIGNORE: &str = include_str!("gitignore.tpl");
+pub const WELCOME_HTML: &str = include_str!("welcome.html.tpl");
+pub const DOCS_INDEX: &str = include_str!("docs/index.md.tpl");
 
 // Rust
 pub const CARGO_WORKSPACE: &str = include_str!("rust/Cargo.workspace.toml.tpl");
 pub const CARGO_APP: &str = include_str!("rust/Cargo.app.toml.tpl");
 pub const MAIN_RS: &str = include_str!("rust/main.rs.tpl");
+pub const MAIN_RS_MICRO: &str = include_str!("rust/main.micro.rs.tpl");
 pub const CONTROLLER_MOD: &str = include_str!("rust/controller_mod.rs.tpl");
 pub const ENTITY_MOD: &str = include_str!("rust/entity_mod.rs.tpl");
 pub const HEALTH_CONTROLLER: &str = include_str!("rust/health_controller.rs.tpl");
@@ -18,6 +22,7 @@ pub mod svelte {
     pub const SVELTE_CONFIG: &str = include_str!("frontend/svelte.config.js.tpl");
     pub const VITE_CONFIG: &str = include_str!("frontend/vite.config.ts.tpl");
     pub const APP_CSS: &str = include_str!("frontend/app.css.tpl");
+    pub const APP_HTML: &str = include_str!("frontend/app.html.tpl");
     pub const LAYOUT: &str = include_str!("frontend/layout.svelte.tpl");
     pub const PAGE: &str = include_str!("frontend/page.svelte.tpl");
     pub const API_TS: &str = include_str!("frontend/api.ts.tpl");

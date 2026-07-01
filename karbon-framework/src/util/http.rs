@@ -100,26 +100,48 @@ impl HttpHelper {
 
     fn detect_bot(ua: &str) -> bool {
         let bot_markers = [
-            "bot", "Bot", "crawler", "Crawler", "spider", "Spider",
-            "Googlebot", "Bingbot", "Slurp", "DuckDuckBot", "Baiduspider",
-            "YandexBot", "facebookexternalhit", "Twitterbot", "LinkedInBot",
-            "WhatsApp", "Discordbot", "Slackbot", "TelegramBot",
-            "curl/", "wget/", "python-requests", "Go-http-client",
-            "HeadlessChrome", "PhantomJS", "Lighthouse",
+            "bot",
+            "Bot",
+            "crawler",
+            "Crawler",
+            "spider",
+            "Spider",
+            "Googlebot",
+            "Bingbot",
+            "Slurp",
+            "DuckDuckBot",
+            "Baiduspider",
+            "YandexBot",
+            "facebookexternalhit",
+            "Twitterbot",
+            "LinkedInBot",
+            "WhatsApp",
+            "Discordbot",
+            "Slackbot",
+            "TelegramBot",
+            "curl/",
+            "wget/",
+            "python-requests",
+            "Go-http-client",
+            "HeadlessChrome",
+            "PhantomJS",
+            "Lighthouse",
         ];
         bot_markers.iter().any(|m| ua.contains(m))
     }
 
     /// Extract version number from a UA pattern like "Chrome/120.0.6099.130"
     fn extract_version(ua: &str, prefix: &str) -> Option<String> {
-        ua.find(prefix).map(|pos| {
-            let start = pos + prefix.len();
-            let version: String = ua[start..]
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
-            version
-        }).filter(|v| !v.is_empty())
+        ua.find(prefix)
+            .map(|pos| {
+                let start = pos + prefix.len();
+                let version: String = ua[start..]
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
+                version
+            })
+            .filter(|v| !v.is_empty())
     }
 
     // ─── IP Address ───
@@ -127,19 +149,18 @@ impl HttpHelper {
     /// Extract client IP from headers (X-Forwarded-For, X-Real-Ip) with fallback
     pub fn client_ip(headers: &HeaderMap, fallback: IpAddr) -> IpAddr {
         // X-Forwarded-For: client, proxy1, proxy2 → take first
-        if let Some(forwarded) = Self::get_header(headers, "x-forwarded-for") {
-            if let Some(first) = forwarded.split(',').next() {
-                if let Ok(ip) = first.trim().parse::<IpAddr>() {
-                    return ip;
-                }
-            }
+        if let Some(forwarded) = Self::get_header(headers, "x-forwarded-for")
+            && let Some(first) = forwarded.split(',').next()
+            && let Ok(ip) = first.trim().parse::<IpAddr>()
+        {
+            return ip;
         }
 
         // X-Real-Ip: single IP set by reverse proxy
-        if let Some(real_ip) = Self::get_header(headers, "x-real-ip") {
-            if let Ok(ip) = real_ip.trim().parse::<IpAddr>() {
-                return ip;
-            }
+        if let Some(real_ip) = Self::get_header(headers, "x-real-ip")
+            && let Ok(ip) = real_ip.trim().parse::<IpAddr>()
+        {
+            return ip;
         }
 
         fallback
@@ -148,6 +169,27 @@ impl HttpHelper {
     /// Extract client IP as string, with SocketAddr fallback (common Axum pattern)
     pub fn client_ip_from_socket(headers: &HeaderMap, socket: &SocketAddr) -> String {
         Self::client_ip(headers, socket.ip()).to_string()
+    }
+
+    /// Whether `peer` is a configured trusted reverse proxy. `*` trusts every peer.
+    pub fn is_trusted_proxy(peer: IpAddr, trusted: &[String]) -> bool {
+        trusted
+            .iter()
+            .any(|t| t == "*" || t.parse::<IpAddr>().map(|ip| ip == peer).unwrap_or(false))
+    }
+
+    /// Resolve the real client IP with proxy awareness:
+    /// - if the direct `peer` is a trusted proxy, trust `X-Forwarded-For`/`X-Real-IP`;
+    /// - otherwise ignore those headers (they'd be client-spoofable) and use `peer`.
+    ///
+    /// This makes rate-limiting and IP logging correct behind nginx/Cloudflare while
+    /// staying safe when Karbon is the edge (no trusted proxy configured).
+    pub fn client_ip_trusted(headers: &HeaderMap, peer: IpAddr, trusted: &[String]) -> IpAddr {
+        if Self::is_trusted_proxy(peer, trusted) {
+            Self::client_ip(headers, peer)
+        } else {
+            peer
+        }
     }
 
     // ─── Header Helpers ───
@@ -295,7 +337,10 @@ mod tests {
     #[test]
     fn test_ip_from_x_forwarded_for() {
         let mut headers = HeaderMap::new();
-        headers.insert("x-forwarded-for", "203.0.113.50, 70.41.3.18".parse().unwrap());
+        headers.insert(
+            "x-forwarded-for",
+            "203.0.113.50, 70.41.3.18".parse().unwrap(),
+        );
         let fallback: IpAddr = "127.0.0.1".parse().unwrap();
         let ip = HttpHelper::client_ip(&headers, fallback);
         assert_eq!(ip.to_string(), "203.0.113.50");
@@ -342,7 +387,10 @@ mod tests {
     fn test_get_header() {
         let mut headers = HeaderMap::new();
         headers.insert("x-custom", "value123".parse().unwrap());
-        assert_eq!(HttpHelper::get_header(&headers, "x-custom").as_deref(), Some("value123"));
+        assert_eq!(
+            HttpHelper::get_header(&headers, "x-custom").as_deref(),
+            Some("value123")
+        );
         assert!(HttpHelper::get_header(&headers, "x-missing").is_none());
     }
 
@@ -350,7 +398,10 @@ mod tests {
     fn test_bearer_token() {
         let mut headers = HeaderMap::new();
         headers.insert("authorization", "Bearer abc123xyz".parse().unwrap());
-        assert_eq!(HttpHelper::bearer_token(&headers).as_deref(), Some("abc123xyz"));
+        assert_eq!(
+            HttpHelper::bearer_token(&headers).as_deref(),
+            Some("abc123xyz")
+        );
     }
 
     #[test]
@@ -369,8 +420,14 @@ mod tests {
     #[test]
     fn test_accept_language() {
         let mut headers = HeaderMap::new();
-        headers.insert("accept-language", "fr-FR,fr;q=0.9,en-US;q=0.8".parse().unwrap());
-        assert_eq!(HttpHelper::accept_language(&headers).as_deref(), Some("fr-FR"));
+        headers.insert(
+            "accept-language",
+            "fr-FR,fr;q=0.9,en-US;q=0.8".parse().unwrap(),
+        );
+        assert_eq!(
+            HttpHelper::accept_language(&headers).as_deref(),
+            Some("fr-FR")
+        );
     }
 
     #[test]
@@ -397,6 +454,9 @@ mod tests {
     fn test_referer() {
         let mut headers = HeaderMap::new();
         headers.insert("referer", "https://example.com/page".parse().unwrap());
-        assert_eq!(HttpHelper::referer(&headers).as_deref(), Some("https://example.com/page"));
+        assert_eq!(
+            HttpHelper::referer(&headers).as_deref(),
+            Some("https://example.com/page")
+        );
     }
 }

@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-use super::{Db, DbArguments, DbPool, DbRow, placeholder};
 use super::pagination::PaginationParams;
 use super::repository::WhereValue;
+use super::{Db, DbPool, DbRow, placeholder};
 use crate::error::AppResult;
 
 /// Builder pour les requêtes paginées avec tri, recherche et filtres WHERE.
@@ -104,13 +104,15 @@ where
 
     /// Ajoute une condition WHERE (col >= ?).
     pub fn where_gte(mut self, column: &str, value: WhereValue) -> Self {
-        self.where_conditions.push((column.to_string(), ">=", value));
+        self.where_conditions
+            .push((column.to_string(), ">=", value));
         self
     }
 
     /// Ajoute une condition WHERE (col <= ?).
     pub fn where_lte(mut self, column: &str, value: WhereValue) -> Self {
-        self.where_conditions.push((column.to_string(), "<=", value));
+        self.where_conditions
+            .push((column.to_string(), "<=", value));
         self
     }
 
@@ -132,19 +134,51 @@ where
             self.default_sort.clone()
         } else {
             let allowed_refs: Vec<&str> = self.allowed_sorts.iter().map(|s| s.as_str()).collect();
-            params.sort_column(&allowed_refs, &self.default_sort).to_string()
+            params
+                .sort_column(&allowed_refs, &self.default_sort)
+                .to_string()
         };
 
-        let order = if params.order.to_lowercase() == "asc" {
+        // Whitelist the ORDER BY direction (never interpolate a raw config/request string).
+        let order = if params.order.eq_ignore_ascii_case("asc") {
             "ASC"
-        } else if params.order.to_lowercase() == "desc" {
+        } else if params.order.eq_ignore_ascii_case("desc") {
             "DESC"
         } else {
-            &self.default_order
+            crate::db::normalize_direction(&self.default_order).unwrap_or("ASC")
         };
 
+        // Validate every interpolated identifier: sort column, optional prefix, WHERE and
+        // search columns. Any non-identifier is rejected before it reaches the SQL string.
+        if !crate::db::is_valid_identifier(&sort_col) {
+            return Err(crate::error::AppError::BadRequest(format!(
+                "Invalid sort column: {sort_col}"
+            )));
+        }
+        for (col, _, _) in &self.where_conditions {
+            if !crate::db::is_valid_identifier(col) {
+                return Err(crate::error::AppError::BadRequest(format!(
+                    "Invalid filter column: {col}"
+                )));
+            }
+        }
+        for col in &self.search_columns {
+            if !crate::db::is_valid_identifier(col) {
+                return Err(crate::error::AppError::BadRequest(format!(
+                    "Invalid search column: {col}"
+                )));
+            }
+        }
+
         let sort_expr = match &self.sort_prefix {
-            Some(prefix) if !sort_col.contains('.') => format!("{}.{}", prefix, sort_col),
+            Some(prefix) if !sort_col.contains('.') => {
+                if !crate::db::is_valid_identifier(prefix) {
+                    return Err(crate::error::AppError::BadRequest(format!(
+                        "Invalid sort prefix: {prefix}"
+                    )));
+                }
+                format!("{}.{}", prefix, sort_col)
+            }
             _ => sort_col,
         };
 
@@ -162,7 +196,8 @@ where
         // Search (LIKE)
         let has_search = !self.search_columns.is_empty() && params.search.is_some();
         if has_search {
-            let like_clauses: Vec<String> = self.search_columns
+            let like_clauses: Vec<String> = self
+                .search_columns
                 .iter()
                 .map(|col| {
                     ph_idx += 1;
@@ -206,14 +241,14 @@ where
         for val in &bind_values {
             data_query = bind_where_value(data_query, val);
         }
-        if has_search {
-            if let Some(ref like) = like_value {
-                for _ in 0..search_col_count {
-                    data_query = data_query.bind(like.as_str());
-                }
+        if has_search && let Some(ref like) = like_value {
+            for _ in 0..search_col_count {
+                data_query = data_query.bind(like.as_str());
             }
         }
-        data_query = data_query.bind(params.safe_per_page() as i64).bind(params.offset() as i64);
+        data_query = data_query
+            .bind(params.safe_per_page() as i64)
+            .bind(params.offset() as i64);
         let items = data_query.fetch_all(pool).await?;
 
         // Count query
@@ -221,11 +256,9 @@ where
         for val in &bind_values {
             count_query = bind_where_value_tuple(count_query, val);
         }
-        if has_search {
-            if let Some(ref like) = like_value {
-                for _ in 0..search_col_count {
-                    count_query = count_query.bind(like.as_str());
-                }
+        if has_search && let Some(ref like) = like_value {
+            for _ in 0..search_col_count {
+                count_query = count_query.bind(like.as_str());
             }
         }
         let (total,) = count_query.fetch_one(pool).await?;
@@ -247,7 +280,10 @@ fn extract_from_clause(sql: &str) -> &str {
         match bytes[i] {
             b'(' => depth += 1,
             b')' => depth = depth.saturating_sub(1),
-            b' ' if depth == 0 && i + 6 <= upper_bytes.len() && &upper_bytes[i..i + 6] == b" FROM " => {
+            b' ' if depth == 0
+                && i + 6 <= upper_bytes.len()
+                && &upper_bytes[i..i + 6] == b" FROM " =>
+            {
                 return &sql[i..];
             }
             _ => {}
@@ -259,9 +295,9 @@ fn extract_from_clause(sql: &str) -> &str {
 
 /// Bind une WhereValue sur un query_as<T>
 fn bind_where_value<'q, T>(
-    query: sqlx::query::QueryAs<'q, Db, T, DbArguments>,
+    query: sqlx::query::QueryAs<'q, Db, T, <Db as sqlx::Database>::Arguments<'q>>,
     value: &'q WhereValue,
-) -> sqlx::query::QueryAs<'q, Db, T, DbArguments>
+) -> sqlx::query::QueryAs<'q, Db, T, <Db as sqlx::Database>::Arguments<'q>>
 where
     T: Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow>,
 {
@@ -276,9 +312,9 @@ where
 
 /// Bind une WhereValue sur un query_as<(i64,)> (pour les COUNT)
 fn bind_where_value_tuple<'q>(
-    query: sqlx::query::QueryAs<'q, Db, (i64,), DbArguments>,
+    query: sqlx::query::QueryAs<'q, Db, (i64,), <Db as sqlx::Database>::Arguments<'q>>,
     value: &'q WhereValue,
-) -> sqlx::query::QueryAs<'q, Db, (i64,), DbArguments> {
+) -> sqlx::query::QueryAs<'q, Db, (i64,), <Db as sqlx::Database>::Arguments<'q>> {
     match value {
         WhereValue::Int(v) => query.bind(*v),
         WhereValue::Float(v) => query.bind(*v),

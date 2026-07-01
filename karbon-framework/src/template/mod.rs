@@ -1,29 +1,37 @@
-//! # Template Engine
+//! # Template engines
 //!
-//! Tera-based template engine with layout inheritance, custom filters,
-//! and integrated email sending.
+//! Server-side rendering behind a backend-agnostic [`Renderer`] trait, with two
+//! interchangeable backends selected by feature flag:
 //!
-//! ## Usage
+//! - **`templates`** → [`TemplateEngine`] (Tera), with custom filters and
+//!   integrated email sending.
+//! - **`minijinja`** → [`MinijinjaEngine`] (minijinja).
 //!
-//! ```rust,ignore
-//! // Render a template
-//! let html = state.templates.render("emails/welcome.html", &ctx)?;
+//! Both use Jinja2/Twig syntax. Application code can depend on `Arc<dyn Renderer>`
+//! to stay backend-independent; a future in-house engine will implement the same
+//! trait.
 //!
-//! // Send email with template
-//! state.templates.send_mail(&mailer, "to@mail.com", "Sujet", "emails/welcome.html", &ctx).await?;
-//! ```
-//!
-//! ## Template syntax (Jinja2/Twig)
-//!
-//! ```html
-//! {% extends "layouts/email.html" %}
-//! {% block content %}
-//!   <h1>Hello {{ username }}!</h1>
-//!   <p>Date: {{ now | date_fr }}</p>
-//! {% endblock %}
+//! ```ignore
+//! {% extends "layouts/base.html" %}
+//! {% block content %}<h1>Hello {{ username }}!</h1>{% endblock %}
 //! ```
 
+mod renderer;
+pub use renderer::Renderer;
+
+#[cfg(feature = "templates")]
 mod engine;
+#[cfg(feature = "templates")]
 mod filters;
-
+#[cfg(feature = "templates")]
 pub use engine::TemplateEngine;
+
+#[cfg(feature = "minijinja")]
+mod minijinja_engine;
+#[cfg(feature = "minijinja")]
+pub use minijinja_engine::MinijinjaEngine;
+
+#[cfg(feature = "native-templates")]
+mod native;
+#[cfg(feature = "native-templates")]
+pub use native::NativeEngine;

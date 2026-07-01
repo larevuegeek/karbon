@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio cockpit — Karbon docs</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/docs.js"></script>
+</head>
+<body>
+<article id="doc" data-title="Studio cockpit" data-cat="Operate">
+<h1>Studio — the dev cockpit</h1>
+<p class="lead-p">Studio is a browser dashboard embedded in your app during development: live metrics, a schema and route explorer, an integrated terminal that runs CLI commands, and your project's docs. It's feature-gated and never compiled into production.</p>
+
+<h2>Enabling Studio</h2>
+<p>Studio lives behind the <code>studio</code> feature flag:</p>
+<pre>karbon = { package = "karbon-framework", features = ["studio"] }</pre>
+<p>Projects scaffolded with <code>--local</code> enable it automatically. On startup you'll see:</p>
+<pre>⚡ Studio → http://localhost:3005/_studio?token=…</pre>
+<div class="note">
+<p>In development the token requirement is relaxed — the printed links work without it. Studio binds to localhost only and is disabled in production (the code isn't compiled without the feature).</p>
+</div>
+
+<h2>Tabs</h2>
+<table>
+  <thead><tr><th>Tab</th><th>What it shows</th></tr></thead>
+  <tbody>
+    <tr><td><b>Overview</b></td><td>Version, environment, driver, uptime, and live performance (avg/min/max latency, status &amp; method distribution, slowest endpoints), plus features and entities</td></tr>
+    <tr><td><b>Requests / Events / Jobs / Mails</b></td><td>Realtime monitoring over a WebSocket (<code>/_studio/ws</code>)</td></tr>
+    <tr><td><b>Database</b></td><td>A schema browser: tables, row counts and columns</td></tr>
+    <tr><td><b>Routes</b></td><td>Every route classified as System / API / Web, with params and constraints, from <code>/openapi.json</code> plus system routes</td></tr>
+    <tr><td><b>Terminal</b></td><td>A whitelisted CLI runner + a scaffolding form (see below)</td></tr>
+    <tr><td><b>Docs</b></td><td>The embedded Karbon reference plus your project's <code>docs/**.md</code>, rendered to HTML</td></tr>
+  </tbody>
+</table>
+
+<h2>The integrated terminal</h2>
+<p>The Terminal tab runs a <b>whitelist</b> of <code>karbon</code> commands — <code>generate</code>/<code>g</code>, <code>migrate</code>, <code>doctor</code>, <code>docs</code> — with no shell access. Destructive actions like <code>migrate rollback</code> ask for confirmation first.</p>
+<p>It includes a <b>Make form</b> for scaffolding, with a visual <b>field builder</b>: add rows of name + type + nullable, exactly like the CLI's interactive assistant, then run the generator. There's a command catalog and autocomplete.</p>
+<div class="note ok">
+<p>Commands run non-interactively (stdin is closed) so the interactive field assistant never blocks the terminal. The <code>karbon</code> binary is located via <code>KARBON_BIN</code>, which <code>karbon dev</code> sets for you.</p>
+</div>
+
+<h2>API endpoints</h2>
+<pre>GET  /_studio/api/info       # version, env, driver, features, entities
+GET  /_studio/api/data       # realtime monitoring payloads
+GET  /_studio/api/stats      # performance stats
+GET  /_studio/api/database   # schema (tables, rows, columns)
+GET  /_studio/api/docs       # rendered docs (reference + project)
+POST /_studio/api/terminal   # run a whitelisted command</pre>
+
+<h2>Debug toolbar</h2>
+<p>On HTML pages, <code>studio_toolbar_middleware</code> injects a bottom toolbar showing the framework version, request method, path, status, duration and request-id, with a drop-up of details and links to Studio and the Terminal. It's wired automatically by <code>App::serve()</code>.</p>
+
+<div class="note warn">
+<p><b>Loading new assets.</b> Studio's UI assets are embedded in the binary. After updating the framework, restart <code>karbon dev</code> so the backend recompiles and serves the latest cockpit, then hard-refresh the browser.</p>
+</div>
+</article>
+</body>
+</html>

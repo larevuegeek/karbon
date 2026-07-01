@@ -20,11 +20,19 @@ impl Database {
 
     /// Connect with a raw URL
     pub async fn connect_url(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = DbPoolOptions::new()
-            .max_connections(5)
-            .connect(url)
-            .await?;
+        let pool = DbPoolOptions::new().max_connections(5).connect(url).await?;
 
+        Ok(Self { pool })
+    }
+
+    /// Build a **lazy** pool that connects on first use instead of immediately.
+    ///
+    /// Used for apps that don't configure a database: the pool exists (so the
+    /// `AppState` is well-formed) but never connects unless a query is run.
+    pub fn connect_lazy(config: &Config) -> Result<Self, sqlx::Error> {
+        let pool = DbPoolOptions::new()
+            .max_connections(config.db_max_connections.max(1))
+            .connect_lazy(&config.database_url())?;
         Ok(Self { pool })
     }
 

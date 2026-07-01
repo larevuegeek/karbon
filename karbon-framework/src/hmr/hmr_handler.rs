@@ -8,7 +8,7 @@ use tokio::sync::broadcast;
 /// Watches files and notifies connected browsers via WebSocket.
 ///
 /// ```ignore
-/// use framework::hmr::HmrServer;
+/// use karbon::hmr::HmrServer;
 ///
 /// let hmr = HmrServer::new()
 ///     .watch("templates/")
@@ -72,10 +72,7 @@ impl HmrServer {
                 for watch_path in paths.iter() {
                     if let Ok(entries) = walk_dir(watch_path) {
                         for entry in entries {
-                            let modified = entry
-                                .metadata()
-                                .ok()
-                                .and_then(|m| m.modified().ok());
+                            let modified = entry.metadata().ok().and_then(|m| m.modified().ok());
 
                             let Some(modified) = modified else { continue };
                             let path_str = entry.path().display().to_string();
@@ -102,7 +99,7 @@ impl HmrServer {
 
                 // Purge deleted files every 20 scans (~10s) to prevent unbounded growth
                 scan_count += 1;
-                if scan_count % 20 == 0 {
+                if scan_count.is_multiple_of(20) {
                     last_modified.retain(|k, _| current_paths.contains(k));
                 }
 

@@ -5,7 +5,11 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub struct PaginationParams {
     #[serde(default = "default_page", deserialize_with = "string_or_u32")]
     pub page: u32,
-    #[serde(default = "default_per_page", deserialize_with = "string_or_u32", alias = "limit")]
+    #[serde(
+        default = "default_per_page",
+        deserialize_with = "string_or_u32",
+        alias = "limit"
+    )]
     pub per_page: u32,
     #[serde(default)]
     pub sort: Option<String>,
@@ -49,7 +53,7 @@ const MAX_PER_PAGE: u32 = 200;
 impl PaginationParams {
     /// Returns per_page clamped to MAX_PER_PAGE (200)
     pub fn safe_per_page(&self) -> u32 {
-        self.per_page.min(MAX_PER_PAGE).max(1)
+        self.per_page.clamp(1, MAX_PER_PAGE)
     }
 
     /// Calculate SQL OFFSET (uses safe_per_page)

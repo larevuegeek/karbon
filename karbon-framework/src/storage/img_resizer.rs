@@ -1,19 +1,19 @@
-use axum::extract::{Path, Query, Request};
-use axum::http::{header, StatusCode};
+use axum::Router;
+use axum::extract::{Path, Query};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 use serde::Deserialize;
 use std::path::{Path as StdPath, PathBuf};
 use std::sync::Arc;
 
-use super::thumbnail::{ImageProcessor, ResizeMode, CropAnchor, OutputFormat, PngCompression};
+use super::thumbnail::{CropAnchor, ImageProcessor, OutputFormat, PngCompression, ResizeMode};
 
 /// ImgResizer — on-the-fly image resizing service with disk cache.
 ///
 /// # Usage
 ///
-/// ```rust
+/// ```ignore
 /// use karbon::storage::ImgResizer;
 ///
 /// let app = Router::new()
@@ -98,16 +98,23 @@ impl ImgResizerConfig {
             max_height: self.max_height,
             default_quality: self.default_quality,
             allowed_formats: vec![
-                "jpg".into(), "jpeg".into(), "png".into(),
-                "gif".into(), "webp".into(), "avif".into(),
+                "jpg".into(),
+                "jpeg".into(),
+                "png".into(),
+                "gif".into(),
+                "webp".into(),
+                "avif".into(),
             ],
         });
 
         Router::new()
-            .route("/r/{spec}/{*path}", get({
-                let state = Arc::clone(&state);
-                move |path, query| handle_resize(path, query, state)
-            }))
+            .route(
+                "/r/{spec}/{*path}",
+                get({
+                    let state = Arc::clone(&state);
+                    move |path, query| handle_resize(path, query, state)
+                }),
+            )
             // Fallback: serve original files via tower-http ServeDir
             .fallback_service(tower_http::services::ServeDir::new(&state.source_dir))
     }
@@ -116,7 +123,7 @@ impl ImgResizerConfig {
 impl ImgResizer {
     /// Quick setup: serve images from `source_dir` with cache in `cache_dir`
     ///
-    /// ```rust
+    /// ```ignore
     /// app.nest_service("/files", ImgResizer::serve("./storage", "./cache/img"));
     /// ```
     pub fn serve(source_dir: impl Into<PathBuf>, cache_dir: impl Into<PathBuf>) -> Router {
@@ -125,13 +132,16 @@ impl ImgResizer {
 
     /// Advanced setup with config builder
     ///
-    /// ```rust
+    /// ```ignore
     /// app.nest_service("/files", ImgResizer::config("./storage", "./cache/img")
     ///     .max_width(2560)
     ///     .default_quality(90)
     ///     .build());
     /// ```
-    pub fn config(source_dir: impl Into<PathBuf>, cache_dir: impl Into<PathBuf>) -> ImgResizerConfig {
+    pub fn config(
+        source_dir: impl Into<PathBuf>,
+        cache_dir: impl Into<PathBuf>,
+    ) -> ImgResizerConfig {
         ImgResizerConfig::new(source_dir, cache_dir)
     }
 }
@@ -236,6 +246,7 @@ fn parse_anchor(anchor: &str) -> CropAnchor {
 // ── Query params ──
 
 #[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)] // deserialized from query string; some fields reserved for future use
 struct ResizeQuery {
     anchor: Option<String>,
     watermark: Option<String>,
@@ -246,17 +257,55 @@ struct ResizeQuery {
 
 // ── Request handler ──
 
+/// A single URL path segment used to build a cache subdirectory. Rejects anything that
+/// could escape the target directory (`..`, separators, absolute markers).
+fn is_safe_spec(spec: &str) -> bool {
+    !spec.is_empty()
+        && spec.len() <= 64
+        && spec != ".."
+        && spec
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+/// A relative file path from the URL. Rejects traversal, absolute paths, backslashes,
+/// null bytes, and empty/`..` components.
+fn is_safe_rel_path(p: &str) -> bool {
+    if p.is_empty() || p.contains('\0') || p.contains('\\') || p.starts_with('/') {
+        return false;
+    }
+    p.split('/')
+        .all(|seg| !seg.is_empty() && seg != ".." && seg != ".")
+}
+
+/// Join `rel` onto `base` and confirm the canonicalized result stays inside `base`.
+/// Returns `None` if the path escapes, doesn't exist, or can't be canonicalized.
+fn resolve_within(base: &std::path::Path, rel: &str) -> Option<std::path::PathBuf> {
+    let candidate = base.join(rel);
+    let canonical = candidate.canonicalize().ok()?;
+    let canonical_base = base.canonicalize().ok()?;
+    canonical.starts_with(&canonical_base).then_some(canonical)
+}
+
 async fn handle_resize(
     Path((spec, file_path)): Path<(String, String)>,
     Query(query): Query<ResizeQuery>,
     state: Arc<ResizerState>,
 ) -> Response {
+    // Reject path traversal before touching the filesystem (both branches below).
+    if !is_safe_rel_path(&file_path) || !is_safe_spec(&spec) {
+        return (StatusCode::BAD_REQUEST, "Invalid path").into_response();
+    }
+
     // Parse spec
     let resize_spec = match parse_spec(&spec) {
         Some(s) => s,
         None => {
-            // "original" or invalid spec → serve original
-            return serve_file(&state.source_dir.join(&file_path)).await;
+            // "original" or invalid spec → serve original (containment-checked)
+            match resolve_within(&state.source_dir, &file_path) {
+                Some(safe) => return serve_file(&safe).await,
+                None => return StatusCode::NOT_FOUND.into_response(),
+            }
         }
     };
 
@@ -285,7 +334,8 @@ async fn handle_resize(
     }
 
     // Check file extension is allowed
-    let ext = source_path.extension()
+    let ext = source_path
+        .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
@@ -297,26 +347,34 @@ async fn handle_resize(
     let out_ext = resize_spec.format.as_deref().unwrap_or(&ext);
 
     // Build cache path: cache_dir/spec/path.ext
-    let cache_path = state.cache_dir
-        .join(&spec)
-        .join(format!("{}.{}", file_path.replace('/', "_"), out_ext));
+    let cache_path =
+        state
+            .cache_dir
+            .join(&spec)
+            .join(format!("{}.{}", file_path.replace('/', "_"), out_ext));
 
     // Serve from cache if exists and newer than source
-    if cache_path.exists() {
-        if let (Ok(cache_meta), Ok(src_meta)) = (cache_path.metadata(), source_path.metadata()) {
-            if let (Ok(cache_mod), Ok(src_mod)) = (cache_meta.modified(), src_meta.modified()) {
-                if cache_mod >= src_mod {
-                    return serve_file(&cache_path).await;
-                }
-            }
-        }
+    if cache_path.exists()
+        && let (Ok(cache_meta), Ok(src_meta)) = (cache_path.metadata(), source_path.metadata())
+        && let (Ok(cache_mod), Ok(src_mod)) = (cache_meta.modified(), src_meta.modified())
+        && cache_mod >= src_mod
+    {
+        return serve_file(&cache_path).await;
     }
 
     // Process image
     let mut processor = ImageProcessor::new()
         .resize(
-            if resize_spec.width > 0 { resize_spec.width } else { 1 },
-            if resize_spec.height > 0 { resize_spec.height } else { 1 },
+            if resize_spec.width > 0 {
+                resize_spec.width
+            } else {
+                1
+            },
+            if resize_spec.height > 0 {
+                resize_spec.height
+            } else {
+                1
+            },
         )
         .mode(resize_spec.mode);
 
@@ -361,11 +419,11 @@ async fn handle_resize(
     // Process in a blocking thread to avoid starving the Tokio runtime
     let cache_path_clone = cache_path.clone();
     let source_clone = source_path.clone();
-    let file_path_clone = file_path.clone();
+    let _file_path_clone = file_path.clone();
 
-    let result = tokio::task::spawn_blocking(move || {
-        processor.process(&source_clone, &cache_path_clone)
-    }).await;
+    let result =
+        tokio::task::spawn_blocking(move || processor.process(&source_clone, &cache_path_clone))
+            .await;
 
     match result {
         Ok(Ok(())) => serve_file(&cache_path).await,
@@ -388,9 +446,7 @@ async fn serve_file(path: &StdPath) -> Response {
         Err(_) => return StatusCode::NOT_FOUND.into_response(),
     };
 
-    let ext = path.extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("bin");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("bin");
 
     let content_type = match ext {
         "jpg" | "jpeg" => "image/jpeg",
@@ -412,10 +468,14 @@ async fn serve_file(path: &StdPath) -> Response {
             // Images should not be framed
             (header::X_FRAME_OPTIONS, "DENY"),
             // Block if browser detects XSS in image context
-            (header::CONTENT_SECURITY_POLICY, "default-src 'none'; style-src 'unsafe-inline'"),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; style-src 'unsafe-inline'",
+            ),
         ],
         data,
-    ).into_response()
+    )
+        .into_response()
 }
 
 #[cfg(test)]
@@ -502,7 +562,10 @@ mod tests {
     fn test_parse_anchor() {
         assert!(matches!(parse_anchor("top-left"), CropAnchor::TopLeft));
         assert!(matches!(parse_anchor("center"), CropAnchor::Center));
-        assert!(matches!(parse_anchor("bottom-right"), CropAnchor::BottomRight));
+        assert!(matches!(
+            parse_anchor("bottom-right"),
+            CropAnchor::BottomRight
+        ));
         assert!(matches!(parse_anchor("top"), CropAnchor::TopCenter));
         assert!(matches!(parse_anchor("invalid"), CropAnchor::Center));
     }

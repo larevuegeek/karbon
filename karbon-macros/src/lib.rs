@@ -1,9 +1,9 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
+    Data, DeriveInput, Fields, FnArg, ImplItem, ItemImpl, LitStr, Pat, Token, Type,
     parse::{Parse, ParseStream},
-    parse_macro_input, Data, DeriveInput, Fields, FnArg, ImplItem, ItemImpl, LitStr, Pat, Token,
-    Type,
+    parse_macro_input,
 };
 
 // ─────────────────────────────────────────────
@@ -31,7 +31,12 @@ impl Parse for ControllerArgs {
                 "prefix" => prefix = Some(lit.value()),
                 "role" => role = Some(lit.value()),
                 "state" => state = Some(lit.value()),
-                _ => return Err(syn::Error::new(ident.span(), "expected `prefix`, `role`, or `state`")),
+                _ => {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "expected `prefix`, `role`, or `state`",
+                    ));
+                }
             }
 
             // Consume optional comma
@@ -53,19 +58,44 @@ struct RouteInfo {
     fn_name: syn::Ident,
 }
 
+/// A route attribute: a path plus optional `param = "rule"` validation pairs,
+/// e.g. `#[karbon::get("/{id}", id = "int:min=1")]`.
+struct RouteAttr {
+    path: LitStr,
+    rules: Vec<(syn::Ident, LitStr)>,
+}
+
+impl Parse for RouteAttr {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let path: LitStr = input.parse()?;
+        let mut rules = Vec::new();
+        while input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            if input.is_empty() {
+                break;
+            }
+            let name: syn::Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+            let rule: LitStr = input.parse()?;
+            rules.push((name, rule));
+        }
+        Ok(RouteAttr { path, rules })
+    }
+}
+
 /// Find the parameter name that has type AuthGuard in a method signature
 fn find_auth_guard_param(method: &syn::ImplItemFn) -> Option<syn::Ident> {
     for arg in &method.sig.inputs {
-        if let FnArg::Typed(pat_type) = arg {
-            if let Type::Path(type_path) = pat_type.ty.as_ref() {
-                let last_seg = type_path.path.segments.last();
-                if let Some(seg) = last_seg {
-                    if seg.ident == "AuthGuard" {
-                        // Extract the pattern name
-                        if let Pat::Ident(pat_ident) = pat_type.pat.as_ref() {
-                            return Some(pat_ident.ident.clone());
-                        }
-                    }
+        if let FnArg::Typed(pat_type) = arg
+            && let Type::Path(type_path) = pat_type.ty.as_ref()
+        {
+            let last_seg = type_path.path.segments.last();
+            if let Some(seg) = last_seg
+                && seg.ident == "AuthGuard"
+            {
+                // Extract the pattern name
+                if let Pat::Ident(pat_ident) = pat_type.pat.as_ref() {
+                    return Some(pat_ident.ident.clone());
                 }
             }
         }
@@ -91,8 +121,8 @@ fn extract_route_info(item: &ImplItem) -> Option<RouteInfo> {
         match name.as_str() {
             "get" | "post" | "put" | "delete" | "patch" => {
                 http_method = Some(name);
-                if let Ok(lit) = attr.parse_args::<LitStr>() {
-                    path = Some(lit.value());
+                if let Ok(ra) = attr.parse_args::<RouteAttr>() {
+                    path = Some(ra.path.value());
                 }
             }
             _ => {}
@@ -128,6 +158,16 @@ fn extract_route_info(item: &ImplItem) -> Option<RouteInfo> {
 ///     }
 /// }
 /// ```
+///
+/// ## Requires an `AuthGuard` parameter (enforced)
+/// The role check is injected using the handler's `auth: AuthGuard` parameter. If a route
+/// carries a role (`#[require_role]` or a controller-level `role = "…"`) but has **no**
+/// `AuthGuard` parameter, the macro **refuses to compile** (rather than silently leaving
+/// the route unprotected) — add `auth: AuthGuard`.
+///
+/// For a public route inside a role-protected controller, don't set a controller-level
+/// `role`; instead put `#[require_role("…")]` only on the routes that need it and leave the
+/// public ones without a role (and without `AuthGuard`).
 #[proc_macro_attribute]
 pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args as ControllerArgs);
@@ -155,26 +195,85 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
                     .last()
                     .map(|s| s.ident.to_string())
                     .unwrap_or_default();
-                if name == "require_role" {
-                    if let Ok(lit) = attr.parse_args::<LitStr>() {
-                        role_value = Some(lit.value());
-                    }
+                if name == "require_role"
+                    && let Ok(lit) = attr.parse_args::<LitStr>()
+                {
+                    role_value = Some(lit.value());
                 }
             }
 
             // Fall back to controller-level role if no method-level role
             let effective_role = role_value.or_else(|| controller_role.clone());
 
-            // If a role is set, inject the check at the start of the body
-            if let Some(role) = effective_role {
-                if let Some(auth_param) = find_auth_guard_param(method) {
-                    let check = syn::parse2::<syn::Stmt>(quote! {
-                        #auth_param.require_role(#role)?;
-                    })
-                    .expect("Failed to parse role check statement");
+            // Collect statements injected at the top of the handler: role check
+            // first, then path-parameter validation rules.
+            let mut injected: Vec<syn::Stmt> = Vec::new();
 
-                    method.block.stmts.insert(0, check);
+            // Only real routes (with a method attribute) carry a role — never helper fns.
+            let is_route = method.attrs.iter().any(|attr| {
+                let n = attr
+                    .path()
+                    .segments
+                    .last()
+                    .map(|s| s.ident.to_string())
+                    .unwrap_or_default();
+                matches!(n.as_str(), "get" | "post" | "put" | "delete" | "patch")
+            });
+
+            if is_route && let Some(role) = effective_role {
+                match find_auth_guard_param(method) {
+                    Some(auth_param) => {
+                        injected.push(
+                            syn::parse2(quote! { #auth_param.require_role(#role)?; })
+                                .expect("Failed to parse role check statement"),
+                        );
+                    }
+                    // A role is declared but there's no `AuthGuard` to enforce it against.
+                    // Refuse to compile rather than silently leaving the route unprotected.
+                    None => {
+                        let msg = format!(
+                            "route `{}` has a role requirement (`#[require_role]` or a \
+                             controller-level `role = \"…\"`) but no `auth: AuthGuard` parameter. \
+                             Add `auth: AuthGuard` to the handler — without it the role check is \
+                             NOT applied and the route would be unprotected. (For a public route \
+                             inside a role-protected controller, drop the controller-level `role` \
+                             and put `#[require_role(\"…\")]` on the protected routes instead.)",
+                            method.sig.ident
+                        );
+                        let err =
+                            syn::Error::new_spanned(&method.sig.ident, msg).to_compile_error();
+                        injected.push(syn::parse_quote!( #err; ));
+                    }
                 }
+            }
+
+            // `#[karbon::get("/{id}", id = "int:min=1")]` → validate the param,
+            // rejecting bad input with 400 before the handler body runs.
+            for attr in &method.attrs {
+                let n = attr
+                    .path()
+                    .segments
+                    .last()
+                    .map(|s| s.ident.to_string())
+                    .unwrap_or_default();
+                if matches!(n.as_str(), "get" | "post" | "put" | "delete" | "patch")
+                    && let Ok(ra) = attr.parse_args::<RouteAttr>()
+                {
+                    for (pname, rule) in ra.rules {
+                        let pname_str = pname.to_string();
+                        let rule_str = rule.value();
+                        injected.push(
+                            syn::parse2(quote! {
+                                karbon::validation::route::validate(#pname_str, &#pname, #rule_str)?;
+                            })
+                            .expect("Failed to parse route validation statement"),
+                        );
+                    }
+                }
+            }
+
+            for (i, stmt) in injected.into_iter().enumerate() {
+                method.block.stmts.insert(i, stmt);
             }
 
             // Strip custom attributes
@@ -232,10 +331,31 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
 
     // Use custom state type if provided, otherwise default to karbon::http::AppState
     let state_type: proc_macro2::TokenStream = if let Some(ref state_path) = args.state {
-        state_path.parse().unwrap_or_else(|_| quote! { karbon::http::AppState })
+        state_path
+            .parse()
+            .unwrap_or_else(|_| quote! { karbon::http::AppState })
     } else {
         quote! { karbon::http::AppState }
     };
+
+    // OpenAPI route metadata: (HTTP method, full path including prefix).
+    let openapi_entries: Vec<proc_macro2::TokenStream> = routes
+        .iter()
+        .map(|r| {
+            let method = r.method.to_uppercase();
+            let full = if r.path == "/" {
+                prefix.to_string()
+            } else {
+                format!("{}{}", prefix, r.path)
+            };
+            let full = if full.is_empty() {
+                "/".to_string()
+            } else {
+                full
+            };
+            quote! { (#method, #full) }
+        })
+        .collect();
 
     let expanded = quote! {
         #impl_block
@@ -250,6 +370,11 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
             /// Returns the route prefix for this controller
             pub fn prefix() -> &'static str {
                 #prefix
+            }
+
+            /// Route metadata as `(HTTP_METHOD, full_path)` pairs, for OpenAPI.
+            pub fn openapi_paths() -> Vec<(&'static str, &'static str)> {
+                vec![ #(#openapi_entries),* ]
             }
         }
     };
@@ -305,10 +430,10 @@ pub fn require_role(_args: TokenStream, input: TokenStream) -> TokenStream {
 
 fn extract_table_name(attrs: &[syn::Attribute]) -> Option<String> {
     for attr in attrs {
-        if attr.path().is_ident("table_name") {
-            if let Ok(lit) = attr.parse_args::<LitStr>() {
-                return Some(lit.value());
-            }
+        if attr.path().is_ident("table_name")
+            && let Ok(lit) = attr.parse_args::<LitStr>()
+        {
+            return Some(lit.value());
         }
     }
     None
@@ -327,10 +452,10 @@ fn has_struct_attr(attrs: &[syn::Attribute], name: &str) -> bool {
 /// Extract #[slug_from("field_name")] value from a field
 fn extract_slug_from(field: &syn::Field) -> Option<String> {
     for attr in &field.attrs {
-        if attr.path().is_ident("slug_from") {
-            if let Ok(lit) = attr.parse_args::<LitStr>() {
-                return Some(lit.value());
-            }
+        if attr.path().is_ident("slug_from")
+            && let Ok(lit) = attr.parse_args::<LitStr>()
+        {
+            return Some(lit.value());
         }
     }
     None
@@ -338,10 +463,10 @@ fn extract_slug_from(field: &syn::Field) -> Option<String> {
 
 /// Check if a field type is Option<T>
 fn is_option_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        if let Some(seg) = type_path.path.segments.last() {
-            return seg.ident == "Option";
-        }
+    if let Type::Path(type_path) = ty
+        && let Some(seg) = type_path.path.segments.last()
+    {
+        return seg.ident == "Option";
     }
     false
 }
@@ -375,7 +500,10 @@ fn is_option_type(ty: &Type) -> bool {
 /// // → INSERT INTO posts (title, slug, created_at) VALUES (?, ?, ?)
 /// // slug auto-generated from title if empty
 /// ```
-#[proc_macro_derive(Insertable, attributes(table_name, auto_increment, skip_insert, timestamps, slug_from))]
+#[proc_macro_derive(
+    Insertable,
+    attributes(table_name, auto_increment, skip_insert, timestamps, slug_from)
+)]
 pub fn derive_insertable(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -393,9 +521,12 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
         Data::Struct(data) => match &data.fields {
             Fields::Named(f) => &f.named,
             _ => {
-                return syn::Error::new_spanned(name, "Insertable only works on structs with named fields")
-                    .to_compile_error()
-                    .into();
+                return syn::Error::new_spanned(
+                    name,
+                    "Insertable only works on structs with named fields",
+                )
+                .to_compile_error()
+                .into();
             }
         },
         _ => {
@@ -426,7 +557,6 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
         column_names.push("created_at".to_string());
     }
 
-
     // Build bind calls, handling #[slug_from] fields
     let mut bind_calls: Vec<proc_macro2::TokenStream> = Vec::new();
     let mut slug_lets: Vec<proc_macro2::TokenStream> = Vec::new();
@@ -439,7 +569,7 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
             let var_name = format_ident!("__slug_{}", ident);
             slug_lets.push(quote! {
                 let #var_name = if self.#ident.is_empty() {
-                    slug::slugify(&self.#source_ident)
+                    karbon::slug::slugify(&self.#source_ident)
                 } else {
                     self.#ident.clone()
                 };
@@ -461,7 +591,10 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
         .map(|_| "?".to_string())
         .collect::<Vec<_>>()
         .join(", ");
-    let sql_literal = format!("INSERT INTO {} ({}) VALUES ({})", table, columns_str, placeholders_str);
+    let sql_literal = format!(
+        "INSERT INTO {} ({}) VALUES ({})",
+        table, columns_str, placeholders_str
+    );
 
     let expanded = quote! {
         impl #name {
@@ -471,7 +604,7 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
                 E: sqlx::Executor<'e, Database = karbon::db::Db>,
             {
                 #(#slug_lets)*
-                tracing::debug!("[SQL INSERT] {}", #sql_literal);
+                karbon::tracing::debug!("[SQL INSERT] {}", #sql_literal);
                 let result = sqlx::query(#sql_literal)
                     #(#bind_calls)*
                     .execute(executor)
@@ -514,7 +647,10 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
 /// // UpdateUser { id: 42, username: Some("new"), email: None, active: None }.update(pool).await?;
 /// // → UPDATE user SET username=? WHERE id=?  (only Some fields)
 /// ```
-#[proc_macro_derive(Updatable, attributes(table_name, primary_key, skip_update, timestamps))]
+#[proc_macro_derive(
+    Updatable,
+    attributes(table_name, primary_key, skip_update, timestamps)
+)]
 pub fn derive_updatable(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -532,9 +668,12 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
         Data::Struct(data) => match &data.fields {
             Fields::Named(f) => &f.named,
             _ => {
-                return syn::Error::new_spanned(name, "Updatable only works on structs with named fields")
-                    .to_compile_error()
-                    .into();
+                return syn::Error::new_spanned(
+                    name,
+                    "Updatable only works on structs with named fields",
+                )
+                .to_compile_error()
+                .into();
             }
         },
         _ => {
@@ -549,14 +688,20 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
     let pk_field = match pk_field {
         Some(f) => f,
         None => {
-            return syn::Error::new_spanned(name, "Updatable requires exactly one #[primary_key] field")
-                .to_compile_error()
-                .into();
+            return syn::Error::new_spanned(
+                name,
+                "Updatable requires exactly one #[primary_key] field",
+            )
+            .to_compile_error()
+            .into();
         }
     };
     let pk_ident = pk_field.ident.as_ref().unwrap();
     let pk_col_raw = pk_ident.to_string();
-    let pk_col = pk_col_raw.strip_prefix("r#").unwrap_or(&pk_col_raw).to_string();
+    let pk_col = pk_col_raw
+        .strip_prefix("r#")
+        .unwrap_or(&pk_col_raw)
+        .to_string();
 
     let has_timestamps = has_struct_attr(&input.attrs, "timestamps");
 
@@ -573,7 +718,10 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
     for field in &update_fields {
         let ident = field.ident.as_ref().unwrap();
         let col_name_raw = ident.to_string();
-        let col_name = col_name_raw.strip_prefix("r#").unwrap_or(&col_name_raw).to_string();
+        let col_name = col_name_raw
+            .strip_prefix("r#")
+            .unwrap_or(&col_name_raw)
+            .to_string();
 
         if is_option_type(&field.ty) {
             set_pushes.push(quote! {

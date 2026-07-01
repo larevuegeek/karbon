@@ -1,11 +1,15 @@
+mod csrf;
+mod http_cache;
 mod maintenance;
 mod rate_limit;
-mod request_logger;
 mod request_id;
-mod csrf;
+mod request_logger;
+mod security_headers;
 
-pub use maintenance::{maintenance_mode, set_maintenance, is_maintenance};
-pub use rate_limit::RateLimitLayer;
-pub use request_logger::request_logger;
-pub use request_id::request_id;
 pub use csrf::csrf_protection;
+pub use http_cache::http_cache;
+pub use maintenance::{is_maintenance, maintenance_mode, set_maintenance};
+pub use rate_limit::RateLimitLayer;
+pub use request_id::request_id;
+pub use request_logger::request_logger;
+pub use security_headers::security_headers;

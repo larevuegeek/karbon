@@ -30,7 +30,7 @@ impl NumberHelper {
         let mut result = String::new();
 
         for (i, c) in chars.iter().enumerate() {
-            if i > 0 && (chars.len() - i) % 3 == 0 {
+            if i > 0 && (chars.len() - i).is_multiple_of(3) {
                 result.push_str(separator);
             }
             result.push(*c);
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn test_round() {
-        assert_eq!(NumberHelper::round(3.14159, 2), 3.14);
+        assert_eq!(NumberHelper::round(5.67891, 2), 5.68);
         assert_eq!(NumberHelper::round(3.145, 2), 3.15);
         assert_eq!(NumberHelper::round(3.0, 2), 3.0);
     }
