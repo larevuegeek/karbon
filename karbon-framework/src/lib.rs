@@ -79,7 +79,7 @@ pub mod validation;
 
 // Re-exports for convenience
 pub use channel::ChannelRegistry;
-pub use db::Database;
+pub use db::{Database, PoolSettings};
 pub use error::{AppError, AppResult};
 pub use feature::FeatureFlags;
 pub use form::{Field, Form};

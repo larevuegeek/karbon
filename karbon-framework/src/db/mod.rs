@@ -5,6 +5,7 @@ mod paginated_query;
 mod pagination;
 #[cfg(test)]
 mod pagination_test;
+mod pool_settings;
 mod query;
 mod repository;
 pub mod seeder;
@@ -14,6 +15,7 @@ pub use builder::{CountBuilder, DeleteBuilder, InsertBuilder, UpdateBuilder};
 pub use database::Database;
 pub use paginated_query::PaginatedQuery;
 pub use pagination::{Paginated, PaginationParams};
+pub use pool_settings::PoolSettings;
 pub use query::QueryBuilder;
 pub use repository::{CrudRepository, WhereValue};
 pub use select_builder::{Order, SelectBuilder};

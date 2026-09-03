@@ -11,6 +11,31 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.3.2] - 2026-09-03
+
+> Additive release: connection-pool tuning. No breaking changes — every new default
+> reproduces the behaviour previous versions inherited from sqlx.
+
+### Added
+- **`PoolSettings`** (`karbon::PoolSettings`) — connection-pool tuning read from the
+  environment: `DB_MIN_CONNECTIONS` (default `0`), `DB_ACQUIRE_TIMEOUT_SECS` (`30`),
+  `DB_MAX_LIFETIME_SECS` (`1800`) and `DB_IDLE_TIMEOUT_SECS` (`600`). For the two
+  durations, `0` disables the behaviour instead of meaning "immediately".
+  Defaults are exactly sqlx's, so an app that sets none of these sees no change.
+- **`Database::connect_with`, `connect_url_with`, `connect_lazy_with`** — the same three
+  constructors taking an explicit `&PoolSettings`, for apps that would rather configure
+  the pool in code than through the environment.
+- Guidance on `max_lifetime` for clustered databases (Galera, Group Replication, managed
+  HA): after a failover the pool still holds sockets to the previous node, and forced
+  recycling is what redistributes it instead of discovering each dead connection one
+  request at a time. Keep it below the server's own `wait_timeout`.
+
+### Fixed
+- **`Database::connect_url` ignored `DB_MAX_CONNECTIONS`.** The pool ceiling was
+  hard-coded to `5`, so the variable had no effect on this code path (unlike
+  `connect()`, which honoured it through `Config`). It is now read, and still falls back
+  to `5` when unset — existing deployments are unaffected.
+
 ## [0.3.1] - 2026-07-01
 
 > Additive release: a live debug mode plus a Studio hardening fix. No breaking changes.
