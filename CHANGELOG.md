@@ -11,6 +11,32 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.3.3] - 2026-09-04
+
+> Additive release: the maintenance middleware becomes usable. No breaking changes —
+> with no configuration installed it behaves exactly as before.
+
+### Added
+- **`MaintenanceConfig` + `init_maintenance()`** — the maintenance middleware can now be
+  driven by a **flag file** (`flag_file`), re-checked at most once per second, so an
+  operator toggles maintenance with a `touch` — no restart, no deploy, and **the
+  application never needs write access to the file**. Put it outside the web tree and
+  owned by root, and a compromised app process cannot take the site down.
+- **`Retry-After`** on the 503, from `retry_after_secs` (default 120). Without it a bare
+  503 reads as "give up" to webhook senders, and their events are lost rather than
+  replayed.
+- **`exempt_prefixes`** — path prefixes that keep answering during maintenance. A status
+  page and a health endpoint belong here: maintenance is exactly when they get consulted.
+- **`is_exempt()`** exported, and **`is_maintenance()`** documented as the check background
+  jobs should make before touching the database — no HTTP middleware ever sees them.
+
+### Changed
+- `is_maintenance()` now reports true when either the in-process flag or the configured
+  flag file says so. With no `flag_file` configured — the default — the result is
+  unchanged, so existing applications are unaffected.
+- `set_maintenance(false)` no longer lifts a maintenance declared on disk: the two sources
+  are independent, and an operator's file always wins.
+
 ## [0.3.2] - 2026-09-03
 
 > Additive release: connection-pool tuning. No breaking changes — every new default
