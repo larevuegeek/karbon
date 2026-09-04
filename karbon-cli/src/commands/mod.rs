@@ -4,6 +4,7 @@ pub mod dev;
 pub mod docs;
 pub mod doctor;
 pub mod generate;
+pub mod maintenance;
 pub mod migrate;
 pub mod new;
 pub mod serve;

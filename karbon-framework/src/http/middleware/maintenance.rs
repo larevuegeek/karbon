@@ -1,14 +1,14 @@
 use axum::{
     extract::Request,
-    http::{header, HeaderValue, StatusCode},
+    http::{HeaderValue, StatusCode, header},
     middleware::Next,
     response::IntoResponse,
     response::Response,
 };
 use serde::Serialize;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 /// Global maintenance mode flag, set from within the process.

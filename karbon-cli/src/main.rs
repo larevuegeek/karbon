@@ -77,6 +77,17 @@ enum Commands {
         #[arg(long, short)]
         interactive: bool,
     },
+    /// Turn maintenance mode on or off. Actions: on, off, status (default)
+    ///
+    /// Creates or removes the flag file the application watches. Needs no running
+    /// server, so it works even when the app is down — which is when it matters.
+    /// The flag is meant to be root-owned and outside the web tree, so `on`/`off`
+    /// usually run under sudo.
+    Maintenance {
+        /// Maintenance action: on, off, status
+        #[arg(default_value = "status")]
+        action: String,
+    },
     /// Run database migrations from the migration/ directory
     /// Actions: up (default), status, rollback, diff
     Migrate {
@@ -170,6 +181,7 @@ fn main() {
                 interactive,
             },
         ),
+        Commands::Maintenance { ref action } => commands::maintenance::run(&root, action),
         Commands::Migrate {
             ref action,
             ref name,

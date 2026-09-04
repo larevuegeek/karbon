@@ -11,6 +11,31 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.3.4] - 2026-09-04
+
+> Additive release: a CLI companion to the maintenance middleware shipped in 0.3.3.
+> No breaking changes, and nothing changes for an application that does not use it.
+
+### Added
+- **`karbon maintenance on|off|status`** — flips the flag file the middleware watches.
+  The path is resolved exactly as the application resolves it (`MAINTENANCE_FLAG_FILE`
+  from the environment, then `.env`, then the framework default), so the CLI and the
+  running application can never disagree on which file matters — a hard-coded path here
+  would silently flip a file nobody reads.
+
+  It contacts no server and opens no database connection, so it works while the
+  application is down — which is precisely when maintenance gets declared. `on` and
+  `off` are idempotent and say so, because a procedure run at 3 a.m. should never fail
+  for having been run twice.
+
+  The command cannot bypass the file's permissions: when the flag lives outside the web
+  tree and is owned by root, as recommended, `on`/`off` need `sudo`. Errors say which
+  case they hit — missing directory, or missing privilege — and give the command to fix
+  it.
+
+### Changed
+- `scraper` (optional `html` feature) updated from `0.20` to `0.27`.
+
 ## [0.3.3] - 2026-09-04
 
 > Additive release: the maintenance middleware becomes usable. No breaking changes —
