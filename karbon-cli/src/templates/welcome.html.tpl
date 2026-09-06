@@ -115,7 +115,7 @@
         </li>
         <li class="step" data-key="studio">
           <span class="check"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M13 4.5 6.5 11 3 7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          <div><div class="step-h"><b>Open Studio</b><a class="step-link" href="/_studio" target="_blank" rel="noreferrer">Open →</a></div><p>Live dev cockpit (enable the <code>studio</code> feature).</p></div>
+          <div><div class="step-h"><b>Open Studio</b><a class="step-link" href="/_studio" target="_blank" rel="noreferrer">Open →</a></div><p>Live dev cockpit: metrics, schema, routes &amp; an integrated terminal.</p></div>
         </li>
         <li class="step" data-key="db">
           <span class="check"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M13 4.5 6.5 11 3 7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>

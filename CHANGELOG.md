@@ -11,6 +11,24 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.3.5] - 2026-09-06
+
+> Fix release: Studio was dead (404) in every project scaffolded since 0.3.0. Nothing
+> changes for an existing application — only the `karbon new` scaffolding is affected.
+
+### Fixed
+- **`karbon new`: Studio returned 404 in a freshly created project.** The generated
+  `app/Cargo.toml` did not enable the `studio` feature, while the welcome page and the
+  SvelteKit/Next.js landing page both linked to `/_studio`. New projects now ship
+  `features = ["studio"]`; the dashboard stays mounted only in debug builds, so
+  `karbon build`/`serve` (release) are unchanged.
+- **`karbon new` pinned a stale framework version.** The template hardcoded
+  `karbon = "0.3.1"`; the pin is now derived from the CLI's own version, so the two can
+  no longer drift.
+- **`[404] GET /favicon.png`** on every page load of a new project — the SvelteKit
+  `app.html` referenced a file the scaffolding never wrote. Both frontends now use an
+  inline SVG icon (no asset to ship).
+
 ## [0.3.4] - 2026-09-04
 
 > Additive release: a CLI companion to the maintenance middleware shipped in 0.3.3.

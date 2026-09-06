@@ -216,7 +216,8 @@ pub fn run(
         let rendered = actual_content
             .replace("{{PROJECT_NAME}}", name)
             .replace("{{PROJECT_NAME_SNAKE}}", &snake)
-            .replace("{{PROJECT_NAME_TITLE}}", &title);
+            .replace("{{PROJECT_NAME_TITLE}}", &title)
+            .replace("{{KARBON_VERSION}}", env!("CARGO_PKG_VERSION"));
         fs::write(&full_path, rendered)
             .map_err(|e| format!("Cannot write {}: {e}", full_path.display()))?;
         print_created(path, false);
