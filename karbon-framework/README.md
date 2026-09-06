@@ -7,7 +7,7 @@
 ```toml
 # Cargo.toml
 [dependencies]
-karbon = { package = "karbon-framework", version = "0.3.5" }
+karbon = { package = "karbon-framework", version = "0.3.6" }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "mysql", "chrono"] }
 ```
 
@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
 For **PostgreSQL** (or `sqlite`), swap the feature:
 
 ```toml
-karbon = { package = "karbon-framework", version = "0.3.5", default-features = false, features = ["postgres"] }
+karbon = { package = "karbon-framework", version = "0.3.6", default-features = false, features = ["postgres"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono"] }
 ```
 

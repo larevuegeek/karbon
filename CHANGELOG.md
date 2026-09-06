@@ -11,6 +11,27 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.3.6] - 2026-09-06
+
+> Fix release, in the same vein as 0.3.5: another piece of the `karbon new` scaffolding
+> that could not compile. Nothing changes for an existing application.
+
+### Fixed
+- **`#[derive(Validate)]` did not compile in a generated project.**
+  `karbon::validation::validate_request` takes `validator::Validate`, but the scaffolding
+  never added `validator` to the project, so deriving it failed with *cannot find derive
+  macro `Validate` in this scope*. It is now a workspace dependency of new projects,
+  pinned to the version `karbon-framework` compiles against (re-exporting the derive from
+  `karbon` is not an option — it expands to absolute `::validator::` paths, so the crate
+  has to be nameable in the application).
+- Dropped a dead `karbon-framework = "0.1"` line from the generated workspace
+  `Cargo.toml` — unused (the app declares `karbon` directly) and stale since 0.1.
+
+### Changed
+- Dependencies refreshed to their latest compatible versions (`cargo update`, 22 crates).
+  `sqlx` 0.9, `jsonwebtoken` 11, `tower-http` 0.7 and `argon2` 0.6 are deliberately held
+  back: the first three leak into Karbon's public API, so they belong in a minor release.
+
 ## [0.3.5] - 2026-09-06
 
 > Fix release: Studio was dead (404) in every project scaffolded since 0.3.0. Nothing
