@@ -8,7 +8,7 @@ mod url;
 
 pub use email::Email;
 pub use hostname::Hostname;
-pub use ip::Ip;
+pub use ip::{Ip, IpVersion};
 pub use length::Length;
 pub use not_blank::NotBlank;
 pub use regex::Regex;

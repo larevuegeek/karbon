@@ -94,5 +94,6 @@ pub use slug;
 pub use tracing;
 
 // Re-export macros
+pub use karbon_macros::validated;
 pub use karbon_macros::{Insertable, Updatable};
 pub use karbon_macros::{controller, delete, get, patch, post, put, require_role};

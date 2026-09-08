@@ -11,6 +11,26 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.3.7] - 2026-09-08
+
+> Additive release: a validation rule the `validator` crate does not provide, plus two
+> constraint enums that were unreachable. No breaking changes.
+
+### Added
+- **`#[karbon::validated]` + the `accepted` rule** — extends the `#[validate(...)]`
+  vocabulary of the `validator` crate, which is not extensible on its own:
+  `#[validate(accepted(message = "…"))]` rejects a `bool` that is not `true`, for
+  "I accept the terms" checkboxes. `validator` has no equivalent — `required` only
+  checks that an `Option` is `Some`, so an explicitly unchecked box would pass. On an
+  `Option<bool>` field the macro also emits `required`, because `validator` skips custom
+  validators on a `None` value. Placing the attribute below the `derive` is caught with
+  an explicit compile error instead of a baffling "no method named `validate`".
+
+### Fixed
+- **`PasswordStrength` and `IpVersion` were unreachable from outside the crate**, making
+  `Password::strength(...)` and `Ip::version(...)` impossible to call — the two enums are
+  now re-exported alongside their constraint.
+
 ## [0.3.6] - 2026-09-06
 
 > Fix release, in the same vein as 0.3.5: another piece of the `karbon new` scaffolding

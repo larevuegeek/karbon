@@ -813,3 +813,129 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+// ─────────────────────────────────────────────
+// #[validated] — extends validator's attribute vocabulary
+// ─────────────────────────────────────────────
+
+/// Adds Karbon's own rules to the `#[validate(...)]` vocabulary of the
+/// `validator` crate, which is not extensible on its own.
+///
+/// Place it above the struct, before `#[derive(..., Validate)]`:
+///
+/// ```ignore
+/// #[karbon::validated]
+/// #[derive(Debug, Deserialize, Validate)]
+/// pub struct RegisterRequest {
+///     #[validate(accepted(message = "Vous devez accepter les CGU"))]
+///     pub cgu: bool,
+/// }
+/// ```
+///
+/// `accepted` rejects a `bool` that is not `true`; on an `Option<bool>` field it
+/// rejects `None` and `Some(false)` alike. Everything else is left untouched, so
+/// the usual `length`, `email`, `must_match`, ... keep working as before.
+#[proc_macro_attribute]
+pub fn validated(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let mut item = parse_macro_input!(input as syn::ItemStruct);
+    let mut rewrote = false;
+
+    if let Fields::Named(fields) = &mut item.fields {
+        for field in fields.named.iter_mut() {
+            let opt = type_is_option(&field.ty);
+            for attr in field.attrs.iter_mut() {
+                if !attr.path().is_ident("validate") {
+                    continue;
+                }
+                match rewrite_validate_attr(attr, opt) {
+                    Ok(Some(rewritten)) => {
+                        *attr = rewritten;
+                        rewrote = true;
+                    }
+                    Ok(None) => {}
+                    Err(e) => return e.to_compile_error().into(),
+                }
+            }
+        }
+    }
+
+    // A `#[derive(..., Validate)]` listed *before* this attribute has already been
+    // expanded and stripped by the time we run, so our rewrite lands nowhere and the
+    // user gets a baffling "no method named `validate`". Catch it here instead.
+    if rewrote && !derives_validate(&item.attrs) {
+        return syn::Error::new_spanned(
+            &item.ident,
+            "#[karbon::validated] must be placed ABOVE #[derive(..., Validate)], and the struct must derive `validator::Validate`",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    TokenStream::from(quote!(#item))
+}
+
+fn derives_validate(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|a| {
+        a.path().is_ident("derive")
+            && a.parse_args_with(
+                syn::punctuated::Punctuated::<syn::Path, Token![,]>::parse_terminated,
+            )
+            .is_ok_and(|paths| {
+                paths
+                    .iter()
+                    .any(|p| p.segments.last().is_some_and(|s| s.ident == "Validate"))
+            })
+    })
+}
+
+fn type_is_option(ty: &Type) -> bool {
+    let Type::Path(p) = ty else { return false };
+    p.path.segments.last().is_some_and(|s| s.ident == "Option")
+}
+
+/// Returns the rewritten attribute, or `None` when it holds no Karbon rule.
+fn rewrite_validate_attr(attr: &syn::Attribute, opt: bool) -> syn::Result<Option<syn::Attribute>> {
+    use syn::punctuated::Punctuated;
+
+    let metas = attr.parse_args_with(Punctuated::<syn::Meta, Token![,]>::parse_terminated)?;
+    if !metas.iter().any(|m| m.path().is_ident("accepted")) {
+        return Ok(None);
+    }
+
+    let func = "karbon::validation::accepted";
+
+    let rewritten = metas
+        .iter()
+        .map(|meta| {
+            if !meta.path().is_ident("accepted") {
+                return Ok(quote!(#meta));
+            }
+            // On an `Option<bool>`, `validator` skips custom validators when the
+            // value is `None`, so `required` has to carry the null case.
+            match meta {
+                syn::Meta::Path(_) if opt => Ok(quote!(required, custom(function = #func))),
+                syn::Meta::Path(_) => Ok(quote!(custom(function = #func))),
+                syn::Meta::List(list) if list.tokens.is_empty() && opt => {
+                    Ok(quote!(required, custom(function = #func)))
+                }
+                syn::Meta::List(list) if list.tokens.is_empty() => {
+                    Ok(quote!(custom(function = #func)))
+                }
+                syn::Meta::List(list) if opt => {
+                    let args = &list.tokens;
+                    Ok(quote!(required(#args), custom(function = #func, #args)))
+                }
+                syn::Meta::List(list) => {
+                    let args = &list.tokens;
+                    Ok(quote!(custom(function = #func, #args)))
+                }
+                syn::Meta::NameValue(nv) => Err(syn::Error::new_spanned(
+                    nv,
+                    "`accepted` takes no value — write `accepted` or `accepted(message = \"…\")`",
+                )),
+            }
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+
+    Ok(Some(syn::parse_quote!(#[validate(#(#rewritten),*)])))
+}
