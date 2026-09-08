@@ -394,6 +394,13 @@ impl App {
         let rate_limit_window = self.config.rate_limit_window;
 
         let csrf_enabled = self.config.csrf_enabled;
+        // The Origin check needs the same two settings the CORS layer and the rate limiter
+        // already use: which origins the deployment declared, and which proxies may be
+        // believed when they rewrite `Host` into `X-Forwarded-Host`.
+        let csrf_config = super::middleware::CsrfConfig::new(
+            self.config.cors_origins.clone(),
+            self.config.trusted_proxies.clone(),
+        );
 
         #[allow(unused_mut)]
         let mut router = router
@@ -407,7 +414,12 @@ impl App {
         // CSRF protection (double-submit cookie + same-site Origin check). On by default;
         // Bearer-token API requests are exempt automatically.
         if csrf_enabled {
-            router = router.layer(middleware::from_fn(super::middleware::csrf_protection));
+            router = router.layer(middleware::from_fn(
+                move |req: axum::extract::Request, next: middleware::Next| {
+                    let config = csrf_config.clone();
+                    async move { super::middleware::csrf_protection_with(config, req, next).await }
+                },
+            ));
         }
 
         // Firewall (Symfony-style access_control): URL-pattern → roles, enforced centrally.

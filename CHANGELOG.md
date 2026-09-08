@@ -11,6 +11,39 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.3.8] - 2026-09-08
+
+> Fix release: the CSRF `Origin` check rejected legitimate requests behind a reverse
+> proxy — including Karbon's own. Backwards-compatible; a deployment that was working
+> keeps working, and one that was returning `403 Cross-site request rejected` stops.
+
+### Fixed
+- **`403 Cross-site request rejected` behind a reverse proxy.** The CSRF middleware
+  compared `Origin` against the raw `Host` header, which behind a proxy is whatever that
+  proxy sent upstream, not what the browser addressed. nginx's default is
+  `proxy_set_header Host $proxy_host` — the *upstream* name — so a stock nginx in front of
+  Karbon turned every cookie-authenticated POST/PUT/PATCH/DELETE into a 403. Vite's dev
+  proxy does the same: its string shorthand implies `changeOrigin: true`, rewriting `Host`
+  to the backend while forwarding the browser's `Origin` untouched. The check now resolves
+  the public host from `X-Forwarded-Host`, and only when the direct peer is one of
+  `TRUSTED_PROXIES` — an untrusted client cannot forge it and walk past the same-origin
+  rule. Karbon's own proxy (`http::proxy`) already set that header; the middleware simply
+  was not reading it, while it did honor `X-Forwarded-Proto` a few lines above for the
+  cookie's `Secure` flag.
+- **`CORS_ORIGINS` had no effect on unsafe methods.** The middleware never read it, so an
+  origin the deployment explicitly allowed still could not POST — the setting promised
+  something it did not deliver. Declared origins now pass the `Origin` check. The
+  double-submit token requirement is unchanged, so this relaxes defense-in-depth only.
+  `CORS_ORIGINS=*` deliberately grants nothing here: it is a CORS wildcard (browsers
+  refuse to send credentials to it anyway), not a statement that every site on the web may
+  act on behalf of a logged-in user.
+
+### Added
+- **`middleware::CsrfConfig` and `middleware::csrf_protection_with`** — the middleware with
+  the application's allowlist and trusted proxies wired in; `App` uses it automatically.
+  `csrf_protection` is unchanged and still works standalone, now documented as the strict
+  same-origin variant to avoid behind a `Host`-rewriting proxy.
+
 ## [0.3.7] - 2026-09-08
 
 > Additive release: a validation rule the `validator` crate does not provide, plus two

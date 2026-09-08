@@ -6,7 +6,7 @@ mod request_id;
 mod request_logger;
 mod security_headers;
 
-pub use csrf::csrf_protection;
+pub use csrf::{CsrfConfig, csrf_protection, csrf_protection_with};
 pub use http_cache::http_cache;
 pub use maintenance::{
     MaintenanceConfig, init_maintenance, is_exempt, is_maintenance, maintenance_mode,
