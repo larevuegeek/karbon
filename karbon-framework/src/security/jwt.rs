@@ -20,6 +20,15 @@ pub struct Claims {
     /// Audience (optional, for multi-audience token validation)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aud: Option<String>,
+    /// Numeric ID of the user who is really acting, when the token was minted for a
+    /// support session in someone else's account (impersonation).
+    ///
+    /// Without it, a token minted for an administrator acting as a customer is
+    /// indistinguishable from the customer's own: every action taken with it is logged
+    /// under the customer's name. Absent from ordinary tokens, and from every token
+    /// issued before this field existed — those still decode (`serde(default)`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub impersonator_id: Option<i64>,
     /// Expiration timestamp
     pub exp: i64,
     /// Issued at
@@ -85,6 +94,25 @@ impl JwtManager {
         user_uuid: Option<String>,
         aud: Option<String>,
     ) -> Result<String, jsonwebtoken::errors::Error> {
+        self.generate_with_impersonator(sub, username, roles, user_id, user_uuid, aud, None)
+    }
+
+    /// Generate a JWT token that records who is really acting.
+    ///
+    /// `user_id` / `user_uuid` identify the account the token opens; `impersonator_id`
+    /// identifies the user acting inside it (an administrator in a support session).
+    /// Pass `None` for an ordinary token — which is exactly what `generate_full` does.
+    #[allow(clippy::too_many_arguments)]
+    pub fn generate_with_impersonator(
+        &self,
+        sub: &str,
+        username: &str,
+        roles: Vec<String>,
+        user_id: Option<i64>,
+        user_uuid: Option<String>,
+        aud: Option<String>,
+        impersonator_id: Option<i64>,
+    ) -> Result<String, jsonwebtoken::errors::Error> {
         let now = Utc::now().timestamp();
         let claims = Claims {
             sub: sub.to_string(),
@@ -93,6 +121,7 @@ impl JwtManager {
             user_id,
             user_uuid,
             aud,
+            impersonator_id,
             exp: now + self.expiration,
             iat: now,
         };
@@ -136,5 +165,81 @@ impl JwtManager {
     /// Returns the raw token to send to the client.
     pub fn generate_refresh_token() -> String {
         super::Crypto::random_token(48)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SECRET: &str = "a-test-secret-long-enough-for-hmac-1234";
+
+    #[test]
+    fn impersonator_round_trips() {
+        let jwt = JwtManager::new(SECRET, 60);
+        let token = jwt
+            .generate_with_impersonator(
+                "client@example.com",
+                "client@example.com",
+                vec!["ROLE_USER".into()],
+                Some(42),
+                None,
+                Some("user".into()),
+                Some(7),
+            )
+            .unwrap();
+
+        let claims = jwt.verify_with_audience(&token, "user").unwrap();
+        assert_eq!(claims.user_id, Some(42));
+        assert_eq!(claims.impersonator_id, Some(7));
+    }
+
+    #[test]
+    fn ordinary_tokens_carry_no_impersonator() {
+        let jwt = JwtManager::new(SECRET, 60);
+        let token = jwt
+            .generate_full(
+                "a@example.com",
+                "a@example.com",
+                vec![],
+                Some(1),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(jwt.verify(&token).unwrap().impersonator_id, None);
+    }
+
+    #[test]
+    fn tokens_issued_before_the_field_still_decode() {
+        // The claims shape of every release up to 0.3.8: no `impersonator_id` key.
+        #[derive(Serialize)]
+        struct LegacyClaims<'a> {
+            sub: &'a str,
+            username: &'a str,
+            roles: Vec<String>,
+            user_id: Option<i64>,
+            exp: i64,
+            iat: i64,
+        }
+        let now = Utc::now().timestamp();
+        let legacy = LegacyClaims {
+            sub: "a@example.com",
+            username: "a@example.com",
+            roles: vec![],
+            user_id: Some(3),
+            exp: now + 60,
+            iat: now,
+        };
+        let token = encode(
+            &Header::default(),
+            &legacy,
+            &EncodingKey::from_secret(SECRET.as_bytes()),
+        )
+        .unwrap();
+
+        let claims = JwtManager::new(SECRET, 60).verify(&token).unwrap();
+        assert_eq!(claims.user_id, Some(3));
+        assert_eq!(claims.impersonator_id, None);
     }
 }

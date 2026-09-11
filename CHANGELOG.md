@@ -11,6 +11,24 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.3.9] - 2026-09-11
+
+> Additive release: a token can now say who is really acting when an administrator works
+> inside someone else's account. Tokens issued by earlier releases keep decoding.
+
+### Added
+- **`Claims::impersonator_id`** and **`JwtManager::generate_with_impersonator`** — the
+  token of a support session records the administrator behind it. Until now such a token
+  was byte-for-byte the customer's own, so every action taken with it was logged under the
+  customer's name and the administrator was invisible. The field is optional, omitted when
+  empty, and decoded with a default: every token minted before this release is still
+  accepted. `generate` and `generate_full` keep their signatures and set no impersonator.
+- **`AuthGuard::impersonator_id()`** — reads it back in a handler.
+
+### Changed
+- Code that builds `Claims { .. }` with a struct literal must set `impersonator_id`
+  (normally `None`). Tokens produced through `JwtManager` are unaffected.
+
 ## [0.3.8] - 2026-09-08
 
 > Fix release: the CSRF `Origin` check rejected legitimate requests behind a reverse

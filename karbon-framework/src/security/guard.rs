@@ -80,6 +80,12 @@ impl AuthGuard {
         self.claims.user_uuid.as_deref()
     }
 
+    /// ID of the user really acting, when the token was minted for a support session
+    /// in this user's account (see `Claims::impersonator_id`).
+    pub fn impersonator_id(&self) -> Option<i64> {
+        self.claims.impersonator_id
+    }
+
     /// Get the username
     pub fn username(&self) -> &str {
         &self.claims.username
