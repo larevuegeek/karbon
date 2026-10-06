@@ -29,6 +29,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use sqlx::AssertSqlSafe;
 
 use crate::db::{DbPool, InsertBuilder};
 use crate::error::{AppError, AppResult};
@@ -108,15 +109,15 @@ impl PersistentQueue {
         #[cfg(feature = "sqlite")]
         let id_col = "id INTEGER PRIMARY KEY AUTOINCREMENT";
 
-        let sql = format!(
+        let sql = AssertSqlSafe(format!(
             "CREATE TABLE IF NOT EXISTS {JOBS_TABLE} (\
              {id_col}, \
              kind VARCHAR(255) NOT NULL, \
              payload TEXT NOT NULL, \
              attempts INT NOT NULL DEFAULT 0, \
              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"
-        );
-        sqlx::query(&sql)
+        ));
+        sqlx::query(sql)
             .execute(&self.pool)
             .await
             .map_err(|e| AppError::Internal(format!("create jobs table: {e}")))?;
@@ -153,9 +154,9 @@ impl PersistentQueue {
 
     /// Claim and run a single job. Returns whether a job was processed.
     pub async fn process_one(&self) -> AppResult<bool> {
-        let row: Option<(i64, String, String, i64)> = sqlx::query_as(&format!(
+        let row: Option<(i64, String, String, i64)> = sqlx::query_as(AssertSqlSafe(format!(
             "SELECT id, kind, payload, attempts FROM {JOBS_TABLE} ORDER BY id LIMIT 1"
-        ))
+        )))
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| AppError::Internal(format!("fetch job: {e}")))?;
@@ -165,10 +166,10 @@ impl PersistentQueue {
         };
 
         // Claim by delete: if another worker already took it, rows_affected is 0.
-        let claimed = sqlx::query(&format!(
+        let claimed = sqlx::query(AssertSqlSafe(format!(
             "DELETE FROM {JOBS_TABLE} WHERE id = {}",
             placeholder1()
-        ))
+        )))
         .bind(id)
         .execute(&self.pool)
         .await

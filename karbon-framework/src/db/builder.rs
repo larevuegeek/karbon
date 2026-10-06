@@ -1,4 +1,4 @@
-use sqlx::Arguments;
+use sqlx::{Arguments, AssertSqlSafe};
 
 use super::{Db, DbArguments, placeholder};
 use crate::error::AppResult;
@@ -70,20 +70,24 @@ impl InsertBuilder {
 
         #[cfg(feature = "mysql")]
         {
-            let result = sqlx::query_with(&sql, self.args).execute(executor).await?;
+            let result = sqlx::query_with(AssertSqlSafe(sql), self.args)
+                .execute(executor)
+                .await?;
             Ok(result.last_insert_id())
         }
 
         #[cfg(feature = "sqlite")]
         {
-            let result = sqlx::query_with(&sql, self.args).execute(executor).await?;
+            let result = sqlx::query_with(AssertSqlSafe(sql), self.args)
+                .execute(executor)
+                .await?;
             Ok(result.last_insert_rowid() as u64)
         }
 
         #[cfg(feature = "postgres")]
         {
             use sqlx::Row;
-            let row = sqlx::query_with(&sql, self.args)
+            let row = sqlx::query_with(AssertSqlSafe(sql), self.args)
                 .fetch_one(executor)
                 .await?;
             let id: i64 = row.get(0);
@@ -202,7 +206,9 @@ impl UpdateBuilder {
             where_clause,
         );
 
-        let result = sqlx::query_with(&sql, self.args).execute(executor).await?;
+        let result = sqlx::query_with(AssertSqlSafe(sql), self.args)
+            .execute(executor)
+            .await?;
 
         Ok(result.rows_affected())
     }
@@ -263,7 +269,9 @@ impl DeleteBuilder {
 
         let sql = format!("DELETE FROM {}{}", self.table, where_clause);
 
-        let result = sqlx::query_with(&sql, self.args).execute(executor).await?;
+        let result = sqlx::query_with(AssertSqlSafe(sql), self.args)
+            .execute(executor)
+            .await?;
 
         Ok(result.rows_affected())
     }
@@ -336,7 +344,7 @@ impl CountBuilder {
 
         let sql = format!("SELECT COUNT(*) FROM {}{}", self.table, where_clause);
 
-        let (count,): (i64,) = sqlx::query_as_with(&sql, self.args)
+        let (count,): (i64,) = sqlx::query_as_with(AssertSqlSafe(sql), self.args)
             .fetch_one(executor)
             .await?;
 

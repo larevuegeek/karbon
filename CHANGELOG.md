@@ -11,6 +11,53 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.0] - 2026-10-06
+
+> Dependency release: every major that had been held back is taken at once — `sqlx` 0.9,
+> `jsonwebtoken` 11, `argon2` 0.6, `tower-http` 0.7, `tera` 2, `redis` 1.7.
+>
+> **This is a breaking release for applications.** `sqlx` types cross Karbon's public API
+> (`DbPool`, `DbRow`, `DbArguments`, `CrudRepository: FromRow`), and a generated project
+> declares `sqlx` itself — so an application must move to `sqlx` 0.9 in the same step.
+> Staying on 0.8 compiles two copies of the crate and yields unrelated-looking type
+> errors on `DbPool`. The same applies to `tower-http` 0.7.
+>
+> Stored password hashes and already-issued JWTs are unaffected; see below.
+
+### Changed
+- **`sqlx` 0.8 → 0.9.** Three consequences for application code:
+  - The combined runtime+TLS features are gone: `runtime-tokio-rustls` becomes
+    `runtime-tokio` + `tls-rustls`. A project that keeps the old name fails to *resolve*,
+    before any compilation.
+  - `query*()` now takes `impl SqlSafeStr`, accepting only `&'static str` or an explicit
+    `AssertSqlSafe(…)`. Karbon's own dynamic SQL has been audited and wrapped; identifiers
+    still go through `is_valid_identifier()` / `normalize_direction()` as before.
+  - The `Arguments` associated type lost its lifetime parameter, so the public
+    `DbArguments` alias changes shape (`SqliteArguments<'static>` → `SqliteArguments`).
+- **`argon2` 0.5 → 0.6.** `SaltString` and `rand_core` left `password_hash`, `PasswordHash`
+  moved under `phc::`, and `hash_password()` now generates the salt itself. **Hashes written
+  by earlier releases still verify** — covered by a regression test built from a hash
+  produced by argon2 0.5.
+- **`tera` 1 → 2** (feature `templates`). Filters receive the already-coerced argument plus
+  `Kwargs` and `&State` instead of `&Value` and a `HashMap`, and may return a plain
+  `String`. Any application-defined filter must be ported the same way. Template loading is
+  now `Tera::new()` + `load_from_glob()`, which requires Tera's non-default `glob_fs`
+  feature. Auto-escaping is unchanged (`.html`, `.htm`, `.xml`), and no Karbon filter
+  declares itself safe, so filter output stays escaped.
+- **`redis` 0.27 → 1.7** (feature `redis`), **`jsonwebtoken` 10 → 11**,
+  **`tower-http` 0.6 → 0.7**.
+- Generated projects now pin `sqlx` 0.9 and `tower-http` 0.7 to match the framework.
+
+### Fixed
+- **`truncate_text` panicked on accented text.** The filter sliced by byte offset using a
+  character count, so any multi-byte character at the cut position split a codepoint —
+  reachable with ordinary French text. It now counts characters.
+- **Redis `clear()` could push a scan error as if it were a key.** `next_item()` returns a
+  `Result` in redis 1.x; a mid-scan failure now aborts instead of clearing a partial
+  namespace.
+- The PostgreSQL and SQLite branches of `InsertBuilder` and the `DbArguments` alias were
+  only reachable under their own `cfg`, so a default `cargo check` never compiled them.
+
 ## [0.3.9] - 2026-09-11
 
 > Additive release: a token can now say who is really acting when an administrator works

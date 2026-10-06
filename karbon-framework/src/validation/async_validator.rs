@@ -1,3 +1,5 @@
+use sqlx::AssertSqlSafe;
+
 use crate::db::{DbPool, placeholder};
 use crate::error::{AppError, AppResult};
 
@@ -143,7 +145,7 @@ impl<'a> AsyncValidator<'a> {
                         ),
                     };
 
-                    let mut query = sqlx::query_as::<_, (i64,)>(&sql).bind(value);
+                    let mut query = sqlx::query_as::<_, (i64,)>(AssertSqlSafe(sql)).bind(value);
                     if let Some(id) = except_id {
                         query = query.bind(*id);
                     }
@@ -165,7 +167,7 @@ impl<'a> AsyncValidator<'a> {
                         column,
                         placeholder(1)
                     );
-                    let (count,): (i64,) = sqlx::query_as(&sql)
+                    let (count,): (i64,) = sqlx::query_as(AssertSqlSafe(sql))
                         .bind(*value)
                         .fetch_one(self.pool)
                         .await?;

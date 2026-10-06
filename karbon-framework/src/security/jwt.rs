@@ -138,8 +138,10 @@ impl JwtManager {
         if self.secret_empty {
             return Err(jsonwebtoken::errors::ErrorKind::InvalidKeyFormat.into());
         }
-        let mut validation = Validation::default();
-        validation.validate_aud = false;
+        let validation = Validation {
+            validate_aud: false,
+            ..Default::default()
+        };
         let token_data = decode::<Claims>(token, &self.decoding_key, &validation)?;
         Ok(token_data.claims)
     }

@@ -1,6 +1,6 @@
 use colored::Colorize;
 use sqlx::any::{AnyPoolOptions, install_default_drivers};
-use sqlx::{AnyPool, Row};
+use sqlx::{AnyPool, AssertSqlSafe, Row};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -55,7 +55,7 @@ async fn run_async(root: &Path, action: &str, name: Option<&str>) -> Result<(), 
 /// existing tables/columns (safe by default; review the file before applying).
 mod diff {
     use colored::Colorize;
-    use sqlx::{AnyPool, Row};
+    use sqlx::{AnyPool, AssertSqlSafe, Row};
     use std::collections::{HashMap, HashSet};
     use std::fs;
     use std::path::Path;
@@ -380,7 +380,7 @@ mod diff {
                     if !t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                         continue;
                     }
-                    let cols = sqlx::query(&format!("PRAGMA table_info(\"{t}\")"))
+                    let cols = sqlx::query(AssertSqlSafe(format!("PRAGMA table_info(\"{t}\")")))
                         .fetch_all(pool)
                         .await
                         .map_err(|e| format!("introspection {t} : {e}"))?;
@@ -488,7 +488,7 @@ async fn migrate_up(pool: &AnyPool, dir: &Path) -> Result<(), String> {
             continue;
         }
 
-        sqlx::raw_sql(&up)
+        sqlx::raw_sql(AssertSqlSafe(up))
             .execute(pool)
             .await
             .map_err(|e| format!("Migration {version} failed: {e}"))?;
@@ -553,7 +553,7 @@ async fn migrate_rollback(pool: &AnyPool, dir: &Path) -> Result<(), String> {
     println!("  {} Rolling back {}\n", "→".blue(), version.bold());
 
     if !down.trim().is_empty() {
-        sqlx::raw_sql(&down)
+        sqlx::raw_sql(AssertSqlSafe(down))
             .execute(pool)
             .await
             .map_err(|e| format!("Rollback of {version} failed: {e}"))?;
@@ -574,7 +574,7 @@ async fn ensure_migrations_table(pool: &AnyPool) -> Result<(), String> {
          version VARCHAR(255) NOT NULL PRIMARY KEY, \
          applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"
     );
-    sqlx::raw_sql(&sql)
+    sqlx::raw_sql(AssertSqlSafe(sql))
         .execute(pool)
         .await
         .map_err(|e| format!("Cannot create migrations table: {e}"))?;
@@ -582,10 +582,12 @@ async fn ensure_migrations_table(pool: &AnyPool) -> Result<(), String> {
 }
 
 async fn applied_versions(pool: &AnyPool) -> Result<std::collections::HashSet<String>, String> {
-    let rows = sqlx::query(&format!("SELECT version FROM {MIGRATIONS_TABLE}"))
-        .fetch_all(pool)
-        .await
-        .map_err(|e| format!("Cannot read applied migrations: {e}"))?;
+    let rows = sqlx::query(AssertSqlSafe(format!(
+        "SELECT version FROM {MIGRATIONS_TABLE}"
+    )))
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("Cannot read applied migrations: {e}"))?;
     Ok(rows.iter().map(|r| r.get::<String, _>("version")).collect())
 }
 
@@ -593,9 +595,9 @@ async fn record_migration(pool: &AnyPool, version: &str) -> Result<(), String> {
     validate_version(version)?;
     // `version` is validated to a safe charset, so inlining is injection-safe and
     // avoids placeholder-syntax differences across the Any driver.
-    sqlx::raw_sql(&format!(
+    sqlx::raw_sql(AssertSqlSafe(format!(
         "INSERT INTO {MIGRATIONS_TABLE} (version) VALUES ('{version}')"
-    ))
+    )))
     .execute(pool)
     .await
     .map_err(|e| format!("Cannot record migration {version}: {e}"))?;
@@ -604,9 +606,9 @@ async fn record_migration(pool: &AnyPool, version: &str) -> Result<(), String> {
 
 async fn forget_migration(pool: &AnyPool, version: &str) -> Result<(), String> {
     validate_version(version)?;
-    sqlx::raw_sql(&format!(
+    sqlx::raw_sql(AssertSqlSafe(format!(
         "DELETE FROM {MIGRATIONS_TABLE} WHERE version = '{version}'"
-    ))
+    )))
     .execute(pool)
     .await
     .map_err(|e| format!("Cannot remove migration {version}: {e}"))?;

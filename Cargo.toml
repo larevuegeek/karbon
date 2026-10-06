@@ -3,7 +3,7 @@ resolver = "2"
 members = ["karbon-framework", "karbon-macros", "karbon-cli", "examples/minimal"]
 
 [workspace.package]
-version = "0.3.9"
+version = "0.4.0"
 edition = "2024"
 authors = ["LaRevueGeek"]
 license = "AGPL-3.0-or-later"
@@ -13,25 +13,31 @@ repository = "https://github.com/larevuegeek/karbon"
 # Web
 axum = { version = "0.8", features = ["multipart", "macros", "ws"] }
 axum-extra = { version = "0.12.5", features = ["typed-header"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.53.2", features = ["full"] }
 tower = { version = "0.5", features = ["full"] }
-tower-http = { version = "0.6", features = ["cors", "trace", "fs", "limit", "compression-full", "request-id", "util", "propagate-header", "set-header"] }
+tower-http = { version = "0.7.1", features = ["cors", "trace", "fs", "limit", "compression-full", "request-id", "util", "propagate-header", "set-header"] }
 hyper = { version = "1.9.0", features = ["full"] }
-hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "tokio"] }
 
 # Database
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "chrono", "uuid", "json"] }
+sqlx = { version = "0.9.0", features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "chrono", 
+    "uuid", 
+    "json"
+] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Auth
-jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
-argon2 = "0.5"
+jsonwebtoken = { version = "11.1.0", features = ["rust_crypto"] }
+argon2 = "0.6.0"
 bcrypt = "0.19.0"
 sha2 = "0.11.0"
-uuid = { version = "1.23.0", features = ["v4", "serde"] }
+uuid = { version = "1.27.0", features = ["v4", "serde"] }
 
 # Docs / markdown
 pulldown-cmark = "0.13.4"
@@ -41,18 +47,18 @@ chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-thiserror = "2"
+thiserror = "2.0.21"
 validator = { version = "0.21.0", features = ["derive"] }
 slug = "0.1"
 regex = "1"
-rand = "0.10.2"
+rand = "0.10.3"
 base64 = "0.23.1"
 
 # Image processing
 image = "0.25"
 
 # HTTP client (for testing)
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"] }
 futures = "0.3"
 
 # Email

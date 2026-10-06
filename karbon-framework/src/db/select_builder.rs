@@ -1,5 +1,5 @@
 use super::{DbPool, DbRow, placeholder};
-use sqlx::Row;
+use sqlx::{AssertSqlSafe, Row};
 
 /// Validate a SQL identifier (table name, column name, alias).
 /// Strict: ASCII letters/digits/underscore, dotted segments, or `*`. No spaces/Unicode.
@@ -310,7 +310,7 @@ impl SelectBuilder {
         T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin,
     {
         let (sql, binds) = self.build_select();
-        let mut query = sqlx::query_as::<_, T>(&sql);
+        let mut query = sqlx::query_as::<_, T>(AssertSqlSafe(sql));
         for bind in &binds {
             query = bind_value(query, bind);
         }
@@ -323,7 +323,7 @@ impl SelectBuilder {
         T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin,
     {
         let (sql, binds) = self.limit(1).build_select();
-        let mut query = sqlx::query_as::<_, T>(&sql);
+        let mut query = sqlx::query_as::<_, T>(AssertSqlSafe(sql));
         for bind in &binds {
             query = bind_value(query, bind);
         }
@@ -333,7 +333,7 @@ impl SelectBuilder {
     /// Execute a COUNT(*) query with the same conditions
     pub async fn count(self, pool: &DbPool) -> Result<i64, sqlx::Error> {
         let (sql, binds) = self.build_count();
-        let mut query = sqlx::query(&sql);
+        let mut query = sqlx::query(AssertSqlSafe(sql));
         for bind in &binds {
             query = bind_value_raw(query, bind);
         }
@@ -480,9 +480,9 @@ impl SelectBuilder {
 
 // Helper: bind a value to a query_as
 fn bind_value<'q, T>(
-    query: sqlx::query::QueryAs<'q, super::Db, T, <super::Db as sqlx::Database>::Arguments<'q>>,
+    query: sqlx::query::QueryAs<'q, super::Db, T, <super::Db as sqlx::Database>::Arguments>,
     value: &'q BindValue,
-) -> sqlx::query::QueryAs<'q, super::Db, T, <super::Db as sqlx::Database>::Arguments<'q>>
+) -> sqlx::query::QueryAs<'q, super::Db, T, <super::Db as sqlx::Database>::Arguments>
 where
     T: for<'r> sqlx::FromRow<'r, DbRow>,
 {
@@ -496,9 +496,9 @@ where
 
 // Helper: bind a value to a raw query
 fn bind_value_raw<'q>(
-    query: sqlx::query::Query<'q, super::Db, <super::Db as sqlx::Database>::Arguments<'q>>,
+    query: sqlx::query::Query<'q, super::Db, <super::Db as sqlx::Database>::Arguments>,
     value: &'q BindValue,
-) -> sqlx::query::Query<'q, super::Db, <super::Db as sqlx::Database>::Arguments<'q>> {
+) -> sqlx::query::Query<'q, super::Db, <super::Db as sqlx::Database>::Arguments> {
     match value {
         BindValue::Int(v) => query.bind(*v),
         BindValue::Float(v) => query.bind(*v),

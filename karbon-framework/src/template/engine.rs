@@ -31,7 +31,10 @@ impl TemplateEngine {
     pub fn new(template_dir: &str) -> AppResult<Self> {
         let glob = format!("{}/**/*", template_dir);
 
-        let mut tera = Tera::new(&glob).map_err(|e| {
+        // Tera 2 splits construction from loading: `Tera::new()` takes no argument and
+        // `load_from_glob` (feature `glob_fs`) walks the directory.
+        let mut tera = Tera::new();
+        tera.load_from_glob(&glob).map_err(|e| {
             AppError::Internal(format!(
                 "Failed to load templates from '{}': {}",
                 template_dir, e
@@ -57,7 +60,7 @@ impl TemplateEngine {
     /// Create an empty template engine (no templates loaded).
     /// Useful as fallback when no template directory is configured.
     pub fn empty() -> Self {
-        let mut tera = Tera::default();
+        let mut tera = Tera::new();
         filters::register_all(&mut tera);
         Self {
             tera: Arc::new(tera),
@@ -119,7 +122,7 @@ impl TemplateEngine {
 
         // Auto-detect .txt counterpart for multipart
         let txt_name = template_name.replace(".html", ".txt");
-        let has_txt = self.tera.get_template_names().any(|n| n == txt_name);
+        let has_txt = self.tera.contains_template(&txt_name);
 
         if has_txt {
             let text = self.render(&txt_name, context)?;
@@ -148,7 +151,7 @@ impl TemplateEngine {
         let html = self.render(template_name, context)?;
 
         let txt_name = template_name.replace(".html", ".txt");
-        let has_txt = self.tera.get_template_names().any(|n| n == txt_name);
+        let has_txt = self.tera.contains_template(&txt_name);
 
         let builder = mailer.compose().from(from).to(to)?.subject(subject);
 
@@ -163,7 +166,8 @@ impl TemplateEngine {
     /// Reload templates from disk (useful in development).
     pub fn reload(&mut self) -> AppResult<()> {
         let glob = format!("{}/**/*", self.template_dir);
-        let mut tera = Tera::new(&glob)
+        let mut tera = Tera::new();
+        tera.load_from_glob(&glob)
             .map_err(|e| AppError::Internal(format!("Template reload failed: {}", e)))?;
         filters::register_all(&mut tera);
         self.tera = Arc::new(tera);
@@ -173,7 +177,7 @@ impl TemplateEngine {
 
     /// Check if a template exists.
     pub fn has_template(&self, name: &str) -> bool {
-        self.tera.get_template_names().any(|n| n == name)
+        self.tera.contains_template(name)
     }
 
     /// List all loaded template names.
@@ -201,7 +205,7 @@ impl std::fmt::Debug for TemplateEngine {
 
 impl Renderer for TemplateEngine {
     fn render(&self, name: &str, context: &Value) -> AppResult<String> {
-        let ctx = Context::from_value(context.clone())
+        let ctx = Context::from_serialize(context)
             .map_err(|e| AppError::Internal(format!("Invalid template context: {e}")))?;
         self.tera
             .render(name, &ctx)
@@ -209,14 +213,14 @@ impl Renderer for TemplateEngine {
     }
 
     fn render_str(&self, source: &str, context: &Value) -> AppResult<String> {
-        let ctx = Context::from_value(context.clone())
+        let ctx = Context::from_serialize(context)
             .map_err(|e| AppError::Internal(format!("Invalid template context: {e}")))?;
         Tera::one_off(source, &ctx, false)
             .map_err(|e| AppError::Internal(format!("Template string render error: {e}")))
     }
 
     fn has_template(&self, name: &str) -> bool {
-        self.tera.get_template_names().any(|n| n == name)
+        self.tera.contains_template(name)
     }
 
     fn template_names(&self) -> Vec<String> {

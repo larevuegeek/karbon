@@ -72,9 +72,14 @@ impl CacheStore for RedisStore {
                 Ok(it) => it,
                 Err(_) => return,
             };
+            // redis 1.x yields `Option<RedisResult<T>>`: a mid-scan failure must not be
+            // pushed as a key, and clearing a partial namespace is worse than not clearing.
             let mut keys = Vec::new();
             while let Some(k) = iter.next_item().await {
-                keys.push(k);
+                match k {
+                    Ok(k) => keys.push(k),
+                    Err(_) => return,
+                }
             }
             if !keys.is_empty() {
                 let mut conn = self.conn.clone();

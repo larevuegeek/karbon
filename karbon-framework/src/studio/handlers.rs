@@ -309,7 +309,12 @@ async fn count_rows(pool: &crate::db::DbPool, table: &str) -> Option<i64> {
     } else {
         format!("SELECT COUNT(*) FROM \"{table}\"")
     };
-    let (n,): (i64,) = sqlx::query_as(&sql).fetch_one(pool).await.ok()?;
+    // Audited: `table` comes from the driver's own schema listing, never from a request,
+    // and is quoted for the driver above.
+    let (n,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+        .fetch_one(pool)
+        .await
+        .ok()?;
     Some(n)
 }
 
@@ -317,8 +322,12 @@ async fn table_columns(pool: &crate::db::DbPool, table: &str) -> Option<Vec<Colu
     #[cfg(feature = "sqlite")]
     {
         use sqlx::Row;
+        // Audited: same as `count_rows` — `table` comes from the schema listing, not a request.
         let sql = format!("PRAGMA table_info(\"{table}\")");
-        let rows = sqlx::query(&sql).fetch_all(pool).await.ok()?;
+        let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
+            .fetch_all(pool)
+            .await
+            .ok()?;
         Some(
             rows.iter()
                 .map(|r| ColumnInfo {

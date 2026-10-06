@@ -1,6 +1,7 @@
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
+use sqlx::AssertSqlSafe;
 
 use super::{Db, DbPool, DbRow, placeholder};
 use super::{DeleteBuilder, UpdateBuilder};
@@ -125,7 +126,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
                 placeholder(1),
                 Self::soft_filter()
             );
-            let result = sqlx::query_as::<Db, Self>(&query)
+            let result = sqlx::query_as::<Db, Self>(AssertSqlSafe(query))
                 .bind(id)
                 .fetch_optional(pool)
                 .await?;
@@ -152,7 +153,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
                 placeholder(1),
                 Self::soft_filter()
             );
-            let result = sqlx::query_as::<Db, Self>(&query)
+            let result = sqlx::query_as::<Db, Self>(AssertSqlSafe(query))
                 .bind(slug)
                 .fetch_optional(pool)
                 .await?;
@@ -165,7 +166,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
     fn count(pool: &DbPool) -> impl Future<Output = AppResult<i64>> + Send {
         async move {
             let query = format!("SELECT COUNT(*) FROM {}{}", Self::TABLE, Self::soft_where());
-            let (count,): (i64,) = sqlx::query_as(&query).fetch_one(pool).await?;
+            let (count,): (i64,) = sqlx::query_as(AssertSqlSafe(query)).fetch_one(pool).await?;
             Ok(count)
         }
     }
@@ -178,7 +179,10 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
                 placeholder(1),
                 Self::soft_filter()
             );
-            let (count,): (i64,) = sqlx::query_as(&query).bind(id).fetch_one(pool).await?;
+            let (count,): (i64,) = sqlx::query_as(AssertSqlSafe(query))
+                .bind(id)
+                .fetch_one(pool)
+                .await?;
             Ok(count > 0)
         }
     }
@@ -244,7 +248,9 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         let clause = order_clause(order);
         async move {
             let query = format!("{}{}", base, clause?);
-            let items = sqlx::query_as::<Db, Self>(&query).fetch_all(pool).await?;
+            let items = sqlx::query_as::<Db, Self>(AssertSqlSafe(query))
+                .fetch_all(pool)
+                .await?;
             Ok(items)
         }
     }
@@ -258,7 +264,9 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         let clause = order_clause(order);
         async move {
             let query = format!("{}{}", base, clause?);
-            let items = sqlx::query_as::<Db, Self>(&query).fetch_all(pool).await?;
+            let items = sqlx::query_as::<Db, Self>(AssertSqlSafe(query))
+                .fetch_all(pool)
+                .await?;
             Ok(items)
         }
     }
@@ -275,7 +283,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         let built = build_where_query(Self::TABLE, conditions, None, Self::SOFT_DELETE);
         async move {
             let (sql, values) = built?;
-            let mut query = sqlx::query_as::<Db, Self>(&sql);
+            let mut query = sqlx::query_as::<Db, Self>(AssertSqlSafe(sql));
             for value in &values {
                 query = bind_where_value_as(query, value);
             }
@@ -294,7 +302,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         let built = build_where_query(Self::TABLE, conditions, order, Self::SOFT_DELETE);
         async move {
             let (sql, values) = built?;
-            let mut query = sqlx::query_as::<Db, Self>(&sql);
+            let mut query = sqlx::query_as::<Db, Self>(AssertSqlSafe(sql));
             for value in &values {
                 query = bind_where_value_as(query, value);
             }
@@ -357,7 +365,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
                 placeholders.join(", "),
                 Self::soft_filter()
             );
-            let mut query = sqlx::query_as::<Db, Self>(&sql);
+            let mut query = sqlx::query_as::<Db, Self>(AssertSqlSafe(sql));
             for id in owner_ids {
                 query = query.bind(*id);
             }
@@ -425,9 +433,9 @@ fn build_where_query(
 }
 
 fn bind_where_value_as<'q, T>(
-    query: sqlx::query::QueryAs<'q, Db, T, <Db as sqlx::Database>::Arguments<'q>>,
+    query: sqlx::query::QueryAs<'q, Db, T, <Db as sqlx::Database>::Arguments>,
     value: &'q WhereValue,
-) -> sqlx::query::QueryAs<'q, Db, T, <Db as sqlx::Database>::Arguments<'q>>
+) -> sqlx::query::QueryAs<'q, Db, T, <Db as sqlx::Database>::Arguments>
 where
     T: Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow>,
 {

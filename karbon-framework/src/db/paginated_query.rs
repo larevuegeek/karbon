@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use sqlx::AssertSqlSafe;
+
 use super::pagination::PaginationParams;
 use super::repository::WhereValue;
 use super::{Db, DbPool, DbRow, placeholder};
@@ -237,7 +239,7 @@ where
         let search_col_count = self.search_columns.len();
 
         // Data query
-        let mut data_query = sqlx::query_as::<Db, T>(&data_sql);
+        let mut data_query = sqlx::query_as::<Db, T>(AssertSqlSafe(data_sql));
         for val in &bind_values {
             data_query = bind_where_value(data_query, val);
         }
@@ -252,7 +254,7 @@ where
         let items = data_query.fetch_all(pool).await?;
 
         // Count query
-        let mut count_query = sqlx::query_as::<Db, (i64,)>(&count_sql);
+        let mut count_query = sqlx::query_as::<Db, (i64,)>(AssertSqlSafe(count_sql));
         for val in &bind_values {
             count_query = bind_where_value_tuple(count_query, val);
         }
@@ -295,9 +297,9 @@ fn extract_from_clause(sql: &str) -> &str {
 
 /// Bind une WhereValue sur un query_as<T>
 fn bind_where_value<'q, T>(
-    query: sqlx::query::QueryAs<'q, Db, T, <Db as sqlx::Database>::Arguments<'q>>,
+    query: sqlx::query::QueryAs<'q, Db, T, <Db as sqlx::Database>::Arguments>,
     value: &'q WhereValue,
-) -> sqlx::query::QueryAs<'q, Db, T, <Db as sqlx::Database>::Arguments<'q>>
+) -> sqlx::query::QueryAs<'q, Db, T, <Db as sqlx::Database>::Arguments>
 where
     T: Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow>,
 {
@@ -312,9 +314,9 @@ where
 
 /// Bind une WhereValue sur un query_as<(i64,)> (pour les COUNT)
 fn bind_where_value_tuple<'q>(
-    query: sqlx::query::QueryAs<'q, Db, (i64,), <Db as sqlx::Database>::Arguments<'q>>,
+    query: sqlx::query::QueryAs<'q, Db, (i64,), <Db as sqlx::Database>::Arguments>,
     value: &'q WhereValue,
-) -> sqlx::query::QueryAs<'q, Db, (i64,), <Db as sqlx::Database>::Arguments<'q>> {
+) -> sqlx::query::QueryAs<'q, Db, (i64,), <Db as sqlx::Database>::Arguments> {
     match value {
         WhereValue::Int(v) => query.bind(*v),
         WhereValue::Float(v) => query.bind(*v),

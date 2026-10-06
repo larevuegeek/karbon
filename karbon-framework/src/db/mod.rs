@@ -75,7 +75,7 @@ pub type DbPoolOptions = sqlx::sqlite::SqlitePoolOptions;
 #[cfg(feature = "sqlite")]
 pub type DbRow = sqlx::sqlite::SqliteRow;
 #[cfg(feature = "sqlite")]
-pub type DbArguments = sqlx::sqlite::SqliteArguments<'static>;
+pub type DbArguments = sqlx::sqlite::SqliteArguments;
 
 // ─── SQL identifier validation ───
 
