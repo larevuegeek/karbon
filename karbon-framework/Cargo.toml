@@ -60,7 +60,7 @@ redis = { version = "1.7.1", optional = true, default-features = false, features
     "tokio-comp",
     "connection-manager",
 ] }
-karbon-macros = { version = "0.4.0", path = "../karbon-macros" }
+karbon-macros = { version = "0.4.1", path = "../karbon-macros" }
 pulldown-cmark = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]

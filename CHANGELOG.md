@@ -11,6 +11,17 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.1] - 2026-10-07
+
+> Fix release: `#[derive(Updatable)]` did not compile against `sqlx` 0.9, so every
+> application using it failed to build after upgrading to 0.4.0.
+
+### Fixed
+- **`Updatable` passed a `String` to `sqlx::query()`**, which 0.9 rejects ("dynamic SQL
+  strings should be audited"). The generated query is now wrapped in `AssertSqlSafe`: the
+  table and column names come from the struct at compile time and every value is bound.
+  `Insertable` was unaffected (its SQL is a literal).
+
 ## [0.4.0] - 2026-10-06
 
 > Dependency release: every major that had been held back is taken at once — `sqlx` 0.9,

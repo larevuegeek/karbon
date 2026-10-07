@@ -797,7 +797,9 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
                     karbon::db::placeholder(param_idx),
                 );
 
-                let mut query = sqlx::query(&sql);
+                // Table and columns come from the struct definition at compile time;
+                // values are bound, never interpolated.
+                let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
 
                 #(#bind_pushes)*
                 #timestamps_bind_push
