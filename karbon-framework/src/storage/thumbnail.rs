@@ -114,6 +114,8 @@ pub struct ImageProcessor {
     upscale: bool,
     /// When false (default), EXIF orientation is auto-applied on load.
     disable_auto_orient: bool,
+    /// WebP quality: `Some` encodes lossy WebP, `None` keeps lossless WebP.
+    webp_quality: Option<u8>,
 }
 
 /// Manual crop region (in pixels from source image)
@@ -278,8 +280,15 @@ impl ImageProcessor {
         self.format(OutputFormat::Png { compression })
     }
 
-    /// Shortcut: output as WebP
+    /// Shortcut: output as WebP (lossless)
     pub fn webp(self) -> Self {
+        self.format(OutputFormat::WebP)
+    }
+
+    /// Output as lossy WebP at the given quality (1-100) — several times smaller than
+    /// lossless WebP for photos.
+    pub fn webp_quality(mut self, quality: u8) -> Self {
+        self.webp_quality = Some(quality.clamp(1, 100));
         self.format(OutputFormat::WebP)
     }
 
@@ -300,7 +309,9 @@ impl ImageProcessor {
     /// Load image with decompression bomb protection
     fn load_safe(&self, source: &Path) -> AppResult<DynamicImage> {
         let reader = ImageReader::open(source)
-            .map_err(|e| AppError::Internal(format!("Failed to open image: {}", e)))?;
+            .map_err(|e| AppError::Internal(format!("Failed to open image: {}", e)))?
+            .with_guessed_format()
+            .map_err(|e| AppError::Internal(format!("Failed to detect image format: {}", e)))?;
 
         self.decode_safe(reader)
     }
@@ -590,6 +601,11 @@ impl ImageProcessor {
                 img.write_with_encoder(encoder)
                     .map_err(|e| AppError::Internal(format!("Failed to encode PNG: {}", e)))?;
             }
+            OutputFormat::WebP if self.webp_quality.is_some() => {
+                let data = encode_webp_lossy(img, self.webp_quality.unwrap_or(85))?;
+                std::fs::write(dest, data)
+                    .map_err(|e| AppError::Internal(format!("Failed to write WebP: {}", e)))?;
+            }
             OutputFormat::WebP | OutputFormat::Auto => {
                 let format = match &self.output_format {
                     OutputFormat::WebP => ImageFormat::WebP,
@@ -627,10 +643,12 @@ impl ImageProcessor {
                 img.write_with_encoder(encoder)
                     .map_err(|e| AppError::Internal(format!("Failed to encode PNG: {}", e)))?;
             }
-            OutputFormat::WebP => {
-                img.write_to(&mut Cursor::new(&mut buf), ImageFormat::WebP)
-                    .map_err(|e| AppError::Internal(format!("Failed to encode WebP: {}", e)))?;
-            }
+            OutputFormat::WebP => match self.webp_quality {
+                Some(quality) => buf = encode_webp_lossy(img, quality)?,
+                None => img
+                    .write_to(&mut Cursor::new(&mut buf), ImageFormat::WebP)
+                    .map_err(|e| AppError::Internal(format!("Failed to encode WebP: {}", e)))?,
+            },
             OutputFormat::Gif => {
                 img.write_to(&mut Cursor::new(&mut buf), ImageFormat::Gif)
                     .map_err(|e| AppError::Internal(format!("Failed to encode GIF: {}", e)))?;
@@ -652,6 +670,21 @@ impl ImageProcessor {
     }
 }
 
+/// Lossy WebP through libwebp (`image` only encodes lossless WebP).
+fn encode_webp_lossy(img: &DynamicImage, quality: u8) -> AppResult<Vec<u8>> {
+    let (w, h) = (img.width(), img.height());
+    let encoded = if img.color().has_alpha() {
+        let rgba = img.to_rgba8();
+        webp::Encoder::from_rgba(rgba.as_raw(), w, h).encode_simple(false, quality as f32)
+    } else {
+        let rgb = img.to_rgb8();
+        webp::Encoder::from_rgb(rgb.as_raw(), w, h).encode_simple(false, quality as f32)
+    };
+    encoded
+        .map(|mem| mem.to_vec())
+        .map_err(|e| AppError::Internal(format!("Failed to encode WebP: {:?}", e)))
+}
+
 /// Simple shortcut: generate a thumbnail (backward compatible)
 pub fn generate_thumbnail(source: &Path, dest: &Path, width: u32, height: u32) -> AppResult<()> {
     ImageProcessor::new()
@@ -663,6 +696,34 @@ pub fn generate_thumbnail(source: &Path, dest: &Path, width: u32, height: u32) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn photo_like(w: u32, h: u32) -> DynamicImage {
+        DynamicImage::ImageRgb8(image::RgbImage::from_fn(w, h, |x, y| {
+            image::Rgb([(x * 7 % 256) as u8, (y * 13 % 256) as u8, ((x ^ y) % 256) as u8])
+        }))
+    }
+
+    #[test]
+    fn test_png_with_jpg_extension_is_decoded() {
+        let dir = std::env::temp_dir().join(format!("karbon-thumb-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("disguised.jpg");
+        photo_like(64, 32).save_with_format(&src, ImageFormat::Png).unwrap();
+        let dest = dir.join("out.webp");
+        ImageProcessor::new().resize(32, 16).webp_quality(75).process(&src, &dest).unwrap();
+        let out = std::fs::read(&dest).unwrap();
+        assert_eq!(image::guess_format(&out).unwrap(), ImageFormat::WebP);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_lossy_webp_is_smaller_than_lossless() {
+        let img = photo_like(400, 300);
+        let lossy = ImageProcessor::new().webp_quality(75).encode(&img, "webp").unwrap();
+        let lossless = ImageProcessor::new().webp().encode(&img, "webp").unwrap();
+        assert!(lossy.len() < lossless.len(), "{} >= {}", lossy.len(), lossless.len());
+        assert_eq!(image::guess_format(&lossy).unwrap(), ImageFormat::WebP);
+    }
 
     #[test]
     fn test_crop_offset_center() {

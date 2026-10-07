@@ -11,6 +11,46 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.2] - 2026-10-07
+
+> Security release for `ImgResizer`. Every distinct resize URL cost a full decode and encode
+> plus a new cache file, with no limit on concurrency or on the number of variants, so
+> anyone could exhaust CPU and disk by iterating sizes. It also served the original file
+> whenever processing failed — which happened for every PNG saved under a `.jpg` name —
+> and its WebP output ignored the quality setting.
+
+### Security
+- **Unbounded resize variants (CPU and disk exhaustion).** Processing now goes through a
+  semaphore (`max_concurrent`, default half the CPU cores; a request waits up to 15 s, then
+  gets `503 Retry-After`), each source image keeps at most `max_variants_per_file` cached
+  variants (default 48; further new variants get `400`), and `allowed_specs` can restrict
+  URLs to a fixed list.
+- **Cache-busting through equivalent spellings.** Unknown modifiers were ignored, so
+  `320x180_a`, `320x180_b`… were all new URLs for the same image. Unknown modifiers,
+  non-integer blur and unsupported output formats are now rejected, and equivalent spellings
+  (`_fit`, `q075`, reordered modifiers, `_grayscale`) get a `308` to the canonical URL.
+- **Crop anchor missing from the cache key.** `?anchor=` changed the crop but not the cache
+  file, so the first visitor decided the crop everybody got. The anchor is now part of the
+  key, and unknown anchors are rejected instead of silently meaning "center".
+- **Hidden files.** The `ServeDir` fallback served dotfiles (`.env`, `.git/`); any path
+  segment starting with `.` now gets `404`.
+- **Repeated failures.** A source that fails to process is recorded next to its variants
+  and not decoded again until it changes.
+
+### Fixed
+- **Images whose extension lies about their format were never resized.** The processor
+  picked the decoder from the file extension, so a PNG named `.jpg` failed and the original
+  (often several MB) was served in its place. The format is now detected from the content.
+- **WebP ignored the quality setting.** The `image` crate only encodes lossless WebP, which
+  made `_q75.webp` variants several times heavier than JPEG. WebP is now encoded lossy
+  through libwebp (`ImageProcessor::webp_quality`); `webp()` keeps lossless output.
+
+### Changed
+- **Cache layout** is now `cache_dir/<source path>/<spec>[@anchor].<ext>`. Existing cache
+  entries are not reused; delete the old cache directory after upgrading.
+- An invalid spec now answers `400` instead of serving the original.
+- New dependency `webp` (bundles libwebp, built with the system C compiler).
+
 ## [0.4.1] - 2026-10-07
 
 > Fix release: `#[derive(Updatable)]` did not compile against `sqlx` 0.9, so every

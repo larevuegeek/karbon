@@ -3,7 +3,7 @@ resolver = "2"
 members = ["karbon-framework", "karbon-macros", "karbon-cli", "examples/minimal"]
 
 [workspace.package]
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 authors = ["LaRevueGeek"]
 license = "AGPL-3.0-or-later"
@@ -56,6 +56,8 @@ base64 = "0.23.1"
 
 # Image processing
 image = "0.25"
+# Lossy WebP (the `image` crate only encodes lossless WebP).
+webp = { version = "0.3.1", default-features = false }
 
 # HTTP client (for testing)
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"] }
