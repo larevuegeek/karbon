@@ -11,6 +11,25 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.3] - 2026-10-13
+
+> Additive release: `PaginatedQuery` and the UPDATE/DELETE/COUNT builders gain the pieces
+> that previously forced a hand-written query. Nothing changes for existing code.
+
+### Added
+- **`PaginatedQuery::where_raw(condition, values)`** — free WHERE conditions (`OR`, `EXISTS`,
+  subqueries, `IN`…) combined with `AND`, one `WhereValue` per `?` (renumbered to `$n` under
+  PostgreSQL; a count mismatch is an error). The condition is trusted code: pass user input as values.
+- **`PaginatedQuery::order_raw(expr)`** — fixed ORDER BY expression (e.g. `une DESC, created DESC`)
+  instead of the sort requested through `PaginationParams`.
+- **`where_in(column, &values)`** on `UpdateBuilder`, `DeleteBuilder` and `CountBuilder`; an empty
+  list matches nothing (`1 = 0`) instead of producing an invalid `IN ()`.
+- **`to_sql()`** on `UpdateBuilder`, `DeleteBuilder` and `CountBuilder` (generated SQL, for logs and tests).
+
+### Changed
+- `PaginatedQuery` builds its queries in a separate step (unit-tested without a database); the
+  generated COUNT no longer has a double space after `COUNT(*)`.
+
 ## [0.4.2] - 2026-10-07
 
 > Security release for `ImgResizer`. Every distinct resize URL cost a full decode and encode

@@ -3,6 +3,39 @@ use sqlx::{Arguments, AssertSqlSafe};
 use super::{Db, DbArguments, placeholder};
 use crate::error::AppResult;
 
+/// `column IN (?, …)` en liant chaque valeur ; une liste vide donne `1 = 0` (ne correspond à
+/// rien) plutôt qu'un `IN ()` invalide.
+fn in_clause<T>(
+    column: &str,
+    values: &[T],
+    args: &mut DbArguments,
+    param_count: &mut usize,
+) -> String
+where
+    T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + Clone + 'static,
+{
+    if values.is_empty() {
+        return "1 = 0".to_string();
+    }
+    let placeholders: Vec<String> = values
+        .iter()
+        .map(|v| {
+            *param_count += 1;
+            args.add(v.clone()).unwrap();
+            placeholder(*param_count)
+        })
+        .collect();
+    format!("{} IN ({})", column, placeholders.join(", "))
+}
+
+fn where_sql(clauses: &[String]) -> String {
+    if clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", clauses.join(" AND "))
+    }
+}
+
 // ─────────────────────────────────────────────
 // InsertBuilder
 // ─────────────────────────────────────────────
@@ -184,6 +217,26 @@ impl UpdateBuilder {
         self
     }
 
+    /// WHERE column IN (?, …) ; une liste vide ne correspond à aucune ligne.
+    pub fn where_in<T>(mut self, column: &str, values: &[T]) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + Clone + 'static,
+    {
+        let clause = in_clause(column, values, &mut self.args, &mut self.param_count);
+        self.where_clauses.push(clause);
+        self
+    }
+
+    /// Requête SQL générée (sans les valeurs).
+    pub fn to_sql(&self) -> String {
+        format!(
+            "UPDATE {} SET {}{}",
+            self.table,
+            self.set_clauses.join(", "),
+            where_sql(&self.where_clauses)
+        )
+    }
+
     /// Execute the UPDATE and return rows_affected
     pub async fn execute<'e, E>(self, executor: E) -> AppResult<u64>
     where
@@ -192,19 +245,7 @@ impl UpdateBuilder {
         if self.set_clauses.is_empty() {
             return Ok(0);
         }
-
-        let where_clause = if self.where_clauses.is_empty() {
-            String::new()
-        } else {
-            format!(" WHERE {}", self.where_clauses.join(" AND "))
-        };
-
-        let sql = format!(
-            "UPDATE {} SET {}{}",
-            self.table,
-            self.set_clauses.join(", "),
-            where_clause,
-        );
+        let sql = self.to_sql();
 
         let result = sqlx::query_with(AssertSqlSafe(sql), self.args)
             .execute(executor)
@@ -256,18 +297,31 @@ impl DeleteBuilder {
         self
     }
 
+    /// WHERE column IN (?, …) ; une liste vide ne correspond à aucune ligne.
+    pub fn where_in<T>(mut self, column: &str, values: &[T]) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + Clone + 'static,
+    {
+        let clause = in_clause(column, values, &mut self.args, &mut self.param_count);
+        self.where_clauses.push(clause);
+        self
+    }
+
+    /// Requête SQL générée (sans les valeurs).
+    pub fn to_sql(&self) -> String {
+        format!(
+            "DELETE FROM {}{}",
+            self.table,
+            where_sql(&self.where_clauses)
+        )
+    }
+
     /// Execute the DELETE and return rows_affected
     pub async fn execute<'e, E>(self, executor: E) -> AppResult<u64>
     where
         E: sqlx::Executor<'e, Database = Db>,
     {
-        let where_clause = if self.where_clauses.is_empty() {
-            String::new()
-        } else {
-            format!(" WHERE {}", self.where_clauses.join(" AND "))
-        };
-
-        let sql = format!("DELETE FROM {}{}", self.table, where_clause);
+        let sql = self.to_sql();
 
         let result = sqlx::query_with(AssertSqlSafe(sql), self.args)
             .execute(executor)
@@ -331,23 +385,84 @@ impl CountBuilder {
         self
     }
 
+    /// WHERE column IN (?, …) ; une liste vide ne correspond à aucune ligne.
+    pub fn where_in<T>(mut self, column: &str, values: &[T]) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + Clone + 'static,
+    {
+        let clause = in_clause(column, values, &mut self.args, &mut self.param_count);
+        self.where_clauses.push(clause);
+        self
+    }
+
+    /// Requête SQL générée (sans les valeurs).
+    pub fn to_sql(&self) -> String {
+        format!(
+            "SELECT COUNT(*) FROM {}{}",
+            self.table,
+            where_sql(&self.where_clauses)
+        )
+    }
+
     /// Execute the COUNT and return the result
     pub async fn execute<'e, E>(self, executor: E) -> AppResult<i64>
     where
         E: sqlx::Executor<'e, Database = Db>,
     {
-        let where_clause = if self.where_clauses.is_empty() {
-            String::new()
-        } else {
-            format!(" WHERE {}", self.where_clauses.join(" AND "))
-        };
-
-        let sql = format!("SELECT COUNT(*) FROM {}{}", self.table, where_clause);
+        let sql = self.to_sql();
 
         let (count,): (i64,) = sqlx::query_as_with(AssertSqlSafe(sql), self.args)
             .fetch_one(executor)
             .await?;
 
         Ok(count)
+    }
+}
+
+#[cfg(test)]
+mod where_in_tests {
+    use super::*;
+
+    #[test]
+    fn update_where_in_binds_each_value() {
+        let b = UpdateBuilder::table("forum_topic")
+            .set_raw("pinned", "1")
+            .where_in("id", &[3_i64, 5, 8]);
+        // `placeholder()` renders `?` or `$n` depending on the driver feature, so the
+        // expectation is built the same way instead of hardcoding one backend's syntax.
+        assert_eq!(
+            b.to_sql(),
+            format!(
+                "UPDATE forum_topic SET pinned = 1 WHERE id IN ({}, {}, {})",
+                placeholder(1),
+                placeholder(2),
+                placeholder(3)
+            )
+        );
+        assert_eq!(b.param_count, 3);
+    }
+
+    #[test]
+    fn delete_where_in_combines_with_other_conditions() {
+        let b = DeleteBuilder::from("forum_post")
+            .where_eq("active", 0_i64)
+            .where_in("topic_id", &[1_i64, 2]);
+        assert_eq!(
+            b.to_sql(),
+            format!(
+                "DELETE FROM forum_post WHERE active = {} AND topic_id IN ({}, {})",
+                placeholder(1),
+                placeholder(2),
+                placeholder(3)
+            )
+        );
+    }
+
+    #[test]
+    fn empty_where_in_matches_nothing() {
+        let b = DeleteBuilder::from("forum_post").where_in::<i64>("id", &[]);
+        assert_eq!(b.to_sql(), "DELETE FROM forum_post WHERE 1 = 0");
+        let c = CountBuilder::from("content").where_in::<i64>("id", &[]);
+        assert_eq!(c.to_sql(), "SELECT COUNT(*) FROM content WHERE 1 = 0");
     }
 }

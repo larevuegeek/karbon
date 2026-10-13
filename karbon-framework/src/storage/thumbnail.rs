@@ -699,7 +699,11 @@ mod tests {
 
     fn photo_like(w: u32, h: u32) -> DynamicImage {
         DynamicImage::ImageRgb8(image::RgbImage::from_fn(w, h, |x, y| {
-            image::Rgb([(x * 7 % 256) as u8, (y * 13 % 256) as u8, ((x ^ y) % 256) as u8])
+            image::Rgb([
+                (x * 7 % 256) as u8,
+                (y * 13 % 256) as u8,
+                ((x ^ y) % 256) as u8,
+            ])
         }))
     }
 
@@ -708,9 +712,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("karbon-thumb-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let src = dir.join("disguised.jpg");
-        photo_like(64, 32).save_with_format(&src, ImageFormat::Png).unwrap();
+        photo_like(64, 32)
+            .save_with_format(&src, ImageFormat::Png)
+            .unwrap();
         let dest = dir.join("out.webp");
-        ImageProcessor::new().resize(32, 16).webp_quality(75).process(&src, &dest).unwrap();
+        ImageProcessor::new()
+            .resize(32, 16)
+            .webp_quality(75)
+            .process(&src, &dest)
+            .unwrap();
         let out = std::fs::read(&dest).unwrap();
         assert_eq!(image::guess_format(&out).unwrap(), ImageFormat::WebP);
         std::fs::remove_dir_all(&dir).ok();
@@ -719,9 +729,17 @@ mod tests {
     #[test]
     fn test_lossy_webp_is_smaller_than_lossless() {
         let img = photo_like(400, 300);
-        let lossy = ImageProcessor::new().webp_quality(75).encode(&img, "webp").unwrap();
+        let lossy = ImageProcessor::new()
+            .webp_quality(75)
+            .encode(&img, "webp")
+            .unwrap();
         let lossless = ImageProcessor::new().webp().encode(&img, "webp").unwrap();
-        assert!(lossy.len() < lossless.len(), "{} >= {}", lossy.len(), lossless.len());
+        assert!(
+            lossy.len() < lossless.len(),
+            "{} >= {}",
+            lossy.len(),
+            lossless.len()
+        );
         assert_eq!(image::guess_format(&lossy).unwrap(), ImageFormat::WebP);
     }
 

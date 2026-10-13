@@ -5,7 +5,17 @@ use sqlx::AssertSqlSafe;
 use super::pagination::PaginationParams;
 use super::repository::WhereValue;
 use super::{Db, DbPool, DbRow, placeholder};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
+
+/// Condition WHERE d'une requête paginée.
+#[derive(Debug, Clone)]
+enum Condition {
+    /// `col <op> ?` — colonne validée comme identifiant.
+    Column(String, &'static str, WhereValue),
+    /// Condition SQL libre (écrite par le code, jamais par l'utilisateur) avec ses valeurs,
+    /// une par `?`.
+    Raw(String, Vec<WhereValue>),
+}
 
 /// Builder pour les requêtes paginées avec tri, recherche et filtres WHERE.
 ///
@@ -29,6 +39,14 @@ use crate::error::AppResult;
 ///     .execute(pool, params)
 ///     .await
 ///
+/// // Avec conditions libres et tri calculé
+/// PaginatedQuery::<ContentListItem>::new("SELECT c.id, c.title FROM content c")
+///     .where_raw("(c.status = 1 OR c.user_id = ?)", vec![user_id.into()])
+///     .where_raw("EXISTS (SELECT 1 FROM content_field_tags t WHERE t.content_id = c.id AND t.term_id = ?)", vec![tag_id.into()])
+///     .order_raw("c.une DESC, c.created DESC")
+///     .execute(pool, params)
+///     .await
+///
 /// // Avec recherche
 /// PaginatedQuery::<UserListItem>::new("SELECT u.id, u.username FROM users u")
 ///     .allowed_sorts(&["id", "username", "email", "created"])
@@ -45,8 +63,19 @@ pub struct PaginatedQuery<T> {
     default_order: String,
     sort_prefix: Option<String>,
     search_columns: Vec<String>,
-    where_conditions: Vec<(String, &'static str, WhereValue)>,
+    where_conditions: Vec<Condition>,
+    fixed_order: Option<String>,
     _phantom: PhantomData<T>,
+}
+
+/// Requêtes et valeurs prêtes à exécuter (séparé de l'exécution pour être testable).
+#[derive(Debug)]
+struct Prepared {
+    data_sql: String,
+    count_sql: String,
+    binds: Vec<WhereValue>,
+    like: Option<String>,
+    like_count: usize,
 }
 
 impl<T> PaginatedQuery<T>
@@ -64,6 +93,7 @@ where
             sort_prefix: None,
             search_columns: Vec::new(),
             where_conditions: Vec::new(),
+            fixed_order: None,
             _phantom: PhantomData,
         }
     }
@@ -100,21 +130,39 @@ where
 
     /// Ajoute une condition WHERE (col = ?).
     pub fn where_eq(mut self, column: &str, value: WhereValue) -> Self {
-        self.where_conditions.push((column.to_string(), "=", value));
+        self.where_conditions
+            .push(Condition::Column(column.to_string(), "=", value));
         self
     }
 
     /// Ajoute une condition WHERE (col >= ?).
     pub fn where_gte(mut self, column: &str, value: WhereValue) -> Self {
         self.where_conditions
-            .push((column.to_string(), ">=", value));
+            .push(Condition::Column(column.to_string(), ">=", value));
         self
     }
 
     /// Ajoute une condition WHERE (col <= ?).
     pub fn where_lte(mut self, column: &str, value: WhereValue) -> Self {
         self.where_conditions
-            .push((column.to_string(), "<=", value));
+            .push(Condition::Column(column.to_string(), "<=", value));
+        self
+    }
+
+    /// Ajoute une condition WHERE libre (`OR`, `EXISTS`, sous-requête, `IN`…), combinée aux
+    /// autres par `AND`. Chaque `?` reçoit, dans l'ordre, une valeur de `values` (numérotés
+    /// automatiquement en `$n` sous PostgreSQL). La condition est du SQL écrit par le code :
+    /// n'y interpolez jamais une saisie utilisateur, passez-la en valeur.
+    pub fn where_raw(mut self, condition: &str, values: Vec<WhereValue>) -> Self {
+        self.where_conditions
+            .push(Condition::Raw(condition.to_string(), values));
+        self
+    }
+
+    /// Tri fixe (expression SQL écrite par le code, ex. `c.une DESC, c.created DESC`) à la place
+    /// du tri choisi par `params.sort` / `params.order`.
+    pub fn order_raw(mut self, expr: &str) -> Self {
+        self.fixed_order = Some(expr.to_string());
         self
     }
 
@@ -131,71 +179,116 @@ where
         pool: &DbPool,
         params: &PaginationParams,
     ) -> AppResult<(Vec<T>, u64)> {
-        // ─── Résoudre le tri ───
-        let sort_col = if self.allowed_sorts.is_empty() {
-            self.default_sort.clone()
-        } else {
-            let allowed_refs: Vec<&str> = self.allowed_sorts.iter().map(|s| s.as_str()).collect();
-            params
-                .sort_column(&allowed_refs, &self.default_sort)
-                .to_string()
-        };
+        let p = self.prepare(params)?;
 
-        // Whitelist the ORDER BY direction (never interpolate a raw config/request string).
-        let order = if params.order.eq_ignore_ascii_case("asc") {
-            "ASC"
-        } else if params.order.eq_ignore_ascii_case("desc") {
-            "DESC"
-        } else {
-            crate::db::normalize_direction(&self.default_order).unwrap_or("ASC")
-        };
-
-        // Validate every interpolated identifier: sort column, optional prefix, WHERE and
-        // search columns. Any non-identifier is rejected before it reaches the SQL string.
-        if !crate::db::is_valid_identifier(&sort_col) {
-            return Err(crate::error::AppError::BadRequest(format!(
-                "Invalid sort column: {sort_col}"
-            )));
+        let mut data_query = sqlx::query_as::<Db, T>(AssertSqlSafe(p.data_sql));
+        for val in &p.binds {
+            data_query = bind_where_value(data_query, val);
         }
-        for (col, _, _) in &self.where_conditions {
-            if !crate::db::is_valid_identifier(col) {
-                return Err(crate::error::AppError::BadRequest(format!(
-                    "Invalid filter column: {col}"
-                )));
+        if let Some(ref like) = p.like {
+            for _ in 0..p.like_count {
+                data_query = data_query.bind(like.as_str());
             }
         }
+        data_query = data_query
+            .bind(params.safe_per_page() as i64)
+            .bind(params.offset() as i64);
+        let items = data_query.fetch_all(pool).await?;
+
+        let mut count_query = sqlx::query_as::<Db, (i64,)>(AssertSqlSafe(p.count_sql));
+        for val in &p.binds {
+            count_query = bind_where_value_tuple(count_query, val);
+        }
+        if let Some(ref like) = p.like {
+            for _ in 0..p.like_count {
+                count_query = count_query.bind(like.as_str());
+            }
+        }
+        let (total,) = count_query.fetch_one(pool).await?;
+
+        Ok((items, total as u64))
+    }
+
+    /// Construit les requêtes data / COUNT et la liste ordonnée des valeurs à lier.
+    fn prepare(&self, params: &PaginationParams) -> AppResult<Prepared> {
+        // ─── Tri ───
+        let order_sql = match &self.fixed_order {
+            Some(expr) => expr.clone(),
+            None => {
+                let sort_col = if self.allowed_sorts.is_empty() {
+                    self.default_sort.clone()
+                } else {
+                    let allowed_refs: Vec<&str> =
+                        self.allowed_sorts.iter().map(|s| s.as_str()).collect();
+                    params
+                        .sort_column(&allowed_refs, &self.default_sort)
+                        .to_string()
+                };
+                // Direction en liste blanche (jamais une chaîne de requête interpolée).
+                let order = if params.order.eq_ignore_ascii_case("asc") {
+                    "ASC"
+                } else if params.order.eq_ignore_ascii_case("desc") {
+                    "DESC"
+                } else {
+                    crate::db::normalize_direction(&self.default_order).unwrap_or("ASC")
+                };
+                if !crate::db::is_valid_identifier(&sort_col) {
+                    return Err(AppError::BadRequest(format!(
+                        "Invalid sort column: {sort_col}"
+                    )));
+                }
+                let sort_expr = match &self.sort_prefix {
+                    Some(prefix) if !sort_col.contains('.') => {
+                        if !crate::db::is_valid_identifier(prefix) {
+                            return Err(AppError::BadRequest(format!(
+                                "Invalid sort prefix: {prefix}"
+                            )));
+                        }
+                        format!("{}.{}", prefix, sort_col)
+                    }
+                    _ => sort_col,
+                };
+                format!("{sort_expr} {order}")
+            }
+        };
+
+        // ─── WHERE (placeholders numérotés dans l'ordre des valeurs) ───
+        let mut where_clauses: Vec<String> = Vec::new();
+        let mut binds: Vec<WhereValue> = Vec::new();
+        let mut ph_idx: usize = 0;
+        for cond in &self.where_conditions {
+            match cond {
+                Condition::Column(col, op, val) => {
+                    if !crate::db::is_valid_identifier(col) {
+                        return Err(AppError::BadRequest(format!(
+                            "Invalid filter column: {col}"
+                        )));
+                    }
+                    ph_idx += 1;
+                    where_clauses.push(format!("{} {} {}", col, op, placeholder(ph_idx)));
+                    binds.push(val.clone());
+                }
+                Condition::Raw(sql, values) => {
+                    let (numbered, count) = number_placeholders(sql, &mut ph_idx);
+                    if count != values.len() {
+                        return Err(AppError::Internal(format!(
+                            "where_raw : {count} placeholder(s) pour {} valeur(s) dans « {sql} »",
+                            values.len()
+                        )));
+                    }
+                    where_clauses.push(format!("({numbered})"));
+                    binds.extend(values.iter().cloned());
+                }
+            }
+        }
+
         for col in &self.search_columns {
             if !crate::db::is_valid_identifier(col) {
-                return Err(crate::error::AppError::BadRequest(format!(
+                return Err(AppError::BadRequest(format!(
                     "Invalid search column: {col}"
                 )));
             }
         }
-
-        let sort_expr = match &self.sort_prefix {
-            Some(prefix) if !sort_col.contains('.') => {
-                if !crate::db::is_valid_identifier(prefix) {
-                    return Err(crate::error::AppError::BadRequest(format!(
-                        "Invalid sort prefix: {prefix}"
-                    )));
-                }
-                format!("{}.{}", prefix, sort_col)
-            }
-            _ => sort_col,
-        };
-
-        // ─── Construire WHERE avec placeholder tracking ───
-        let mut where_clauses: Vec<String> = Vec::new();
-        let mut bind_values: Vec<WhereValue> = Vec::new();
-        let mut ph_idx: usize = 0;
-
-        for (col, op, val) in &self.where_conditions {
-            ph_idx += 1;
-            where_clauses.push(format!("{} {} {}", col, op, placeholder(ph_idx)));
-            bind_values.push(val.clone());
-        }
-
-        // Search (LIKE)
         let has_search = !self.search_columns.is_empty() && params.search.is_some();
         if has_search {
             let like_clauses: Vec<String> = self
@@ -215,58 +308,71 @@ where
             format!(" WHERE {}", where_clauses.join(" AND "))
         };
 
-        // ─── Requête data ───
         ph_idx += 1;
         let limit_ph = placeholder(ph_idx);
         ph_idx += 1;
         let offset_ph = placeholder(ph_idx);
-
         let data_sql = format!(
-            "{}{} ORDER BY {} {} LIMIT {} OFFSET {}",
-            self.base_sql, where_sql, sort_expr, order, limit_ph, offset_ph
+            "{}{} ORDER BY {} LIMIT {} OFFSET {}",
+            self.base_sql, where_sql, order_sql, limit_ph, offset_ph
         );
-
-        // ─── Requête count (réutilise les mêmes index de placeholder que le WHERE) ───
-        let count_sql = if let Some(ref custom) = self.count_from {
-            format!("{}{}", custom, where_sql)
-        } else {
-            let from_part = extract_from_clause(&self.base_sql);
-            format!("SELECT COUNT(*) {}{}", from_part, where_sql)
+        // Le COUNT réutilise les mêmes index de placeholder que le WHERE.
+        let count_sql = match &self.count_from {
+            Some(custom) => format!("{}{}", custom, where_sql),
+            None => format!(
+                "SELECT COUNT(*) {}{}",
+                extract_from_clause(&self.base_sql).trim_start(),
+                where_sql
+            ),
         };
 
-        // ─── Bind et exécution ───
-        let like_value = params.search.as_ref().map(|s| format!("%{}%", s));
-        let search_col_count = self.search_columns.len();
-
-        // Data query
-        let mut data_query = sqlx::query_as::<Db, T>(AssertSqlSafe(data_sql));
-        for val in &bind_values {
-            data_query = bind_where_value(data_query, val);
-        }
-        if has_search && let Some(ref like) = like_value {
-            for _ in 0..search_col_count {
-                data_query = data_query.bind(like.as_str());
-            }
-        }
-        data_query = data_query
-            .bind(params.safe_per_page() as i64)
-            .bind(params.offset() as i64);
-        let items = data_query.fetch_all(pool).await?;
-
-        // Count query
-        let mut count_query = sqlx::query_as::<Db, (i64,)>(AssertSqlSafe(count_sql));
-        for val in &bind_values {
-            count_query = bind_where_value_tuple(count_query, val);
-        }
-        if has_search && let Some(ref like) = like_value {
-            for _ in 0..search_col_count {
-                count_query = count_query.bind(like.as_str());
-            }
-        }
-        let (total,) = count_query.fetch_one(pool).await?;
-
-        Ok((items, total as u64))
+        Ok(Prepared {
+            data_sql,
+            count_sql,
+            binds,
+            like: if has_search {
+                params.search.as_ref().map(|s| format!("%{}%", s))
+            } else {
+                None
+            },
+            like_count: if has_search {
+                self.search_columns.len()
+            } else {
+                0
+            },
+        })
     }
+}
+
+/// Remplace chaque `?` hors chaînes et identifiants entre guillemets par le placeholder du
+/// backend (`?` ou `$n`) ; renvoie le SQL et le nombre de placeholders.
+fn number_placeholders(sql: &str, next: &mut usize) -> (String, usize) {
+    let mut out = String::with_capacity(sql.len());
+    let mut quote: Option<char> = None;
+    let mut count = 0;
+    for c in sql.chars() {
+        match quote {
+            Some(q) => {
+                out.push(c);
+                if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                '\'' | '"' | '`' => {
+                    quote = Some(c);
+                    out.push(c);
+                }
+                '?' => {
+                    *next += 1;
+                    count += 1;
+                    out.push_str(&placeholder(*next));
+                }
+                _ => out.push(c),
+            },
+        }
+    }
+    (out, count)
 }
 
 /// Extrait la clause FROM d'un SELECT (tout après le premier FROM/from).
@@ -323,5 +429,109 @@ fn bind_where_value_tuple<'q>(
         WhereValue::String(v) => query.bind(v.as_str()),
         WhereValue::Bool(v) => query.bind(*v),
         WhereValue::DateTime(v) => query.bind(*v),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(sqlx::FromRow)]
+    #[allow(dead_code)]
+    struct Row {
+        id: i64,
+    }
+
+    fn params(search: Option<&str>) -> PaginationParams {
+        PaginationParams {
+            page: 2,
+            per_page: 10,
+            sort: None,
+            order: "desc".into(),
+            search: search.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn where_raw_keeps_value_order_and_wraps_condition() {
+        let p = PaginatedQuery::<Row>::new("SELECT c.id FROM content c")
+            .where_eq("c.type", "movie".into())
+            .where_raw(
+                "(c.status = ? OR c.user_id = ?)",
+                vec![1_i64.into(), 7_i64.into()],
+            )
+            .default_sort("c.id")
+            .prepare(&params(None))
+            .unwrap();
+        // Built with `placeholder()` so the test holds under every driver feature.
+        let (p1, p2, p3) = (placeholder(1), placeholder(2), placeholder(3));
+        assert_eq!(
+            p.data_sql,
+            format!(
+                "SELECT c.id FROM content c WHERE c.type = {p1} AND ((c.status = {p2} OR c.user_id = {p3})) ORDER BY c.id DESC LIMIT {} OFFSET {}",
+                placeholder(4),
+                placeholder(5)
+            )
+        );
+        assert_eq!(
+            p.count_sql,
+            format!(
+                "SELECT COUNT(*) FROM content c WHERE c.type = {p1} AND ((c.status = {p2} OR c.user_id = {p3}))"
+            )
+        );
+        assert_eq!(p.binds.len(), 3);
+    }
+
+    #[test]
+    fn where_raw_ignores_question_marks_in_literals() {
+        let p = PaginatedQuery::<Row>::new("SELECT id FROM t")
+            .where_raw("title <> '?' AND id = ?", vec![3_i64.into()])
+            .prepare(&params(None))
+            .unwrap();
+        assert!(
+            p.data_sql
+                .contains(&format!("(title <> '?' AND id = {})", placeholder(1)))
+        );
+    }
+
+    #[test]
+    fn where_raw_rejects_value_count_mismatch() {
+        let r = PaginatedQuery::<Row>::new("SELECT id FROM t")
+            .where_raw("id = ? OR id = ?", vec![1_i64.into()])
+            .prepare(&params(None));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn order_raw_overrides_requested_sort() {
+        let mut ps = params(None);
+        ps.sort = Some("title".into());
+        let p = PaginatedQuery::<Row>::new("SELECT id FROM t")
+            .allowed_sorts(&["title"])
+            .order_raw("une DESC, created DESC")
+            .prepare(&ps)
+            .unwrap();
+        assert!(p.data_sql.ends_with(&format!(
+            "ORDER BY une DESC, created DESC LIMIT {} OFFSET {}",
+            placeholder(1),
+            placeholder(2)
+        )));
+    }
+
+    #[test]
+    fn search_binds_after_where_values() {
+        let p = PaginatedQuery::<Row>::new("SELECT id FROM t")
+            .where_raw("a = ?", vec![1_i64.into()])
+            .search_columns(&["title", "body"])
+            .prepare(&params(Some("geek")))
+            .unwrap();
+        assert!(p.data_sql.contains(&format!(
+            "WHERE (a = {}) AND (title LIKE {} OR body LIKE {})",
+            placeholder(1),
+            placeholder(2),
+            placeholder(3)
+        )));
+        assert_eq!(p.like.as_deref(), Some("%geek%"));
+        assert_eq!(p.like_count, 2);
     }
 }

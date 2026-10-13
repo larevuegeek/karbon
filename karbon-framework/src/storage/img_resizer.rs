@@ -87,7 +87,9 @@ const OUTPUT_FORMATS: [&str; 5] = ["jpg", "jpeg", "png", "webp", "gif"];
 
 impl ImgResizerConfig {
     pub fn new(source_dir: impl Into<PathBuf>, cache_dir: impl Into<PathBuf>) -> Self {
-        let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(2);
         Self {
             source_dir: source_dir.into(),
             cache_dir: cache_dir.into(),
@@ -371,7 +373,8 @@ fn is_safe_rel_path(p: &str) -> bool {
     if p.is_empty() || p.contains('\0') || p.contains('\\') || p.starts_with('/') {
         return false;
     }
-    p.split('/').all(|seg| !seg.is_empty() && !seg.starts_with('.'))
+    p.split('/')
+        .all(|seg| !seg.is_empty() && !seg.starts_with('.'))
 }
 
 /// Join `rel` onto `base` and confirm the canonicalized result stays inside `base`.
@@ -385,7 +388,10 @@ fn resolve_within(base: &std::path::Path, rel: &str) -> Option<std::path::PathBu
 
 /// `mtime(a) >= mtime(b)`; false if either is unreadable.
 fn newer_or_same(a: &StdPath, b: &StdPath) -> bool {
-    match (a.metadata().and_then(|m| m.modified()), b.metadata().and_then(|m| m.modified())) {
+    match (
+        a.metadata().and_then(|m| m.modified()),
+        b.metadata().and_then(|m| m.modified()),
+    ) {
         (Ok(a), Ok(b)) => a >= b,
         _ => false,
     }
@@ -423,8 +429,15 @@ async fn handle_resize(
         let Some(pos) = path.find(&needle) else {
             return (StatusCode::BAD_REQUEST, "Invalid resize spec").into_response();
         };
-        let query = original_uri.query().map(|q| format!("?{q}")).unwrap_or_default();
-        let target = format!("{}/r/{canonical}/{}{query}", &path[..pos], &path[pos + needle.len()..]);
+        let query = original_uri
+            .query()
+            .map(|q| format!("?{q}"))
+            .unwrap_or_default();
+        let target = format!(
+            "{}/r/{canonical}/{}{query}",
+            &path[..pos],
+            &path[pos + needle.len()..]
+        );
         return Redirect::permanent(&target).into_response();
     }
 
@@ -472,7 +485,10 @@ async fn handle_resize(
     // Cache layout: cache_dir/<source path>/<spec>[@anchor].<ext> — every variant of one
     // image sits in one directory, so the per-image variant cap is a cheap directory count.
     let variant_dir = state.cache_dir.join(file_path.replace('/', "_"));
-    let anchor_suffix = anchor.as_ref().map(|(a, _)| format!("@{a}")).unwrap_or_default();
+    let anchor_suffix = anchor
+        .as_ref()
+        .map(|(a, _)| format!("@{a}"))
+        .unwrap_or_default();
     let cache_path = variant_dir.join(format!("{canonical}{anchor_suffix}.{out_ext}"));
     let failed_marker = variant_dir.join(format!("{canonical}{anchor_suffix}.{out_ext}.failed"));
 
@@ -711,7 +727,10 @@ mod tests {
 
     #[test]
     fn test_parse_anchor() {
-        assert!(matches!(parse_anchor("top-left"), Some(CropAnchor::TopLeft)));
+        assert!(matches!(
+            parse_anchor("top-left"),
+            Some(CropAnchor::TopLeft)
+        ));
         assert!(matches!(parse_anchor("center"), Some(CropAnchor::Center)));
         assert!(matches!(
             parse_anchor("bottom-right"),
@@ -733,18 +752,29 @@ mod tests {
     #[test]
     fn test_canonical_spelling() {
         assert_eq!(
-            parse_spec("800x600_cover_q90_gray.webp").unwrap().canonical(),
+            parse_spec("800x600_cover_q90_gray.webp")
+                .unwrap()
+                .canonical(),
             "800x600_cover_q90_gray.webp"
         );
         // Equivalent spellings collapse to one URL (the handler redirects to it).
         assert_eq!(parse_spec("320x180_fit").unwrap().canonical(), "320x180");
-        assert_eq!(parse_spec("320x180_q075").unwrap().canonical(), "320x180_q75");
+        assert_eq!(
+            parse_spec("320x180_q075").unwrap().canonical(),
+            "320x180_q75"
+        );
         assert_eq!(
             parse_spec("320x180_gray_q75_cover").unwrap().canonical(),
             "320x180_cover_q75_gray"
         );
-        assert_eq!(parse_spec("320x180_grayscale").unwrap().canonical(), "320x180_gray");
-        assert_eq!(parse_spec("320x180.WEBP").unwrap().canonical(), "320x180.webp");
+        assert_eq!(
+            parse_spec("320x180_grayscale").unwrap().canonical(),
+            "320x180_gray"
+        );
+        assert_eq!(
+            parse_spec("320x180.WEBP").unwrap().canonical(),
+            "320x180.webp"
+        );
     }
 
     #[test]
@@ -768,20 +798,26 @@ mod tests {
 
     impl Fixture {
         fn new(name: &str) -> Self {
-            let root = std::env::temp_dir().join(format!("karbon-resizer-{name}-{}", std::process::id()));
+            let root =
+                std::env::temp_dir().join(format!("karbon-resizer-{name}-{}", std::process::id()));
             std::fs::remove_dir_all(&root).ok();
             std::fs::create_dir_all(root.join("src")).unwrap();
             let img = image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(120, 80, |x, y| {
                 image::Rgb([(x * 2) as u8, (y * 3) as u8, 90])
             }));
             // A PNG behind a .jpg name: must still be resized, not served whole.
-            img.save_with_format(root.join("src/photo.jpg"), image::ImageFormat::Png).unwrap();
+            img.save_with_format(root.join("src/photo.jpg"), image::ImageFormat::Png)
+                .unwrap();
             std::fs::write(root.join("src/.env"), "SECRET=1").unwrap();
             Self { root }
         }
 
         fn router(&self, config: impl FnOnce(ImgResizerConfig) -> ImgResizerConfig) -> Router {
-            config(ImgResizer::config(self.root.join("src"), self.root.join("cache"))).build()
+            config(ImgResizer::config(
+                self.root.join("src"),
+                self.root.join("cache"),
+            ))
+            .build()
         }
     }
 
@@ -792,7 +828,11 @@ mod tests {
     }
 
     async fn get(router: &Router, uri: &str) -> Response {
-        router.clone().oneshot(HttpRequest::get(uri).body(Body::empty()).unwrap()).await.unwrap()
+        router
+            .clone()
+            .oneshot(HttpRequest::get(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
@@ -802,8 +842,13 @@ mod tests {
         let res = get(&router, "/r/60x40_cover_q75.webp/photo.jpg").await;
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(res.headers()[header::CONTENT_TYPE], "image/webp");
-        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        assert_eq!(image::guess_format(&body).unwrap(), image::ImageFormat::WebP);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            image::guess_format(&body).unwrap(),
+            image::ImageFormat::WebP
+        );
         assert_eq!(image::load_from_memory(&body).unwrap().width(), 60);
     }
 
@@ -813,9 +858,20 @@ mod tests {
         let router = fx.router(|c| c);
         let res = get(&router, "/r/60x40_q75_cover/photo.jpg?anchor=top").await;
         assert_eq!(res.status(), StatusCode::PERMANENT_REDIRECT);
-        assert_eq!(res.headers()[header::LOCATION], "/r/60x40_cover_q75/photo.jpg?anchor=top");
-        assert_eq!(get(&router, "/r/60x40_bogus/photo.jpg").await.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(get(&router, "/r/60x40/photo.jpg?anchor=nowhere").await.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            res.headers()[header::LOCATION],
+            "/r/60x40_cover_q75/photo.jpg?anchor=top"
+        );
+        assert_eq!(
+            get(&router, "/r/60x40_bogus/photo.jpg").await.status(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            get(&router, "/r/60x40/photo.jpg?anchor=nowhere")
+                .await
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
     }
 
     #[tokio::test]
@@ -823,7 +879,10 @@ mod tests {
         let fx = Fixture::new("hidden");
         let router = fx.router(|c| c);
         assert_eq!(get(&router, "/.env").await.status(), StatusCode::NOT_FOUND);
-        assert_eq!(get(&router, "/r/original/.env").await.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            get(&router, "/r/original/.env").await.status(),
+            StatusCode::NOT_FOUND
+        );
         assert_eq!(get(&router, "/photo.jpg").await.status(), StatusCode::OK);
     }
 
@@ -831,14 +890,32 @@ mod tests {
     async fn test_variant_cap_and_allowed_specs() {
         let fx = Fixture::new("cap");
         let router = fx.router(|c| c.max_variants_per_file(2));
-        assert_eq!(get(&router, "/r/60x40/photo.jpg").await.status(), StatusCode::OK);
-        assert_eq!(get(&router, "/r/50x40/photo.jpg").await.status(), StatusCode::OK);
-        assert_eq!(get(&router, "/r/40x40/photo.jpg").await.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            get(&router, "/r/60x40/photo.jpg").await.status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            get(&router, "/r/50x40/photo.jpg").await.status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            get(&router, "/r/40x40/photo.jpg").await.status(),
+            StatusCode::BAD_REQUEST
+        );
         // Cached variants keep being served.
-        assert_eq!(get(&router, "/r/60x40/photo.jpg").await.status(), StatusCode::OK);
+        assert_eq!(
+            get(&router, "/r/60x40/photo.jpg").await.status(),
+            StatusCode::OK
+        );
 
         let strict = fx.router(|c| c.allowed_specs(["30x20"]));
-        assert_eq!(get(&strict, "/r/30x20/photo.jpg").await.status(), StatusCode::OK);
-        assert_eq!(get(&strict, "/r/31x20/photo.jpg").await.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            get(&strict, "/r/30x20/photo.jpg").await.status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            get(&strict, "/r/31x20/photo.jpg").await.status(),
+            StatusCode::NOT_FOUND
+        );
     }
 }
