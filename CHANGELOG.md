@@ -11,6 +11,25 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.4] - 2026-10-15
+
+> `karbon deploy publish` can target several servers with one build, and a remote publish
+> with `[deploy] user` now restarts the app on the remote server instead of the local one.
+
+### Added
+- **`[deploy] hosts = ["user@srv", "local"]`** — several targets, published one after the
+  other with the **same** build (`publish:build` compiles once). `"local"` is the machine
+  running the command. `host` (single target) still works; `host` + `hosts` is an error.
+- **`[deploy] health_url`** (+ `health_timeout`, default 120 s) — after each restart, the URL
+  is polled **on the target** (curl over SSH for a remote one) and the next target is only
+  published once it answers 2xx. On the first failure the command stops and names the
+  targets left untouched.
+
+### Fixed
+- Remote publish with `[deploy] user`: the PM2 restart ran `sudo -u <user>` **locally**, so a
+  publish to `host` restarted the app of the machine running the command. It now runs
+  `sudo -H -u <user>` on the target, with that user's `PM2_HOME`.
+
 ## [0.4.3] - 2026-10-13
 
 > Additive release: `PaginatedQuery` and the UPDATE/DELETE/COUNT builders gain the pieces

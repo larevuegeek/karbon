@@ -33,6 +33,31 @@ Le binaire, le build frontend, les migrations et `.env.example` sont synchronis�
 les dépendances frontend installées (`npm install --omit=dev`), puis le process
 manager redémarré.
 
+### Plusieurs serveurs derrière un répartiteur
+
+Avec deux instances ou plus, **compile une seule fois** et publie le même résultat
+partout : deux compilations du même code ne donnent pas les mêmes noms de fichiers
+frontend (SvelteKit y grave une version), et une page servie à moitié par l'une,
+à moitié par l'autre, casse.
+
+```toml
+[deploy]
+path = "/var/www/my-app"
+user = "www-data"
+manager = "pm2"
+# Publiés dans cet ordre, l'un après l'autre ; "local" = la machine qui lance la commande
+hosts = ["root@10.0.0.12", "local"]
+# Optionnel : avant de passer au suivant, attendre que celui-ci réponde (vérifié SUR la cible)
+health_url = "http://127.0.0.1:8080/api/health"
+health_timeout = 120          # secondes (défaut : 120)
+```
+
+`karbon deploy publish:build` compile **une fois**, puis publie et redémarre chaque
+cible à son tour. Avec `health_url`, la cible suivante n'est touchée que lorsque la
+précédente répond : les serveurs ne sont jamais redémarrés tous en même temps. Au
+premier échec, la commande s'arrête et dit quelles cibles n'ont pas été publiées.
+`host` (une seule cible) reste accepté ; `host` et `hosts` ensemble sont refusés.
+
 ---
 
 ## 2. Docker

@@ -90,7 +90,7 @@ MySQL is the default. To use PostgreSQL, change the feature flag:
 
 ```toml
 # Cargo.toml of your project
-karbon = { package = "karbon-framework", version = "0.4.3", default-features = false, features = ["postgres"] }
+karbon = { package = "karbon-framework", version = "0.4.4", default-features = false, features = ["postgres"] }
 ```
 
 Set the matching port in `.env`:
@@ -493,6 +493,9 @@ manager = "pm2"                      # "pm2" or "systemd"
 pm2_config = "ecosystem.config.cjs"  # PM2 config file (default)
 service = "my-app"                   # systemd service name (default: app.name)
 host = "user@server"                 # optional — if absent, deploys locally
+# Several servers behind a load balancer — built ONCE, published one after the other:
+# hosts = ["root@10.0.0.12", "local"]          # "local" = this machine; replaces `host`
+# health_url = "http://127.0.0.1:8080/api/health"  # waited for ON each target before the next
 ```
 
 ## Requirements

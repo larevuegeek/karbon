@@ -85,6 +85,38 @@ pub struct DeployConfig {
     pub service: Option<String>,
     /// SSH host (e.g. user@server). If absent → local deploy.
     pub host: Option<String>,
+    /// Several targets, published one after the other with the SAME build
+    /// (e.g. `["root@10.0.0.12", "local"]`; `"local"` = this machine).
+    /// Replaces `host`; setting both is an error.
+    #[serde(default)]
+    pub hosts: Vec<String>,
+    /// Checked ON each target after its restart (e.g. `http://127.0.0.1:8080/api/health`):
+    /// the next target is only published once this one answers 2xx.
+    pub health_url: Option<String>,
+    /// Seconds to wait for `health_url` before giving up (default 120).
+    #[serde(default = "default_health_timeout")]
+    pub health_timeout: u64,
+}
+
+impl DeployConfig {
+    /// The publish targets in order: `None` = local, `Some(host)` = over SSH.
+    pub fn targets(&self) -> Result<Vec<Option<String>>, String> {
+        if !self.hosts.is_empty() && self.host.is_some() {
+            return Err("[deploy] sets both `host` and `hosts`: keep only `hosts`".to_string());
+        }
+        if self.hosts.is_empty() {
+            return Ok(vec![self.host.clone()]);
+        }
+        Ok(self
+            .hosts
+            .iter()
+            .map(|h| if h == "local" { None } else { Some(h.clone()) })
+            .collect())
+    }
+}
+
+fn default_health_timeout() -> u64 {
+    120
 }
 
 fn default_manager() -> String {
@@ -152,5 +184,49 @@ impl KarbonConfig {
     /// Absolute path to the frontend directory (None for backend-only projects).
     pub fn frontend_dir(&self, root: &Path) -> Option<PathBuf> {
         self.frontend.as_ref().map(|f| root.join(&f.dir))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn deploy(toml_src: &str) -> DeployConfig {
+        toml::from_str(toml_src).expect("valid [deploy]")
+    }
+
+    #[test]
+    fn a_single_host_stays_a_single_target() {
+        assert_eq!(
+            deploy(r#"path = "/srv/app""#).targets().unwrap(),
+            vec![None]
+        );
+        assert_eq!(
+            deploy("path = \"/srv/app\"\nhost = \"root@srv\"")
+                .targets()
+                .unwrap(),
+            vec![Some("root@srv".to_string())]
+        );
+    }
+
+    #[test]
+    fn hosts_are_published_in_order_and_local_means_this_machine() {
+        let d = deploy(
+            "path = \"/srv/app\"\nhosts = [\"root@10.99.0.12\", \"local\"]\nhealth_url = \"http://127.0.0.1:8080/api/health\"",
+        );
+        assert_eq!(
+            d.targets().unwrap(),
+            vec![Some("root@10.99.0.12".to_string()), None]
+        );
+        assert_eq!(d.health_timeout, 120);
+    }
+
+    #[test]
+    fn host_and_hosts_together_are_refused() {
+        assert!(
+            deploy("path = \"/srv/app\"\nhost = \"a@b\"\nhosts = [\"local\"]")
+                .targets()
+                .is_err()
+        );
     }
 }

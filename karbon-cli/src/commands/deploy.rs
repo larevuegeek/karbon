@@ -45,14 +45,9 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
 
     // Security: reject any deploy value that could inject into the shell/ssh commands below.
     validate_deploy_config(deploy, config)?;
+    let targets = deploy.targets()?;
 
-    let dest_label = if let Some(ref host) = deploy.host {
-        format!("{}:{}", host, deploy.path)
-    } else {
-        deploy.path.clone()
-    };
-
-    // ── Step 1: Build (optional) ──
+    // ── Step 1: Build (optional) — ONCE, whatever the number of targets ──
     if build_first {
         println!("  {} Building for production...\n", "→".blue());
         crate::commands::build::run(config, root)?;
@@ -83,17 +78,68 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
         ));
     }
 
+    // ── Steps 3+: the same artifacts to every target, one after the other ──
+    // A failure stops here: the targets already done run the new version, the
+    // remaining ones are untouched and keep serving the previous one.
+    let total = targets.len();
+    for (i, target) in targets.iter().enumerate() {
+        let host = target.as_deref();
+        if total > 1 {
+            println!(
+                "\n  {} Target {}/{}: {}",
+                "▸".cyan().bold(),
+                i + 1,
+                total,
+                host.unwrap_or("local").bold()
+            );
+        }
+        publish_to(
+            deploy,
+            config,
+            root,
+            host,
+            &all_packages,
+            &binary_paths,
+            frontend_build.as_deref(),
+        )
+        .map_err(|e| {
+            if total > 1 {
+                format!("{e}\n  Stopped at target {}/{} ({}): the following targets were NOT published.", i + 1, total, host.unwrap_or("local"))
+            } else {
+                e
+            }
+        })?;
+    }
+    Ok(())
+}
+
+/// Publishes the already-built artifacts to one target (`None` = local), restarts
+/// the process manager there, then waits for `health_url` when it is set.
+fn publish_to(
+    deploy: &crate::config::DeployConfig,
+    config: &KarbonConfig,
+    root: &Path,
+    host: Option<&str>,
+    all_packages: &[&str],
+    binary_paths: &[std::path::PathBuf],
+    frontend_build: Option<&Path>,
+) -> Result<(), String> {
+    let dest_label = match host {
+        Some(h) => format!("{}:{}", h, deploy.path),
+        None => deploy.path.clone(),
+    };
+
     println!("  {} Publishing to {}", "→".blue(), dest_label.bold());
     let start = Instant::now();
 
     // ── Step 3: Ensure destination directory exists ──
-    run_on_target(deploy, &format!("mkdir -p {}", deploy.path))?;
+    run_on_target(host, &format!("mkdir -p {}", deploy.path))?;
 
     // ── Step 4: Sync files ──
     // Backend binaries (main + extras)
     for (pkg, binary_path) in all_packages.iter().zip(binary_paths.iter()) {
         rsync_to_target(
-            deploy,
+            host,
             binary_path.to_str().unwrap(),
             &format!("{}/", deploy.path),
         )?;
@@ -101,14 +147,13 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     }
 
     // Frontend (skipped for backend-only / micro projects)
-    if let (Some(frontend_dir), Some(frontend_build)) =
-        (config.frontend_dir(root), frontend_build.as_ref())
+    if let (Some(frontend_dir), Some(frontend_build)) = (config.frontend_dir(root), frontend_build)
     {
-        run_on_target(deploy, &format!("mkdir -p {}/frontend", deploy.path))?;
+        run_on_target(host, &format!("mkdir -p {}/frontend", deploy.path))?;
 
         // Frontend build
         rsync_to_target(
-            deploy,
+            host,
             &format!("{}/", frontend_build.to_str().unwrap()),
             &format!("{}/frontend/build/", deploy.path),
         )?;
@@ -119,7 +164,7 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
             let file = frontend_dir.join(name);
             if file.exists() {
                 rsync_to_target(
-                    deploy,
+                    host,
                     file.to_str().unwrap(),
                     &format!("{}/frontend/", deploy.path),
                 )?;
@@ -130,7 +175,7 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
         // Install production dependencies on server
         println!("\n  {} Installing frontend dependencies...", "→".blue());
         run_on_target(
-            deploy,
+            host,
             &format!(
                 "cd {}/frontend && npm install --omit=dev --no-audit --no-fund 2>&1 | tail -1",
                 deploy.path
@@ -143,7 +188,7 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     let pm2_path = root.join(&deploy.pm2_config);
     if pm2_path.exists() {
         rsync_to_target(
-            deploy,
+            host,
             pm2_path.to_str().unwrap(),
             &format!("{}/", deploy.path),
         )?;
@@ -154,7 +199,7 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     let migration_dir = root.join("migration");
     if migration_dir.exists() {
         rsync_to_target(
-            deploy,
+            host,
             &format!("{}/", migration_dir.to_str().unwrap()),
             &format!("{}/migration/", deploy.path),
         )?;
@@ -165,7 +210,7 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     let env_example = root.join(".env.example");
     if env_example.exists() {
         rsync_to_target(
-            deploy,
+            host,
             env_example.to_str().unwrap(),
             &format!("{}/", deploy.path),
         )?;
@@ -181,13 +226,18 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
             user,
             group
         );
-        run_on_target(deploy, &format!("chown -R {user}:{group} {}", deploy.path))?;
+        run_on_target(host, &format!("chown -R {user}:{group} {}", deploy.path))?;
         println!("    {} chown -R {}:{}", "✓".green(), user, group);
     }
 
     // ── Step 6: Restart process manager ──
     println!("\n  {} Restarting {}...", "→".blue(), deploy.manager);
-    restart_manager(deploy, config)?;
+    restart_manager(deploy, config, host)?;
+
+    // ── Step 7: Wait until the target answers (when health_url is set) ──
+    if let Some(url) = &deploy.health_url {
+        wait_healthy(host, url, deploy.health_timeout)?;
+    }
 
     println!(
         "\n  {} Published to {} in {:.1}s\n",
@@ -199,16 +249,48 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     Ok(())
 }
 
+/// Polls `url` ON the target (curl over SSH for a remote one) until it answers 2xx,
+/// so that the next target is never restarted while this one is still down.
+fn wait_healthy(host: Option<&str>, url: &str, timeout_secs: u64) -> Result<(), String> {
+    println!("\n  {} Waiting for {}...", "→".blue(), url);
+    let started = Instant::now();
+    let probe = format!("curl -fsS -o /dev/null --max-time 5 {url}");
+    loop {
+        if probe_on_target(host, &probe) {
+            println!(
+                "    {} healthy after {:.0}s",
+                "✓".green(),
+                started.elapsed().as_secs_f64()
+            );
+            return Ok(());
+        }
+        if started.elapsed().as_secs() >= timeout_secs {
+            return Err(format!(
+                "{} does not answer {url} after {timeout_secs}s",
+                host.unwrap_or("local")
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+}
+
+/// Like `run_on_target`, but silent and returns whether the command succeeded.
+fn probe_on_target(host: Option<&str>, cmd: &str) -> bool {
+    let output = match host {
+        Some(h) => Command::new("ssh")
+            .args(["-o", "BatchMode=yes", h, cmd])
+            .output(),
+        None => Command::new("sh").args(["-c", cmd]).output(),
+    };
+    output.map(|o| o.status.success()).unwrap_or(false)
+}
+
 /// Run rsync — local if no host, SSH if host is set
-fn rsync_to_target(
-    deploy: &crate::config::DeployConfig,
-    src: &str,
-    dest: &str,
-) -> Result<(), String> {
+fn rsync_to_target(host: Option<&str>, src: &str, dest: &str) -> Result<(), String> {
     let mut args = vec!["-a", "--delete", src];
 
     let full_dest;
-    if let Some(ref host) = deploy.host {
+    if let Some(host) = host {
         full_dest = format!("{host}:{dest}");
         args.push(&full_dest);
     } else {
@@ -228,10 +310,10 @@ fn rsync_to_target(
 }
 
 /// Run a command on the target (local or SSH)
-fn run_on_target(deploy: &crate::config::DeployConfig, cmd: &str) -> Result<(), String> {
-    let status = if let Some(ref host) = deploy.host {
+fn run_on_target(host: Option<&str>, cmd: &str) -> Result<(), String> {
+    let status = if let Some(host) = host {
         Command::new("ssh")
-            .args([host.as_str(), cmd])
+            .args([host, cmd])
             .status()
             .map_err(|e| format!("SSH failed: {e}"))?
     } else {
@@ -250,7 +332,24 @@ fn run_on_target(deploy: &crate::config::DeployConfig, cmd: &str) -> Result<(), 
 
 /// Run a command as a specific user or as current user.
 /// For PM2: forces PM2_HOME to the user's home so it connects to the right daemon.
-fn run_as_user(deploy: &crate::config::DeployConfig, cmd: &str) -> Result<(), String> {
+fn run_as_user(
+    deploy: &crate::config::DeployConfig,
+    host: Option<&str>,
+    cmd: &str,
+) -> Result<(), String> {
+    // Remote target with a user: the sudo must run ON the target, not here.
+    // (Before 0.4.4 it ran locally, so a remote publish restarted the LOCAL app.)
+    if let (Some(user), Some(host)) = (deploy.user.as_deref(), host) {
+        let status = Command::new("ssh")
+            .args([host, &remote_as_user(user, cmd)])
+            .status()
+            .map_err(|e| format!("SSH failed: {e}"))?;
+        if !status.success() {
+            return Err(format!("Command failed on {host}: {cmd}"));
+        }
+        return Ok(());
+    }
+
     let status = if let Some(ref user) = deploy.user {
         // Get the user's home dir from /etc/passwd
         let home_output = Command::new("sh")
@@ -275,9 +374,9 @@ fn run_as_user(deploy: &crate::config::DeployConfig, cmd: &str) -> Result<(), St
             .args(["-H", "-u", user, "bash", "-lc", &full_cmd])
             .status()
             .map_err(|e| format!("sudo failed: {e}"))?
-    } else if let Some(ref host) = deploy.host {
+    } else if let Some(host) = host {
         Command::new("ssh")
-            .args([host.as_str(), cmd])
+            .args([host, cmd])
             .status()
             .map_err(|e| format!("SSH failed: {e}"))?
     } else {
@@ -294,10 +393,18 @@ fn run_as_user(deploy: &crate::config::DeployConfig, cmd: &str) -> Result<(), St
     Ok(())
 }
 
-/// Restart the process manager (runs as deploy.user if set)
+/// The command sent over SSH to run `cmd` as `user` on the remote target. `-H`
+/// gives the user's HOME, so PM2_HOME points at THEIR daemon (not root's).
+/// `cmd` is built only from validated values and never contains a single quote.
+fn remote_as_user(user: &str, cmd: &str) -> String {
+    format!("sudo -H -u {user} bash -lc 'PM2_HOME=$HOME/.pm2 {cmd}'")
+}
+
+/// Restart the process manager (runs as deploy.user if set) on the target
 fn restart_manager(
     deploy: &crate::config::DeployConfig,
     config: &KarbonConfig,
+    host: Option<&str>,
 ) -> Result<(), String> {
     match deploy.manager.as_str() {
         "pm2" => {
@@ -307,6 +414,7 @@ fn restart_manager(
             // Stop existing processes (ignore errors if none running)
             run_as_user(
                 deploy,
+                host,
                 &format!(
                     "cd {path} && pm2 stop {pm2_config} 2>/dev/null; pm2 delete {pm2_config} 2>/dev/null; true"
                 ),
@@ -315,6 +423,7 @@ fn restart_manager(
             // Start fresh
             run_as_user(
                 deploy,
+                host,
                 &format!("cd {path} && pm2 start {pm2_config} && pm2 save"),
             )?;
 
@@ -322,7 +431,7 @@ fn restart_manager(
         }
         "systemd" => {
             let service = deploy.service.as_deref().unwrap_or(&config.app.name);
-            run_on_target(deploy, &format!("sudo systemctl restart {service}"))
+            run_on_target(host, &format!("sudo systemctl restart {service}"))
         }
         other => Err(format!("Unknown manager: {other}. Use 'pm2' or 'systemd'.")),
     }
@@ -384,6 +493,12 @@ fn validate_deploy_config(
     validate_shell_safe(&deploy.pm2_config, "deploy.pm2_config")?;
     if let Some(host) = &deploy.host {
         validate_shell_safe(host, "deploy.host")?;
+    }
+    for host in &deploy.hosts {
+        validate_shell_safe(host, "deploy.hosts")?;
+    }
+    if let Some(url) = &deploy.health_url {
+        validate_shell_safe(url, "deploy.health_url")?;
     }
     if let Some(user) = &deploy.user {
         validate_shell_safe(user, "deploy.user")?;
@@ -780,4 +895,30 @@ fn which(cmd: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remote_restart_runs_sudo_on_the_target_with_the_users_pm2() {
+        assert_eq!(
+            remote_as_user(
+                "antispammeur",
+                "cd /var/www/app && pm2 start ecosystem.config.cjs"
+            ),
+            "sudo -H -u antispammeur bash -lc 'PM2_HOME=$HOME/.pm2 cd /var/www/app && pm2 start ecosystem.config.cjs'"
+        );
+    }
+
+    #[test]
+    fn hosts_and_health_url_are_validated() {
+        assert!(validate_shell_safe("root@10.99.0.12", "deploy.hosts").is_ok());
+        assert!(
+            validate_shell_safe("http://127.0.0.1:8080/api/health", "deploy.health_url").is_ok()
+        );
+        assert!(validate_shell_safe("-oProxyCommand=x", "deploy.hosts").is_err());
+        assert!(validate_shell_safe("http://x/health;reboot", "deploy.health_url").is_err());
+    }
 }
