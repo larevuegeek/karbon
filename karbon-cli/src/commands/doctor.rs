@@ -1,3 +1,4 @@
+use crate::commands::migrate::encode_userinfo;
 use crate::config::KarbonConfig;
 use colored::Colorize;
 use std::fs;
@@ -125,7 +126,10 @@ fn build_db_url(vars: &std::collections::HashMap<String, String>) -> Option<Stri
                 .or_else(|| vars.get("DB_USERNAME"))
                 .map(String::as_str)
                 .unwrap_or("postgres");
-            let pass = get("DB_PASSWORD", "");
+            let (user, pass) = (
+                encode_userinfo(user),
+                encode_userinfo(&get("DB_PASSWORD", "")),
+            );
             Some(format!(
                 "postgres://{user}:{pass}@{}:{}/{name}",
                 get("DB_HOST", "127.0.0.1"),
@@ -138,7 +142,10 @@ fn build_db_url(vars: &std::collections::HashMap<String, String>) -> Option<Stri
                 .or_else(|| vars.get("DB_USERNAME"))
                 .map(String::as_str)
                 .unwrap_or("root");
-            let pass = get("DB_PASSWORD", "");
+            let (user, pass) = (
+                encode_userinfo(user),
+                encode_userinfo(&get("DB_PASSWORD", "")),
+            );
             Some(format!(
                 "mysql://{user}:{pass}@{}:{}/{name}",
                 get("DB_HOST", "127.0.0.1"),

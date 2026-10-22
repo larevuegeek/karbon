@@ -743,7 +743,24 @@ fn build_database_url(vars: &std::collections::HashMap<String, String>) -> Optio
         _ => return None,
     };
 
+    let (user, pass) = (encode_userinfo(user), encode_userinfo(&pass));
     Some(format!("{scheme}://{user}:{pass}@{host}:{port}/{name}"))
+}
+
+/// Percent-encode a database user or password for the userinfo part of a URL, as
+/// `karbon::config::Config::database_url` does: `@ : / ? #`… no longer break the URL, and
+/// `%` is kept so a value already encoded by hand produces the same URL as before.
+pub(crate) fn encode_userinfo(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => out.push(byte as char),
+            b'-' | b'.' | b'_' | b'~' | b'%' | b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*'
+            | b'+' | b',' | b';' | b'=' => out.push(byte as char),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 #[cfg(test)]

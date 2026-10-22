@@ -11,6 +11,25 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.5] - 2026-10-22
+
+> Fix release: nothing changes for an existing deployment that does not set `HOST`.
+
+### Added
+- **`HOST`** env var — listening address, e.g. `HOST=127.0.0.1` behind a local reverse proxy
+  so the app is not reachable on the public interface. Unset or empty keeps `0.0.0.0`; a
+  value that is not an IP address (`localhost` excepted) also keeps `0.0.0.0` with a warning.
+
+### Fixed
+- **CSRF cookie no longer rotates on every GET.** The `csrf_token` cookie is now issued only
+  when the browser does not already have one (or has an empty one). Rotating it on each GET
+  made a form submitted while another request was loading fail with `403 CSRF token
+  mismatch`; clients that retried on 403 keep working.
+- **Database password with URL delimiters.** `Config::database_url()`, `karbon migrate` and
+  `karbon doctor` percent-encode the user and password, so `@ : / ? # [ ]`, spaces or
+  non-ASCII characters no longer break the connection. `%` is left untouched: a value already
+  encoded by hand produces the same URL as before.
+
 ## [0.4.4] - 2026-10-15
 
 > `karbon deploy publish` can target several servers with one build, and a remote publish

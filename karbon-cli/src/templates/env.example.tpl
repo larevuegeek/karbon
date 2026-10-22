@@ -1,4 +1,7 @@
 PORT=3005
+# Listening address (default 0.0.0.0). Behind a local reverse proxy, 127.0.0.1 keeps the
+# app off the public interface.
+# HOST=127.0.0.1
 APP_ENV=development
 LOG_LEVEL=info
 

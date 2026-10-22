@@ -212,21 +212,29 @@ impl Config {
         self.environment().is_test()
     }
 
-    /// Get full database URL
+    /// Get full database URL. User and password are percent-encoded (see [`encode_userinfo`]).
     #[cfg(feature = "mysql")]
     pub fn database_url(&self) -> String {
         format!(
             "mysql://{}:{}@{}:{}/{}",
-            self.db_user, self.db_password, self.db_host, self.db_port, self.db_name
+            encode_userinfo(&self.db_user),
+            encode_userinfo(&self.db_password),
+            self.db_host,
+            self.db_port,
+            self.db_name
         )
     }
 
-    /// Get full database URL
+    /// Get full database URL. User and password are percent-encoded (see [`encode_userinfo`]).
     #[cfg(feature = "postgres")]
     pub fn database_url(&self) -> String {
         format!(
             "postgresql://{}:{}@{}:{}/{}",
-            self.db_user, self.db_password, self.db_host, self.db_port, self.db_name
+            encode_userinfo(&self.db_user),
+            encode_userinfo(&self.db_password),
+            self.db_host,
+            self.db_port,
+            self.db_name
         )
     }
 
@@ -244,6 +252,42 @@ impl Config {
     }
 }
 
+/// Percent-encode a database user or password for the userinfo part of a URL.
+///
+/// Characters that would split the URL (`@ : / ? # [ ]`, space, controls, non-ASCII…) are
+/// encoded, so a password such as `p@ss:word` connects instead of failing to parse.
+/// `%` is left as is: a value already percent-encoded by hand (the old workaround) keeps
+/// producing the same URL.
+#[cfg_attr(feature = "sqlite", allow(dead_code))]
+pub(crate) fn encode_userinfo(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'.'
+            | b'_'
+            | b'~'
+            | b'%'
+            | b'!'
+            | b'$'
+            | b'&'
+            | b'\''
+            | b'('
+            | b')'
+            | b'*'
+            | b'+'
+            | b','
+            | b';'
+            | b'=' => out.push(byte as char),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
 /// Get an env var or return a default value
 fn env_or(key: &str, default: &str) -> String {
     env::var(key).unwrap_or_else(|_| default.to_string())
@@ -255,4 +299,28 @@ fn env_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_userinfo;
+
+    #[test]
+    fn plain_credentials_are_unchanged() {
+        assert_eq!(encode_userinfo("app_user"), "app_user");
+        assert_eq!(encode_userinfo("S3cret-p4ss.word!"), "S3cret-p4ss.word!");
+    }
+
+    #[test]
+    fn url_delimiters_are_encoded() {
+        assert_eq!(encode_userinfo("p@ss:w/rd?#"), "p%40ss%3Aw%2Frd%3F%23");
+        assert_eq!(encode_userinfo("a b[c]"), "a%20b%5Bc%5D");
+        assert_eq!(encode_userinfo("é"), "%C3%A9");
+    }
+
+    #[test]
+    fn hand_encoded_values_keep_working() {
+        // Before this fix the workaround was to percent-encode DB_PASSWORD yourself.
+        assert_eq!(encode_userinfo("p%40ss"), "p%40ss");
+    }
 }

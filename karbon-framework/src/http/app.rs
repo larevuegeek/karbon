@@ -492,7 +492,10 @@ impl App {
             ));
         }
 
-        let addr = SocketAddr::from(([0, 0, 0, 0], self.config.port));
+        let addr = SocketAddr::new(
+            bind_ip(std::env::var("HOST").ok().as_deref()),
+            self.config.port,
+        );
         tracing::info!("Server starting on http://{}", addr);
 
         let listener = TcpListener::bind(addr).await?;
@@ -511,6 +514,23 @@ impl App {
 impl Default for App {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Listening address from the `HOST` env var: `127.0.0.1` behind a local reverse proxy keeps
+/// the app off the public interface. Unset or empty keeps the historical `0.0.0.0`; so does a
+/// value that is not an IP address (with a warning), so a stray `HOST` inherited from the
+/// shell cannot stop an existing deployment from starting.
+fn bind_ip(host: Option<&str>) -> std::net::IpAddr {
+    use std::net::{IpAddr, Ipv4Addr};
+    let all = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+    match host.map(str::trim) {
+        None | Some("") => all,
+        Some(h) if h.eq_ignore_ascii_case("localhost") => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        Some(h) => h.trim_matches(['[', ']']).parse().unwrap_or_else(|_| {
+            tracing::warn!("HOST={h:?} is not an IP address: listening on 0.0.0.0");
+            all
+        }),
     }
 }
 
@@ -536,5 +556,34 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => tracing::info!("Received Ctrl+C, shutting down..."),
         _ = terminate => tracing::info!("Received SIGTERM, shutting down..."),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bind_ip;
+    use std::net::IpAddr;
+
+    fn ip(s: &str) -> IpAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn unset_or_empty_host_listens_everywhere() {
+        assert_eq!(bind_ip(None), ip("0.0.0.0"));
+        assert_eq!(bind_ip(Some("  ")), ip("0.0.0.0"));
+    }
+
+    #[test]
+    fn ip_hosts_are_honoured() {
+        assert_eq!(bind_ip(Some("127.0.0.1")), ip("127.0.0.1"));
+        assert_eq!(bind_ip(Some("localhost")), ip("127.0.0.1"));
+        assert_eq!(bind_ip(Some("::1")), ip("::1"));
+        assert_eq!(bind_ip(Some("[::1]")), ip("::1"));
+    }
+
+    #[test]
+    fn a_hostname_keeps_the_historical_default() {
+        assert_eq!(bind_ip(Some("web-server-01")), ip("0.0.0.0"));
     }
 }

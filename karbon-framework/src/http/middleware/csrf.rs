@@ -59,9 +59,12 @@ pub async fn csrf_protection_with(config: CsrfConfig, request: Request, next: Ne
                 .get("x-forwarded-proto")
                 .and_then(|v| v.to_str().ok())
                 .is_some_and(|v| v.eq_ignore_ascii_case("https"));
+        // Keep the browser's token: rotating it on every GET made a form submitted while
+        // another request was loading fail with "CSRF token mismatch".
+        let request_has_cookie = extract_csrf_cookie(&request).is_some_and(|t| !t.is_empty());
         let mut response = next.run(request).await;
-        // Set CSRF cookie if not already present
-        if !has_csrf_cookie(&response) {
+        // Set CSRF cookie if neither the browser nor the handler already has one
+        if !request_has_cookie && !has_csrf_cookie(&response) {
             let token = Crypto::random_token(32);
             // HttpOnly intentionally NOT set: JS must read the token to send it in X-CSRF-Token header.
             // SameSite=Strict prevents cross-site request forgery.
@@ -279,6 +282,43 @@ mod tests {
             req.extensions_mut().insert(ConnectInfo(addr));
         }
         req
+    }
+
+    // ─── CSRF cookie issuance ───
+
+    async fn get_set_cookie(cookie: Option<&str>) -> Option<String> {
+        use tower::ServiceExt;
+        let app = axum::Router::new()
+            .route("/", axum::routing::get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(csrf_protection));
+        let mut builder = Request::builder().uri("/");
+        if let Some(cookie) = cookie {
+            builder = builder.header("cookie", cookie);
+        }
+        let res = app
+            .oneshot(builder.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        res.headers()
+            .get("set-cookie")
+            .map(|v| v.to_str().unwrap().to_string())
+    }
+
+    #[tokio::test]
+    async fn get_without_cookie_issues_a_token() {
+        let cookie = get_set_cookie(None).await.expect("a csrf cookie");
+        assert!(cookie.starts_with("csrf_token="));
+        assert!(cookie.contains("SameSite=Strict"));
+    }
+
+    #[tokio::test]
+    async fn get_keeps_the_browser_token() {
+        assert_eq!(get_set_cookie(Some("a=1; csrf_token=abc")).await, None);
+    }
+
+    #[tokio::test]
+    async fn an_empty_token_is_replaced() {
+        assert!(get_set_cookie(Some("csrf_token=")).await.is_some());
     }
 
     // ─── Same-origin, no proxy (Karbon is the edge) ───
