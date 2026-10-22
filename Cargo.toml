@@ -3,7 +3,7 @@ resolver = "2"
 members = ["karbon-framework", "karbon-macros", "karbon-cli", "examples/minimal"]
 
 [workspace.package]
-version = "0.4.5"
+version = "0.4.6"
 edition = "2024"
 authors = ["LaRevueGeek"]
 license = "AGPL-3.0-or-later"
@@ -15,7 +15,7 @@ axum = { version = "0.8", features = ["multipart", "macros", "ws"] }
 axum-extra = { version = "0.12.5", features = ["typed-header"] }
 tokio = { version = "1.53.2", features = ["full"] }
 tower = { version = "0.5", features = ["full"] }
-tower-http = { version = "0.7.1", features = ["cors", "trace", "fs", "limit", "compression-full", "request-id", "util", "propagate-header", "set-header"] }
+tower-http = { version = "0.7.1", features = ["cors", "trace", "fs", "limit", "compression-full", "request-id", "util", "propagate-header", "set-header", "catch-panic"] }
 hyper = { version = "1.9.0", features = ["full"] }
 hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "tokio"] }
 

@@ -11,6 +11,47 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.6] - 2026-10-22
+
+> Security release: the client IP behind a reverse proxy can no longer be chosen by the
+> visitor, live debug mode no longer redirects off-site, and a panicking handler answers 500
+> instead of dropping the connection. Nothing changes for an honest visitor behind a single
+> local proxy.
+
+### Security
+- **Spoofable client IP.** `HttpHelper::client_ip_trusted` (rate limiter, live debug mode
+  `KARBON_DEBUG_IPS`, applications) took the **first** `X-Forwarded-For` entry, which the
+  visitor writes himself: sending `X-Forwarded-For: 1.2.3.4` through nginx/Apache was enough to
+  dodge per-IP rate limits and lockouts, forge logged IPs or match the debug allowlist. The
+  chain is now walked **from the right**, skipping trusted proxies, and the first address
+  that is not one is the client. With `TRUSTED_PROXIES=*` the last entry is used.
+- `HttpHelper::client_ip` / `client_ip_from_socket` (no trusted-proxy list) now take the
+  **last** entry, the one appended by the nearest proxy. They remain spoofable when Karbon is
+  the edge: prefer `client_ip_trusted`.
+- **Open redirect in live debug mode.** The redirect that strips `?__karbon_dev=` reused the
+  request path verbatim as `Location`, so `https://site//evil.test?__karbon_dev=off` answered
+  `Location: //evil.test` — protocol-relative, which the browser follows to another site.
+  Deactivation and a wrong key both redirect without checking anything, so the link needed no
+  secret: a phishing link under the site's own domain, and a step toward token theft wherever
+  an OAuth provider trusts that domain as a `redirect_uri`. Leading `/` and `\` are now
+  collapsed to one `/`. Affects debug builds and deployments that set `KARBON_DEBUG_KEY`.
+- **A panicking handler dropped the connection.** No layer caught panics, so the client got no
+  HTTP response at all — and one is easy to trigger from outside: `SelectBuilder` rejects an
+  invalid identifier with `assert!`, so a hostile `?sort=` passed to `order_by` panics. A
+  build with `panic = "abort"` went down on a single request. `App::serve()` now answers
+  `500` through `AppError`, which logs the panic and masks its message outside development
+  (it can quote the request that triggered it).
+
+### Added
+- **`TRUSTED_PROXIES` accepts CIDR ranges** (`10.0.0.0/8`, `2001:db8::/32`). Behind a CDN, list
+  its ranges so its edge addresses are skipped; otherwise the edge address is taken as the
+  client.
+
+### Changed
+- Several `X-Forwarded-For` headers are read as one chain.
+- `SelectBuilder::join` / `where_raw` docs no longer imply that their character check stops
+  injection: `t ON 1=1 UNION SELECT …` passes it. Both are for hardcoded SQL only.
+
 ## [0.4.5] - 2026-10-22
 
 > Fix release: nothing changes for an existing deployment that does not set `HOST`.

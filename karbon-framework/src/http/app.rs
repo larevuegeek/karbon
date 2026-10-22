@@ -4,6 +4,7 @@ use axum::{Router, middleware};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -404,6 +405,9 @@ impl App {
 
         #[allow(unused_mut)]
         let mut router = router
+            // Innermost on purpose: the 500 it builds still goes out through request-id,
+            // security headers, CORS and tracing.
+            .layer(CatchPanicLayer::custom(panic_response))
             .layer(middleware::from_fn(super::middleware::request_id))
             .layer(middleware::from_fn(super::middleware::security_headers))
             .layer(body_limit)
@@ -534,6 +538,23 @@ fn bind_ip(host: Option<&str>) -> std::net::IpAddr {
     }
 }
 
+/// Response for a handler that panicked.
+///
+/// Without it the connection is dropped with no HTTP response at all, and a panic is easy
+/// to reach from outside: `SelectBuilder` rejects an invalid identifier with `assert!`, so
+/// a `?sort=` value passed to `order_by` panics on purpose. Going through `AppError` logs
+/// the panic and masks its message outside development — the message can quote the
+/// request that triggered it.
+fn panic_response(err: Box<dyn std::any::Any + Send + 'static>) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let detail = err
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| err.downcast_ref::<&str>().copied())
+        .unwrap_or("non-string panic payload");
+    crate::error::AppError::Internal(format!("handler panicked: {detail}")).into_response()
+}
+
 /// Wait for SIGINT (Ctrl+C) or SIGTERM to gracefully shut down
 async fn shutdown_signal() {
     let ctrl_c = async {
@@ -585,5 +606,38 @@ mod tests {
     #[test]
     fn a_hostname_keeps_the_historical_default() {
         assert_eq!(bind_ip(Some("web-server-01")), ip("0.0.0.0"));
+    }
+
+    /// A hostile `?sort=` reaching `SelectBuilder::order_by` panics on purpose. The
+    /// connection must get a 500, not be dropped with no response.
+    #[tokio::test]
+    async fn a_panicking_handler_gets_a_500() {
+        use crate::db::{Order, SelectBuilder};
+        use axum::{Router, body::Body, http::Request, routing::get};
+        use tower::ServiceExt;
+        use tower_http::catch_panic::CatchPanicLayer;
+
+        let app = Router::new()
+            .route(
+                "/",
+                get(|| async {
+                    let _ =
+                        SelectBuilder::table("posts").order_by("id;DROP TABLE posts", Order::Asc);
+                    "unreachable"
+                }),
+            )
+            .layer(CatchPanicLayer::custom(super::panic_response));
+
+        let response = app
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), 500);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"], "internal_error");
     }
 }

@@ -182,7 +182,12 @@ impl SelectBuilder {
         self
     }
 
-    /// Add a JOIN clause. Must not contain SQL injection vectors (;, quotes, comments).
+    /// Add a raw JOIN clause. **WARNING**: this is NOT parameterized — only use with
+    /// hardcoded strings, NEVER with user input.
+    ///
+    /// The `;` / quote / comment check is a tripwire against obvious mistakes, not a
+    /// defence: `t ON 1=1 UNION SELECT password FROM users` contains none of them and
+    /// passes. Same for [`where_raw`](Self::where_raw).
     pub fn join(mut self, join_clause: &str) -> Self {
         assert!(
             validate_join(join_clause),
@@ -266,7 +271,8 @@ impl SelectBuilder {
     }
 
     /// Add a raw WHERE clause. **WARNING**: This is NOT parameterized.
-    /// Only use with hardcoded strings, NEVER with user input.
+    /// Only use with hardcoded strings, NEVER with user input — the character check
+    /// below does not stop keyword-based injection (see [`join`](Self::join)).
     pub fn where_raw(mut self, raw: &str) -> Self {
         assert!(
             validate_join(raw),

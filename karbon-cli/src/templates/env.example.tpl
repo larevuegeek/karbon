@@ -30,8 +30,9 @@ CORS_ORIGINS=
 # Trusted reverse proxies. When Karbon runs behind nginx/Cloudflare (TLS terminated
 # upstream), list the proxy IPs so X-Forwarded-For/Proto/Host are trusted for the real
 # client IP, rate-limiting and SSR canonical URLs. Empty = Karbon is the edge (headers
-# ignored, safe). Use "*" only if you are ALWAYS behind a trusted proxy.
-# TRUSTED_PROXIES=127.0.0.1,10.0.0.1
+# ignored, safe). Use "*" only if you are ALWAYS behind a trusted proxy. CIDR ranges are
+# accepted (a CDN in front of the local proxy: list its ranges).
+# TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8
 
 # Live debug mode (Symfony `app_dev.php` equivalent). Disabled unless KARBON_DEBUG_KEY is set.
 # On a live deployment, append ?__karbon_dev=<KEY> to any URL from an allowed IP to open a

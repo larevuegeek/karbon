@@ -146,50 +146,95 @@ impl HttpHelper {
 
     // ─── IP Address ───
 
-    /// Extract client IP from headers (X-Forwarded-For, X-Real-Ip) with fallback
-    pub fn client_ip(headers: &HeaderMap, fallback: IpAddr) -> IpAddr {
-        // X-Forwarded-For: client, proxy1, proxy2 → take first
-        if let Some(forwarded) = Self::get_header(headers, "x-forwarded-for")
-            && let Some(first) = forwarded.split(',').next()
-            && let Ok(ip) = first.trim().parse::<IpAddr>()
-        {
-            return ip;
-        }
-
-        // X-Real-Ip: single IP set by reverse proxy
-        if let Some(real_ip) = Self::get_header(headers, "x-real-ip")
-            && let Ok(ip) = real_ip.trim().parse::<IpAddr>()
-        {
-            return ip;
-        }
-
-        fallback
+    /// Every address of the `X-Forwarded-For` chain, left (client side) to right (nearest
+    /// proxy), across repeated headers. Entries that are not IP addresses are skipped.
+    fn forwarded_chain(headers: &HeaderMap) -> Vec<IpAddr> {
+        headers
+            .get_all("x-forwarded-for")
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .flat_map(|v| v.split(','))
+            .filter_map(|ip| ip.trim().parse::<IpAddr>().ok())
+            .collect()
     }
 
-    /// Extract client IP as string, with SocketAddr fallback (common Axum pattern)
+    fn real_ip_header(headers: &HeaderMap) -> Option<IpAddr> {
+        Self::get_header(headers, "x-real-ip").and_then(|ip| ip.trim().parse().ok())
+    }
+
+    /// Client IP from `X-Forwarded-For` / `X-Real-Ip`, without knowing which proxies to trust.
+    ///
+    /// Takes the **last** `X-Forwarded-For` entry, the one appended by the nearest proxy:
+    /// earlier entries are written by the client and can be anything. Even so, these headers
+    /// are only meaningful behind a reverse proxy: when Karbon is the edge, any visitor can
+    /// send them. Prefer [`client_ip_trusted`](Self::client_ip_trusted).
+    pub fn client_ip(headers: &HeaderMap, fallback: IpAddr) -> IpAddr {
+        Self::forwarded_chain(headers)
+            .last()
+            .copied()
+            .or_else(|| Self::real_ip_header(headers))
+            .unwrap_or(fallback)
+    }
+
+    /// Extract client IP as string, with SocketAddr fallback (common Axum pattern).
+    /// Same caveat as [`client_ip`](Self::client_ip): prefer [`client_ip_trusted`](Self::client_ip_trusted).
     pub fn client_ip_from_socket(headers: &HeaderMap, socket: &SocketAddr) -> String {
         Self::client_ip(headers, socket.ip()).to_string()
     }
 
-    /// Whether `peer` is a configured trusted reverse proxy. `*` trusts every peer.
+    /// Whether `peer` is a configured trusted reverse proxy: an exact address
+    /// (`127.0.0.1`, `::1`), a CIDR range (`10.0.0.0/8`, `2001:db8::/32`), or `*` for every peer.
     pub fn is_trusted_proxy(peer: IpAddr, trusted: &[String]) -> bool {
         trusted
             .iter()
-            .any(|t| t == "*" || t.parse::<IpAddr>().map(|ip| ip == peer).unwrap_or(false))
+            .any(|t| t == "*" || Self::matches_proxy(peer, t))
+    }
+
+    /// Exact address or CIDR range (`*` excluded)
+    fn matches_proxy(ip: IpAddr, entry: &str) -> bool {
+        let entry = entry.trim();
+        let Some((network, prefix)) = entry.split_once('/') else {
+            return entry.parse::<IpAddr>().is_ok_and(|t| t == ip);
+        };
+        let (Ok(network), Ok(prefix)) = (network.parse::<IpAddr>(), prefix.parse::<u32>()) else {
+            return false;
+        };
+        match (network, ip) {
+            (IpAddr::V4(net), IpAddr::V4(ip)) if prefix <= 32 => {
+                let mask = u32::MAX.checked_shl(32 - prefix).unwrap_or(0);
+                u32::from(net) & mask == u32::from(ip) & mask
+            }
+            (IpAddr::V6(net), IpAddr::V6(ip)) if prefix <= 128 => {
+                let mask = u128::MAX.checked_shl(128 - prefix).unwrap_or(0);
+                u128::from(net) & mask == u128::from(ip) & mask
+            }
+            _ => false,
+        }
     }
 
     /// Resolve the real client IP with proxy awareness:
-    /// - if the direct `peer` is a trusted proxy, trust `X-Forwarded-For`/`X-Real-IP`;
-    /// - otherwise ignore those headers (they'd be client-spoofable) and use `peer`.
+    /// - if the direct `peer` is not a trusted proxy, ignore the forwarding headers (they'd
+    ///   be client-spoofable) and use `peer`;
+    /// - otherwise walk `X-Forwarded-For` **from the right**, skipping the trusted proxies,
+    ///   and return the first address that is not one: the client as seen by our own proxy
+    ///   chain. Entries further left were written by the client and are never used.
     ///
-    /// This makes rate-limiting and IP logging correct behind nginx/Cloudflare while
-    /// staying safe when Karbon is the edge (no trusted proxy configured).
+    /// With `TRUSTED_PROXIES=*`, only the direct peer is trusted: the last entry is used.
+    /// Behind a CDN, list its ranges (CIDR) so its edge addresses are skipped too.
     pub fn client_ip_trusted(headers: &HeaderMap, peer: IpAddr, trusted: &[String]) -> IpAddr {
-        if Self::is_trusted_proxy(peer, trusted) {
-            Self::client_ip(headers, peer)
-        } else {
-            peer
+        if !Self::is_trusted_proxy(peer, trusted) {
+            return peer;
         }
+        let chain = Self::forwarded_chain(headers);
+        chain
+            .iter()
+            .rev()
+            .find(|ip| !trusted.iter().any(|t| Self::matches_proxy(**ip, t)))
+            // Every hop is a trusted proxy (internal call): the origin of the chain
+            .or(chain.first())
+            .copied()
+            .or_else(|| Self::real_ip_header(headers))
+            .unwrap_or(peer)
     }
 
     // ─── Header Helpers ───
@@ -343,7 +388,91 @@ mod tests {
         );
         let fallback: IpAddr = "127.0.0.1".parse().unwrap();
         let ip = HttpHelper::client_ip(&headers, fallback);
-        assert_eq!(ip.to_string(), "203.0.113.50");
+        // The last entry is the one our proxy appended; the first one is client-written
+        assert_eq!(ip.to_string(), "70.41.3.18");
+    }
+
+    fn xff(value: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", value.parse().unwrap());
+        headers
+    }
+
+    fn ip(s: &str) -> IpAddr {
+        s.parse().unwrap()
+    }
+
+    fn proxies(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn trusted_ip_ignores_a_spoofed_first_entry() {
+        // The visitor 203.0.113.9 sent "X-Forwarded-For: 1.2.3.4"; the local proxy appended it
+        let h = xff("1.2.3.4, 203.0.113.9");
+        let ip_seen = HttpHelper::client_ip_trusted(&h, ip("127.0.0.1"), &proxies(&["127.0.0.1"]));
+        assert_eq!(ip_seen, ip("203.0.113.9"));
+    }
+
+    #[test]
+    fn trusted_ip_skips_every_trusted_hop() {
+        // Apache → Karbon (frontend proxy) → SSR → Karbon: "visitor, 127.0.0.1"
+        let h = xff("203.0.113.9, 127.0.0.1");
+        let ip_seen =
+            HttpHelper::client_ip_trusted(&h, ip("127.0.0.1"), &proxies(&["127.0.0.1", "::1"]));
+        assert_eq!(ip_seen, ip("203.0.113.9"));
+    }
+
+    #[test]
+    fn trusted_ip_honours_cidr_ranges() {
+        // CDN edge in 173.245.48.0/20 in front of the local proxy
+        let h = xff("1.2.3.4, 198.51.100.7, 173.245.48.10");
+        let list = proxies(&["127.0.0.1", "173.245.48.0/20"]);
+        assert_eq!(
+            HttpHelper::client_ip_trusted(&h, ip("127.0.0.1"), &list),
+            ip("198.51.100.7")
+        );
+        assert!(HttpHelper::is_trusted_proxy(
+            ip("2001:db8::1"),
+            &proxies(&["2001:db8::/32"])
+        ));
+        assert!(!HttpHelper::is_trusted_proxy(
+            ip("10.0.0.1"),
+            &proxies(&["10.0.0.0/33"])
+        ));
+    }
+
+    #[test]
+    fn trusted_ip_with_a_wildcard_uses_the_last_entry() {
+        let h = xff("1.2.3.4, 203.0.113.9");
+        assert_eq!(
+            HttpHelper::client_ip_trusted(&h, ip("10.1.2.3"), &proxies(&["*"])),
+            ip("203.0.113.9")
+        );
+    }
+
+    #[test]
+    fn untrusted_peer_ignores_forwarding_headers() {
+        let h = xff("1.2.3.4");
+        assert_eq!(
+            HttpHelper::client_ip_trusted(&h, ip("198.51.100.7"), &proxies(&["127.0.0.1"])),
+            ip("198.51.100.7")
+        );
+    }
+
+    #[test]
+    fn trusted_ip_falls_back_to_real_ip_then_peer() {
+        let mut h = HeaderMap::new();
+        h.insert("x-real-ip", "203.0.113.50".parse().unwrap());
+        let list = proxies(&["127.0.0.1"]);
+        assert_eq!(
+            HttpHelper::client_ip_trusted(&h, ip("127.0.0.1"), &list),
+            ip("203.0.113.50")
+        );
+        assert_eq!(
+            HttpHelper::client_ip_trusted(&HeaderMap::new(), ip("127.0.0.1"), &list),
+            ip("127.0.0.1")
+        );
     }
 
     #[test]

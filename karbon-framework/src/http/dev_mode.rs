@@ -196,7 +196,12 @@ fn ip_allowed(ip: IpAddr, allowed: &[String]) -> bool {
 }
 
 fn strip_param(uri: &Uri) -> String {
-    let path = uri.path();
+    // The result becomes a `Location` header. A path such as `//evil.test` would be
+    // protocol-relative there, and the browser would follow it to another site — an open
+    // redirect reachable with `?__karbon_dev=off`, no key needed. Collapsing the leading
+    // separators (`\` included: browsers read `/\evil.test` as `//evil.test`) to a single
+    // `/` keeps every redirect on this origin.
+    let path = format!("/{}", uri.path().trim_start_matches(['/', '\\']));
     let kept: Vec<&str> = uri
         .query()
         .map(|q| {
@@ -346,6 +351,45 @@ mod tests {
         assert_eq!(strip_param(&uri), "/blog?a=1&b=2");
         let uri2: Uri = "/blog?__karbon_dev=x".parse().unwrap();
         assert_eq!(strip_param(&uri2), "/blog");
+    }
+
+    #[test]
+    fn strip_param_never_yields_a_protocol_relative_location() {
+        for (target, expected) in [
+            ("//evil.test?__karbon_dev=off", "/evil.test"),
+            ("//evil.test/phish?__karbon_dev=x", "/evil.test/phish"),
+            ("///evil.test?__karbon_dev=off", "/evil.test"),
+            ("/?__karbon_dev=off", "/"),
+            ("/legit/page?__karbon_dev=off", "/legit/page"),
+        ] {
+            let uri: Uri = target.parse().unwrap();
+            let location = strip_param(&uri);
+            assert_eq!(location, expected, "for {target}");
+            assert!(!location.starts_with("//"), "{target} -> {location}");
+        }
+    }
+
+    /// The exploit itself: `?__karbon_dev=off` or any wrong key redirects without checking
+    /// anything, so the `Location` it produces must stay on this origin.
+    #[test]
+    fn activation_redirects_stay_on_this_origin() {
+        let peer: IpAddr = "203.0.113.9".parse().unwrap();
+        for (target, action) in [
+            ("//evil.test?__karbon_dev=off", Action::Deactivate),
+            (
+                "//evil.test/phish?__karbon_dev=wrong",
+                Action::Activate("wrong".into()),
+            ),
+        ] {
+            let request = Request::builder().uri(target).body(Body::empty()).unwrap();
+            let response = handle_activation(action, &cfg(), peer, &request);
+            assert_eq!(response.status(), StatusCode::SEE_OTHER);
+            let location = response.headers()[header::LOCATION].to_str().unwrap();
+            assert!(
+                location.starts_with('/') && !location.starts_with("//"),
+                "{target} redirected off-site to {location}"
+            );
+        }
     }
 
     #[tokio::test]
