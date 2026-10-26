@@ -1,7 +1,7 @@
 use sqlx::{Arguments, AssertSqlSafe};
 
 use super::{Db, DbArguments, placeholder};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 /// `column IN (?, …)` en liant chaque valeur ; une liste vide donne `1 = 0` (ne correspond à
 /// rien) plutôt qu'un `IN ()` invalide.
@@ -261,12 +261,16 @@ impl UpdateBuilder {
 
 /// Runtime DELETE query builder.
 ///
-/// Accepts either a `&DbPool` or a `&mut Transaction` via `execute()`.
+/// Accepts either a `&DbPool` or a `&mut Transaction` via `execute()`. A DELETE without
+/// any condition is refused unless [`all`](Self::all) says so.
 pub struct DeleteBuilder {
     table: String,
     where_clauses: Vec<String>,
     args: DbArguments,
     param_count: usize,
+    all_rows: bool,
+    #[cfg(feature = "mysql")]
+    limit: Option<u64>,
 }
 
 impl DeleteBuilder {
@@ -276,18 +280,65 @@ impl DeleteBuilder {
             where_clauses: Vec::new(),
             args: DbArguments::default(),
             param_count: 0,
+            all_rows: false,
+            #[cfg(feature = "mysql")]
+            limit: None,
         }
     }
 
     /// WHERE column = ?
-    pub fn where_eq<T>(mut self, column: &str, value: T) -> Self
+    pub fn where_eq<T>(self, column: &str, value: T) -> Self
     where
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
+        self.where_op(column, "=", value)
+    }
+
+    /// WHERE column < ?
+    pub fn where_lt<T>(self, column: &str, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+    {
+        self.where_op(column, "<", value)
+    }
+
+    /// WHERE column <= ?
+    pub fn where_lte<T>(self, column: &str, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+    {
+        self.where_op(column, "<=", value)
+    }
+
+    /// WHERE column > ?
+    pub fn where_gt<T>(self, column: &str, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+    {
+        self.where_op(column, ">", value)
+    }
+
+    /// WHERE column >= ?
+    pub fn where_gte<T>(self, column: &str, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+    {
+        self.where_op(column, ">=", value)
+    }
+
+    /// WHERE column < now, by the database clock: right for a column the database fills
+    /// itself (`NOW()`), whatever the application's time zone.
+    pub fn where_before_now(mut self, column: &str) -> Self {
+        self.where_clauses.push(format!("{column} < {NOW_SQL}"));
+        self
+    }
+
+    /// WHERE column < now − `age`, by the database clock. The age is bound, in seconds.
+    pub fn where_older_than(mut self, column: &str, age: std::time::Duration) -> Self {
         self.param_count += 1;
-        self.where_clauses
-            .push(format!("{} = {}", column, placeholder(self.param_count)));
-        self.args.add(value).unwrap();
+        let cutoff = older_than_sql(&placeholder(self.param_count));
+        self.where_clauses.push(format!("{column} < {cutoff}"));
+        self.args.add(age_seconds(age)).unwrap();
         self
     }
 
@@ -307,13 +358,35 @@ impl DeleteBuilder {
         self
     }
 
+    /// Deletes every row of the table: required to run a DELETE without condition.
+    pub fn all(mut self) -> Self {
+        self.all_rows = true;
+        self
+    }
+
+    /// `LIMIT n` — MySQL only, hence absent from the other drivers: bounds one pass of a
+    /// large purge, the rest goes on the next one.
+    #[cfg(feature = "mysql")]
+    pub fn limit(mut self, limit: u64) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
     /// Requête SQL générée (sans les valeurs).
     pub fn to_sql(&self) -> String {
-        format!(
+        #[allow(unused_mut)]
+        let mut sql = format!(
             "DELETE FROM {}{}",
             self.table,
             where_sql(&self.where_clauses)
-        )
+        );
+
+        #[cfg(feature = "mysql")]
+        if let Some(limit) = self.limit {
+            sql.push_str(&format!(" LIMIT {limit}"));
+        }
+
+        sql
     }
 
     /// Execute the DELETE and return rows_affected
@@ -321,6 +394,13 @@ impl DeleteBuilder {
     where
         E: sqlx::Executor<'e, Database = Db>,
     {
+        if self.where_clauses.is_empty() && !self.all_rows {
+            return Err(AppError::Internal(format!(
+                "DELETE FROM {} without condition refused: add a where_* or call .all()",
+                self.table
+            )));
+        }
+
         let sql = self.to_sql();
 
         let result = sqlx::query_with(AssertSqlSafe(sql), self.args)
@@ -329,6 +409,52 @@ impl DeleteBuilder {
 
         Ok(result.rows_affected())
     }
+
+    fn where_op<T>(mut self, column: &str, op: &str, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+    {
+        self.param_count += 1;
+        self.where_clauses.push(format!(
+            "{} {} {}",
+            column,
+            op,
+            placeholder(self.param_count)
+        ));
+        self.args.add(value).unwrap();
+        self
+    }
+}
+
+#[cfg(not(feature = "sqlite"))]
+const NOW_SQL: &str = "NOW()";
+#[cfg(feature = "sqlite")]
+const NOW_SQL: &str = "datetime('now')";
+
+#[cfg(feature = "mysql")]
+fn older_than_sql(seconds: &str) -> String {
+    format!("NOW() - INTERVAL {seconds} SECOND")
+}
+
+#[cfg(feature = "postgres")]
+fn older_than_sql(seconds: &str) -> String {
+    format!("NOW() - make_interval(secs => {seconds})")
+}
+
+#[cfg(feature = "sqlite")]
+fn older_than_sql(seconds: &str) -> String {
+    format!("datetime('now', '-' || {seconds} || ' seconds')")
+}
+
+#[cfg(not(feature = "postgres"))]
+fn age_seconds(age: std::time::Duration) -> i64 {
+    i64::try_from(age.as_secs()).unwrap_or(i64::MAX)
+}
+
+/// `make_interval(secs => …)` takes a double precision.
+#[cfg(feature = "postgres")]
+fn age_seconds(age: std::time::Duration) -> f64 {
+    age.as_secs() as f64
 }
 
 // ─────────────────────────────────────────────
@@ -464,5 +590,62 @@ mod where_in_tests {
         assert_eq!(b.to_sql(), "DELETE FROM forum_post WHERE 1 = 0");
         let c = CountBuilder::from("content").where_in::<i64>("id", &[]);
         assert_eq!(c.to_sql(), "SELECT COUNT(*) FROM content WHERE 1 = 0");
+    }
+}
+
+#[cfg(test)]
+mod delete_tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn comparisons_bind_their_value() {
+        let b = DeleteBuilder::from("logs")
+            .where_eq("site", 2_i64)
+            .where_lt("created_at", 10_i64)
+            .where_gte("level", 3_i64);
+        assert_eq!(
+            b.to_sql(),
+            format!(
+                "DELETE FROM logs WHERE site = {} AND created_at < {} AND level >= {}",
+                placeholder(1),
+                placeholder(2),
+                placeholder(3)
+            )
+        );
+    }
+
+    #[test]
+    fn age_conditions_use_the_database_clock() {
+        let b = DeleteBuilder::from("tokens")
+            .where_before_now("exp")
+            .where_older_than("seen_at", Duration::from_secs(86_400));
+        assert_eq!(
+            b.to_sql(),
+            format!(
+                "DELETE FROM tokens WHERE exp < {NOW_SQL} AND seen_at < {}",
+                older_than_sql(&placeholder(1))
+            )
+        );
+        assert_eq!(b.param_count, 1);
+    }
+
+    #[cfg(feature = "mysql")]
+    #[test]
+    fn mysql_limit_closes_the_statement() {
+        let b = DeleteBuilder::from("sessions")
+            .where_older_than("expires_at", Duration::from_secs(60))
+            .limit(20_000);
+        assert_eq!(
+            b.to_sql(),
+            "DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL ? SECOND LIMIT 20000"
+        );
+    }
+
+    #[test]
+    fn without_condition_only_all_is_explicit() {
+        assert_eq!(DeleteBuilder::from("t").all().to_sql(), "DELETE FROM t");
+        assert!(!DeleteBuilder::from("t").all_rows);
     }
 }

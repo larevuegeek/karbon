@@ -3,7 +3,7 @@ mod collector;
 mod handlers;
 pub mod middleware;
 
-pub use builder::build;
+pub use builder::{build, build_with_token};
 
 /// The Studio auth token, injected into request extensions so the debug toolbar
 /// can build an authenticated `/_studio?token=…` link.

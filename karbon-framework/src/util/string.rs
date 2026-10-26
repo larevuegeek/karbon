@@ -18,16 +18,21 @@ impl StringHelper {
     /// Extract an excerpt around a keyword with surrounding context
     pub fn excerpt(value: &str, keyword: &str, radius: usize, suffix: Option<&str>) -> String {
         let suffix = suffix.unwrap_or("...");
-        let lower = value.to_lowercase();
         let keyword_lower = keyword.to_lowercase();
-
-        let pos = match lower.find(&keyword_lower) {
-            Some(p) => p,
-            None => return Self::truncate(value, radius * 2, Some(suffix)),
-        };
-
         let chars: Vec<char> = value.chars().collect();
-        let char_pos = value[..pos].chars().count();
+
+        // Search in `value` itself, comparing lowercase forms, so the position is a char
+        // index of `value`. Searching `value.to_lowercase()` gave a byte offset into the
+        // lowercased copy, which is not an offset into `value`: some characters change
+        // UTF-8 length when lowercased (U+023A, U+0130, the Kelvin sign), and slicing
+        // `value` with it panicked.
+        let char_pos = (0..chars.len()).find(|&i| {
+            let mut folded = chars[i..].iter().flat_map(|c| c.to_lowercase());
+            keyword_lower.chars().all(|k| folded.next() == Some(k))
+        });
+        let Some(char_pos) = char_pos else {
+            return Self::truncate(value, radius * 2, Some(suffix));
+        };
 
         let start = char_pos.saturating_sub(radius);
         let end = (char_pos + keyword.chars().count() + radius).min(chars.len());
@@ -133,11 +138,11 @@ impl StringHelper {
         let local = parts[0];
         let domain = parts[1];
 
-        let masked_local = if local.len() <= 2 {
-            format!("{}***", &local[..1.min(local.len())])
-        } else {
-            format!("{}***", &local[..2])
-        };
+        // Counted in chars: byte slicing panicked on a local part starting with a
+        // multi-byte character ("élodie@…").
+        let keep = if local.chars().count() <= 2 { 1 } else { 2 };
+        let prefix: String = local.chars().take(keep).collect();
+        let masked_local = format!("{prefix}***");
 
         let domain_parts: Vec<&str> = domain.rsplitn(2, '.').collect();
         let masked_domain = if domain_parts.len() == 2 {
@@ -298,6 +303,33 @@ mod tests {
             "us***@***.com"
         );
         assert_eq!(StringHelper::mask_email("a@b.io"), "a***@***.io");
+    }
+
+    #[test]
+    fn mask_email_handles_a_multibyte_local_part() {
+        assert_eq!(StringHelper::mask_email("élodie@x.fr"), "él***@***.fr");
+        assert_eq!(StringHelper::mask_email("é@x.fr"), "é***@***.fr");
+    }
+
+    /// These characters change UTF-8 length when lowercased; a byte offset found in the
+    /// lowercased copy used to land past the end of `value` or mid-character and panic.
+    #[test]
+    fn excerpt_survives_text_whose_lowercase_changes_length() {
+        // radius 0 makes the output exactly the match plus its ellipses, so a wrong
+        // position fails the test as surely as a panic does.
+        for (text, expected) in [
+            ("\u{23A}\u{23A}\u{23A}\u{23A} foo", "...foo"), // 2 -> 3 bytes: offset past the end
+            ("\u{130}\u{130}\u{130}\u{130} foo", "...foo"), // 2 -> 3 bytes
+            ("\u{212A}\u{212A}\u{212A} foo bar", "...foo..."), // 3 -> 1 byte: mid-character
+        ] {
+            assert_eq!(
+                StringHelper::excerpt(text, "foo", 0, None),
+                expected,
+                "{text:?}"
+            );
+        }
+        // The match is case-insensitive and the excerpt keeps the original casing.
+        assert!(StringHelper::excerpt("Hello FOO world", "foo", 3, None).contains("FOO"));
     }
 
     #[test]

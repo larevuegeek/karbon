@@ -23,10 +23,10 @@ pub fn run(config: &KarbonConfig, root: &Path, online: bool) -> Result<(), Strin
     check_routing(&mut r, root);
     check_admin_entities(&mut r, root);
     check_database(&mut r, root);
-    check_migrations(&mut r, root);
+    check_migrations(&mut r, &config.migration_dir(root));
     check_frontend(&mut r, config, root);
     if online {
-        check_database_online(&mut r, root);
+        check_database_online(&mut r, root, &config.migration_dir(root));
     }
 
     r.summary();
@@ -39,7 +39,7 @@ pub fn run(config: &KarbonConfig, root: &Path, online: bool) -> Result<(), Strin
 
 /// Connect to the database (opt-in, `--db`) and report connectivity + pending
 /// migrations. Reuses the sqlx `Any` driver (like `karbon migrate`).
-fn check_database_online(r: &mut Report, root: &Path) {
+fn check_database_online(r: &mut Report, root: &Path, migration_dir: &Path) {
     let env_path = root.join(".env");
     let Ok(content) = fs::read_to_string(&env_path) else {
         r.info("Base (online)", "pas de .env — rien à tester");
@@ -50,7 +50,7 @@ fn check_database_online(r: &mut Report, root: &Path) {
         r.info("Base (online)", "DB non configurée — rien à tester");
         return;
     };
-    let migration_count = fs::read_dir(root.join("migration"))
+    let migration_count = fs::read_dir(migration_dir)
         .map(|es| {
             es.filter_map(|e| e.ok())
                 .filter(|e| e.path().extension().is_some_and(|x| x == "sql"))
@@ -315,9 +315,8 @@ fn check_database(r: &mut Report, root: &Path) {
 }
 
 /// Migration files: count + duplicate version-number detection.
-fn check_migrations(r: &mut Report, root: &Path) {
-    let dir = root.join("migration");
-    let Ok(entries) = fs::read_dir(&dir) else {
+fn check_migrations(r: &mut Report, dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
         r.info("Migrations", "pas de dossier migration/");
         return;
     };

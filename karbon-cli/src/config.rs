@@ -13,6 +13,24 @@ pub struct KarbonConfig {
     pub proxy: ProxyConfig,
     #[serde(default)]
     pub deploy: Option<DeployConfig>,
+    #[serde(default)]
+    pub migration: MigrationConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MigrationConfig {
+    /// Migrations folder, relative to karbon.toml (default `migration`). Point several
+    /// applications sharing one database at the same folder.
+    #[serde(default = "default_migration_dir")]
+    pub dir: String,
+}
+
+impl Default for MigrationConfig {
+    fn default() -> Self {
+        Self {
+            dir: default_migration_dir(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -152,6 +170,10 @@ fn default_build_cmd() -> String {
 fn default_serve_cmd() -> String {
     "node build/index.js".to_string()
 }
+fn default_migration_dir() -> String {
+    "migration".to_string()
+}
+
 fn default_backend_routes() -> Vec<String> {
     vec![
         "/api".to_string(),
@@ -179,6 +201,10 @@ impl KarbonConfig {
                 return Err("karbon.toml not found (searched from current dir upward)".to_string());
             }
         }
+    }
+
+    pub fn migration_dir(&self, root: &Path) -> PathBuf {
+        root.join(&self.migration.dir)
     }
 
     /// Absolute path to the frontend directory (None for backend-only projects).

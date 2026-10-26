@@ -1,6 +1,9 @@
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Request};
-use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
+use axum::http::HeaderValue;
+use axum::http::header::{
+    CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG, EXPIRES, LAST_MODIFIED,
+};
 use axum::middleware::Next;
 use axum::response::Response;
 use std::net::SocketAddr;
@@ -130,6 +133,15 @@ pub async fn studio_toolbar_middleware(request: Request, next: Next) -> Response
         html.insert_str(pos, &toolbar);
         // Body length changed — let the server recompute it.
         parts.headers.remove(CONTENT_LENGTH);
+        // The page now carries the Studio token. Override whatever caching the app set:
+        // a shared cache keyed on the URL would otherwise serve this debug page, token
+        // included, to every visitor. The validators go too, so nothing revalidates it.
+        parts
+            .headers
+            .insert(CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
+        parts.headers.remove(EXPIRES);
+        parts.headers.remove(ETAG);
+        parts.headers.remove(LAST_MODIFIED);
         Response::from_parts(parts, Body::from(html))
     } else {
         Response::from_parts(parts, Body::from(bytes))
@@ -302,5 +314,40 @@ mod tests {
         .unwrap();
         let html = body_string(res).await;
         assert!(!html.contains("karbon-toolbar"));
+    }
+
+    /// The injected toolbar carries the Studio token, so the page must never be stored by
+    /// a shared cache, whatever caching headers the app set.
+    #[tokio::test]
+    async fn a_page_with_the_toolbar_is_never_cacheable() {
+        let app = Router::new()
+            .route(
+                "/",
+                get(|| async {
+                    (
+                        [
+                            (CACHE_CONTROL, "public, max-age=600"),
+                            (ETAG, "\"v1\""),
+                            (EXPIRES, "Thu, 01 Jan 2099 00:00:00 GMT"),
+                        ],
+                        Html("<html><body>hi</body></html>"),
+                    )
+                }),
+            )
+            .layer(axum::middleware::from_fn(studio_toolbar_middleware))
+            .layer(axum::Extension(super::super::StudioToken(
+                "s3cret-token".into(),
+            )));
+        let res = crate::http::dev_mode::scoped(
+            true,
+            app.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(res.headers()[CACHE_CONTROL], "private, no-store");
+        assert!(res.headers().get(ETAG).is_none());
+        assert!(res.headers().get(EXPIRES).is_none());
+        assert!(body_string(res).await.contains("s3cret-token"));
     }
 }

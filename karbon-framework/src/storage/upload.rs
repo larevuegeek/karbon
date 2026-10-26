@@ -213,6 +213,59 @@ fn svg_event_handler_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r#"(?i)[\s"'/]on[a-z]+\s*="#).unwrap())
 }
 
+/// An active-content element, with or without a namespace prefix (`<s:script`).
+/// `<use>` loads external content, `<animate*>`/`<set>` can animate attributes to
+/// `javascript:`, `<foreignObject>` embeds HTML.
+fn svg_active_element_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(
+            r"<\s*(?:[a-z0-9_.-]+:)?(?:script|foreignobject|iframe|embed|object|use|animate[a-z]*|set|handler)\b",
+        )
+        .unwrap()
+    })
+}
+
+/// `content` with numeric character references (`&#106;`, `&#x6A;`, `&#0106`, `;`
+/// optional) replaced by the character, as an XML or HTML parser would read them.
+/// References that do not name a valid character are left as written.
+fn decode_char_refs(content: &str) -> String {
+    let mut out = String::with_capacity(content.len());
+    let mut rest = content;
+    while let Some(start) = rest.find("&#") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let (radix, digits_from) = match after.as_bytes().first() {
+            Some(b'x' | b'X') => (16, 1),
+            _ => (10, 0),
+        };
+        let digits: String = after[digits_from..]
+            .chars()
+            .take_while(|c| c.is_digit(radix))
+            .collect();
+        let decoded = (!digits.is_empty())
+            .then(|| u32::from_str_radix(&digits, radix).ok())
+            .flatten()
+            .and_then(char::from_u32);
+        match decoded {
+            Some(c) => {
+                out.push(c);
+                let mut consumed = digits_from + digits.len();
+                if after[consumed..].starts_with(';') {
+                    consumed += 1;
+                }
+                rest = &after[consumed..];
+            }
+            None => {
+                out.push_str("&#");
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Sanitize a client-supplied original filename for safe storage/echo: strip any path
 /// components, control chars and HTML-significant chars, and bound the length. This is
 /// display metadata only (the on-disk name is a UUID), but callers may render it.
@@ -233,17 +286,28 @@ fn sanitize_original_name(name: &str) -> String {
 
 /// Validate that SVG content doesn't contain dangerous constructs.
 ///
-/// A denylist can never be complete, so callers should ALSO serve user SVGs with
-/// `Content-Disposition: attachment` and/or a strict CSP (the framework's image handler
-/// already sets `nosniff` + a restrictive CSP). This check blocks the common stored-XSS
-/// vectors: scripts, any `on*=` handler, active-content elements, `javascript:`/`data:`
-/// schemes, external references, and XML entity / doctype (XXE) declarations.
+/// A denylist can never be complete. It is the first line only: user SVGs must also be
+/// served with a strict CSP or `Content-Disposition: attachment`. `ImgResizer` does both
+/// lines for the files it serves — its `/r/original` branch and its `ServeDir` fallback
+/// send `default-src 'none'` (the fallback adds `sandbox`) and `nosniff` on SVG, so a
+/// script that got past this check still does not run there.
+///
+/// Blocked: script and other active-content elements whatever their namespace prefix
+/// (`<s:script>` is a script element too), any `on*=` handler, `javascript:`/`data:`
+/// schemes even when written with character references (`&#106;avascript:`) or broken by
+/// whitespace, external references, and XML entity / doctype (XXE) declarations.
 fn validate_svg_content(data: &[u8]) -> AppResult<()> {
     let content = std::str::from_utf8(data)
         .map_err(|_| AppError::BadRequest("Invalid SVG: not valid UTF-8".to_string()))?;
 
-    // Normalize numeric/hex entities so `java&#115;cript:` obfuscation can't slip past.
-    let lower = content.to_lowercase();
+    // Character references decoded, so `&#106;avascript:` is seen as `javascript:`.
+    let lower = decode_char_refs(content).to_lowercase();
+    // Browsers drop ASCII whitespace and control characters inside a URL scheme, so
+    // `java\tscript:` is `javascript:` to them: schemes are matched on this form.
+    let compact: String = lower
+        .chars()
+        .filter(|c| !c.is_ascii_whitespace() && !c.is_control())
+        .collect();
 
     if svg_event_handler_re().is_match(&lower) {
         return Err(AppError::BadRequest(
@@ -251,16 +315,16 @@ fn validate_svg_content(data: &[u8]) -> AppResult<()> {
         ));
     }
 
+    // Matched on the local name, prefix or not: `<script>`, `<svg:script>` and
+    // `<s:script>` are all script elements once the namespace is resolved.
+    if let Some(m) = svg_active_element_re().find(&lower) {
+        return Err(AppError::BadRequest(format!(
+            "SVG contains a forbidden element: {}",
+            m.as_str().trim_start_matches('<').trim()
+        )));
+    }
+
     let dangerous = [
-        "<script",
-        "<foreignobject",
-        "<iframe",
-        "<embed",
-        "<object",
-        "<use",     // <use href="javascript:…"> / external refs
-        "<animate", // SMIL can animate attributes to javascript:
-        "<set",
-        "<handler",
         "javascript:",
         "vbscript:",
         "data:text/html",
@@ -276,7 +340,7 @@ fn validate_svg_content(data: &[u8]) -> AppResult<()> {
     ];
 
     for pattern in &dangerous {
-        if lower.contains(pattern) {
+        if compact.contains(pattern) {
             return Err(AppError::BadRequest(format!(
                 "SVG contains forbidden content: {}",
                 pattern
@@ -525,6 +589,35 @@ mod tests {
     fn test_svg_validation_xss_javascript_uri() {
         let svg = b"<svg><a xlink:href=\"javascript:alert(1)\">click</a></svg>";
         assert!(validate_svg_content(svg).is_err());
+    }
+
+    /// The bypasses the substring denylist let through: a namespace-prefixed script, a
+    /// scheme written with character references, and a scheme broken by whitespace.
+    #[test]
+    fn test_svg_validation_rejects_obfuscated_active_content() {
+        for svg in [
+            r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:s="http://www.w3.org/2000/svg"><s:script>fetch('/x')</s:script></svg>"#,
+            r#"<svg><svg:script>alert(1)</svg:script></svg>"#,
+            r#"<svg><x:foreignObject><p>x</p></x:foreignObject></svg>"#,
+            r#"<svg><a href="&#106;avascript:alert(1)">x</a></svg>"#,
+            r#"<svg><a href="&#x6A;avascript:alert(1)">x</a></svg>"#,
+            r#"<svg><a href="&#0000106avascript:alert(1)">x</a></svg>"#,
+            "<svg><a href=\"java\tscript:alert(1)\">x</a></svg>",
+            "<svg><a href=\"java&#9;script:alert(1)\">x</a></svg>",
+        ] {
+            assert!(
+                validate_svg_content(svg.as_bytes()).is_err(),
+                "accepted: {svg}"
+            );
+        }
+    }
+
+    /// Prefixed elements and attributes that are not active content stay accepted:
+    /// Inkscape and Illustrator exports are full of them.
+    #[test]
+    fn test_svg_validation_keeps_ordinary_prefixed_markup() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"><sodipodi:namedview id="v"/><defs><circle id="c" r="4"/></defs><a xlink:href="#c"><text>user settings &#38; more</text></a></svg>"##;
+        assert!(validate_svg_content(svg.as_bytes()).is_ok());
     }
 
     #[test]

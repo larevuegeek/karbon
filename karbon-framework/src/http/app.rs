@@ -17,6 +17,10 @@ use crate::db::Database;
 use crate::mail::Mailer;
 use crate::security::RoleHierarchy;
 
+/// Shortest `KARBON_STUDIO_TOKEN` accepted: the generated token is 32 characters too.
+#[cfg(feature = "studio")]
+const STUDIO_TOKEN_MIN_LEN: usize = 32;
+
 /// Application state shared across all handlers
 #[derive(Clone)]
 pub struct AppState {
@@ -393,14 +397,47 @@ impl App {
             } else {
                 None
             };
-            let (studio_router, collector, token) = crate::studio::build(studio_db);
+            // A token the operator chose, if long enough to be a credential.
+            let chosen_token = std::env::var("KARBON_STUDIO_TOKEN")
+                .ok()
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty());
+            let chosen_token = match chosen_token {
+                Some(t) if t.len() < STUDIO_TOKEN_MIN_LEN => {
+                    tracing::warn!(
+                        "KARBON_STUDIO_TOKEN is shorter than {STUDIO_TOKEN_MIN_LEN} characters: \
+                         ignored, a random token is used instead"
+                    );
+                    None
+                }
+                other => other,
+            };
+            let from_env = chosen_token.is_some();
+            let (studio_router, collector, token) = match chosen_token {
+                Some(t) => crate::studio::build_with_token(studio_db, t),
+                None => crate::studio::build(studio_db),
+            };
             // Studio router already has its own state, merge at Router<()> level later
-            tracing::info!(
-                "\x1b[38;5;141m⚡ Studio\x1b[0m → http://{}:{}/_studio?token={}",
-                "localhost",
-                self.config.port,
-                token
-            );
+            if cfg!(debug_assertions) {
+                // Local dev: the log is the developer's own terminal.
+                tracing::info!(
+                    "\x1b[38;5;141m⚡ Studio\x1b[0m → http://{}:{}/_studio?token={}",
+                    "localhost",
+                    self.config.port,
+                    token
+                );
+            } else if from_env {
+                tracing::info!(
+                    "\x1b[38;5;141m⚡ Studio\x1b[0m → /_studio (token from KARBON_STUDIO_TOKEN)"
+                );
+            } else {
+                // Release: logs are shipped and read by more people than the operator, and
+                // the token opens Studio from any address. Never log it.
+                tracing::info!(
+                    "\x1b[38;5;141m⚡ Studio\x1b[0m enabled; its token is not logged in release \
+                     builds — open it from a debug session's toolbar, or set KARBON_STUDIO_TOKEN"
+                );
+            }
             Some((studio_router, collector, token))
         } else {
             None

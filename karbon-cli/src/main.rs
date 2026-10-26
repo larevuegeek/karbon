@@ -150,6 +150,18 @@ fn main() {
         return;
     }
 
+    // `migrate` also runs from a folder holding `migration/` and no karbon.toml: a
+    // workspace whose applications share one database.
+    if let Commands::Migrate { action, name } = &cli.command {
+        let result = commands::migrate::locate()
+            .and_then(|(root, dir)| commands::migrate::run(&root, &dir, action, name.as_deref()));
+        if let Err(e) = result {
+            eprintln!("\n{} {e}\n", "error:".red().bold());
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // Commands that need karbon.toml
     let (config, root) = match KarbonConfig::load() {
         Ok(v) => v,
@@ -183,12 +195,8 @@ fn main() {
             },
         ),
         Commands::Maintenance { ref action } => commands::maintenance::run(&root, action),
-        Commands::Migrate {
-            ref action,
-            ref name,
-        } => commands::migrate::run(&root, action, name.as_deref()),
         Commands::Deploy { ref target } => commands::deploy::run(&config, &root, target),
-        Commands::New { .. } | Commands::Docs { .. } => unreachable!(),
+        Commands::New { .. } | Commands::Docs { .. } | Commands::Migrate { .. } => unreachable!(),
     };
 
     if let Err(e) = result {

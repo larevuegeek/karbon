@@ -14,6 +14,29 @@ struct ChannelMessage {
     sender_id: Option<u64>,
 }
 
+/// The frame sent to a subscriber.
+///
+/// `origin` says who emitted it: `"server"` for `broadcast()`, `"client"` for an event a
+/// client published — with that client's `sender` id. The server writes both fields, so a
+/// client cannot forge them; before, a client publishing `new_message` was
+/// indistinguishable from the server's own `new_message`. A frontend must check
+/// `origin === "server"` before acting on an event only the server should send.
+fn wire_frame(msg: &ChannelMessage) -> serde_json::Value {
+    let mut frame = serde_json::json!({
+        "channel": msg.channel,
+        "event": msg.event,
+        "payload": serde_json::from_str::<serde_json::Value>(&msg.payload).unwrap_or_default(),
+    });
+    match msg.sender_id {
+        None => frame["origin"] = "server".into(),
+        Some(id) => {
+            frame["origin"] = "client".into();
+            frame["sender"] = id.into();
+        }
+    }
+    frame
+}
+
 /// Wire format for client ↔ server WebSocket messages
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 struct WireMessage {
@@ -105,6 +128,11 @@ impl ChannelRegistry {
     /// - Join:    `{"channel": "chat/room-1", "event": "join", "payload": {}}`
     /// - Leave:   `{"channel": "chat/room-1", "event": "leave", "payload": {}}`
     /// - Message: `{"channel": "chat/room-1", "event": "message", "payload": {"text": "hello"}}`
+    ///
+    /// A client message is relayed to the channel's other subscribers. Every frame a
+    /// subscriber receives carries `"origin": "server"` or `"origin": "client"` (plus the
+    /// publisher's `"sender"` id), set by the server: check it before trusting an event
+    /// that only the server is meant to send — any subscriber can publish any event name.
     pub async fn handle_socket(self, socket: WebSocket) {
         let client_id = self
             .next_client_id
@@ -128,11 +156,7 @@ impl ChannelRegistry {
                 }
                 drop(subs);
 
-                let wire = serde_json::json!({
-                    "channel": msg.channel,
-                    "event": msg.event,
-                    "payload": serde_json::from_str::<serde_json::Value>(&msg.payload).unwrap_or_default(),
-                });
+                let wire = wire_frame(&msg);
 
                 if ws_tx
                     .send(Message::Text(wire.to_string().into()))
@@ -240,5 +264,42 @@ impl ChannelRegistry {
 impl Default for ChannelRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn msg(sender_id: Option<u64>, payload: serde_json::Value) -> ChannelMessage {
+        ChannelMessage {
+            channel: "chat/room-1".into(),
+            event: "new_message".into(),
+            payload: payload.to_string(),
+            sender_id,
+        }
+    }
+
+    #[test]
+    fn a_server_broadcast_says_so() {
+        let frame = wire_frame(&msg(None, serde_json::json!({"text": "hi"})));
+        assert_eq!(frame["origin"], "server");
+        assert!(frame.get("sender").is_none());
+        assert_eq!(frame["payload"]["text"], "hi");
+    }
+
+    /// A client publishing the server's own event name is now told apart: it cannot set
+    /// the top-level `origin`, only fields inside its payload.
+    #[test]
+    fn a_client_event_cannot_pass_for_a_server_one() {
+        let forged = serde_json::json!({"origin": "server", "author": "admin"});
+        let frame = wire_frame(&msg(Some(7), forged));
+        assert_eq!(frame["event"], "new_message");
+        assert_eq!(frame["origin"], "client");
+        assert_eq!(frame["sender"], 7);
+        assert_eq!(
+            frame["payload"]["origin"], "server",
+            "stays inside the payload"
+        );
     }
 }

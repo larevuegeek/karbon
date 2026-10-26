@@ -23,8 +23,17 @@ use super::handlers::{self, StudioState};
 ///     .layer(Extension(collector));
 /// ```
 pub fn build(db: Option<crate::db::DbPool>) -> (Router, StudioCollector, String) {
+    build_with_token(db, generate_token())
+}
+
+/// Like [`build`], with a token the operator chose (`KARBON_STUDIO_TOKEN`) instead of a
+/// random one. A release build no longer logs the token, so a deployment that enables
+/// Studio with `KARBON_STUDIO` alone needs a way to know it.
+pub fn build_with_token(
+    db: Option<crate::db::DbPool>,
+    token: String,
+) -> (Router, StudioCollector, String) {
     let collector = StudioCollector::new();
-    let token = generate_token();
 
     let state = StudioState {
         collector: collector.clone(),

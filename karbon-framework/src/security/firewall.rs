@@ -150,7 +150,13 @@ pub async fn enforce(
     req: Request,
     next: Next,
 ) -> Response {
-    let roles = match ac.decision(req.uri().path()) {
+    // Rules run on the path as handlers resolve it: on the raw path, `/%70rivate`
+    // matched no `^/private` rule while a decoding handler still served `/private`.
+    // A path that cannot be decoded safely is refused rather than guessed at.
+    let Some(path) = crate::util::HttpHelper::canonical_path(req.uri().path()) else {
+        return (StatusCode::BAD_REQUEST, "Bad request").into_response();
+    };
+    let roles = match ac.decision(&path) {
         Decision::Allow => return next.run(req).await,
         Decision::Deny => return (StatusCode::FORBIDDEN, "Forbidden").into_response(),
         Decision::Require(roles) => roles.to_vec(),
@@ -217,6 +223,29 @@ mod tests {
         match fw.decision("/members/area") {
             Decision::Require(roles) => assert!(roles.is_empty()),
             _ => panic!("expected Require"),
+        }
+    }
+
+    /// `enforce` decides on `HttpHelper::canonical_path`, not on the raw path: before,
+    /// `/%61dmin` matched no `^/admin` rule while a decoding handler served `/admin`.
+    #[test]
+    fn encoded_spellings_of_a_protected_prefix_still_hit_the_rule() {
+        let fw = ac();
+        for raw in [
+            "/%61dmin/users",
+            "/%61dmin",
+            "//admin",
+            "/./admin",
+            "/admin%2Fx",
+        ] {
+            match crate::util::HttpHelper::canonical_path(raw) {
+                // Refused outright by `enforce` (400): never reaches a handler.
+                None => {}
+                Some(path) => assert!(
+                    matches!(fw.decision(&path), Decision::Require(_)),
+                    "{raw} -> {path} slipped past the ^/admin rule"
+                ),
+            }
         }
     }
 }

@@ -129,10 +129,15 @@ pub async fn dashboard(
     }
 
     let html = include_str!("assets/index.html").replace("{{TOKEN}}", &state.token);
-    let secure = headers
-        .get("x-forwarded-proto")
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.eq_ignore_ascii_case("https"));
+    // The cookie is the whole Studio credential. Outside a local debug build it is always
+    // `Secure`: relying on `X-Forwarded-Proto` issued it in clear behind a TLS proxy that
+    // does not set the header (nginx's default). Browsers accept `Secure` cookies on
+    // `http://localhost`, so a release build tried locally still works.
+    let secure = !cfg!(debug_assertions)
+        || headers
+            .get("x-forwarded-proto")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.eq_ignore_ascii_case("https"));
     let cookie = format!(
         "_studio_token={}; Path=/_studio; HttpOnly; SameSite=Strict{}",
         state.token,
@@ -565,5 +570,46 @@ async fn handle_ws(mut socket: WebSocket, state: StudioState) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The cookie is the whole Studio credential: `Secure` in every release build, and in
+    /// a debug build only behind an HTTPS-terminating proxy. Run under `--release` too —
+    /// a debug test binary never takes the release branch.
+    #[tokio::test]
+    async fn the_studio_cookie_is_secure_outside_local_debug_builds() {
+        let state = StudioState {
+            collector: StudioCollector::new(),
+            token: "t".repeat(32),
+            db: None,
+        };
+        let cookie_for = |headers: HeaderMap| {
+            let state = state.clone();
+            async move {
+                let query = TokenQuery {
+                    token: Some("t".repeat(32)),
+                };
+                let res = dashboard(State(state), Query(query), headers).await;
+                res.headers()[header::SET_COOKIE]
+                    .to_str()
+                    .unwrap()
+                    .to_string()
+            }
+        };
+
+        let plain = cookie_for(HeaderMap::new()).await;
+        assert_eq!(
+            plain.contains("; Secure"),
+            !cfg!(debug_assertions),
+            "{plain}"
+        );
+
+        let mut behind_tls = HeaderMap::new();
+        behind_tls.insert("x-forwarded-proto", "https".parse().unwrap());
+        assert!(cookie_for(behind_tls).await.contains("; Secure"));
     }
 }

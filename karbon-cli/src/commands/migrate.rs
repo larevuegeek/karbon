@@ -4,27 +4,58 @@ use sqlx::{AnyPool, AssertSqlSafe, Row};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::sql_script::{has_delimiter_directive, split_statements};
+
 const MIGRATIONS_TABLE: &str = "_karbon_migrations";
 
+/// `(root, migrations folder)`. The current folder when it holds `migration/` and no
+/// karbon.toml; otherwise the karbon.toml folder and its `[migration] dir`. `.env` is read
+/// from the root.
+pub fn locate() -> Result<(PathBuf, PathBuf), String> {
+    let cwd = std::env::current_dir().map_err(|e| format!("Cannot get current dir: {e}"))?;
+
+    if !cwd.join("karbon.toml").exists() && cwd.join("migration").is_dir() {
+        let dir = cwd.join("migration");
+        return Ok((cwd, dir));
+    }
+
+    let (config, root) = crate::config::KarbonConfig::load()?;
+    let dir = config.migration_dir(&root);
+
+    Ok((root, dir))
+}
+
 /// Entry point — `action` is one of: "up" (default), "status", "rollback", "diff".
-pub fn run(root: &Path, action: &str, name: Option<&str>) -> Result<(), String> {
+pub fn run(
+    root: &Path,
+    migration_dir: &Path,
+    action: &str,
+    name: Option<&str>,
+) -> Result<(), String> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| format!("Failed to start async runtime: {e}"))?;
-    rt.block_on(run_async(root, action, name))
+    rt.block_on(run_async(root, migration_dir, action, name))
 }
 
-async fn run_async(root: &Path, action: &str, name: Option<&str>) -> Result<(), String> {
+async fn run_async(
+    root: &Path,
+    migration_dir: &Path,
+    action: &str,
+    name: Option<&str>,
+) -> Result<(), String> {
     println!(
         "\n{}  migrate {}\n",
         "▲ karbon".bold().red(),
         action.dimmed()
     );
 
-    let migration_dir = root.join("migration");
     if action != "diff" && !migration_dir.exists() {
-        return Err("No migration/ directory found".to_string());
+        return Err(format!(
+            "No migration directory found ({})",
+            migration_dir.display()
+        ));
     }
 
     let database_url = read_database_url(&root.join(".env"))?;
@@ -39,10 +70,10 @@ async fn run_async(root: &Path, action: &str, name: Option<&str>) -> Result<(), 
     ensure_migrations_table(&pool).await?;
 
     match action {
-        "up" | "" => migrate_up(&pool, &migration_dir).await,
-        "status" => migrate_status(&pool, &migration_dir).await,
-        "rollback" | "down" => migrate_rollback(&pool, &migration_dir).await,
-        "diff" => diff::run(&pool, &migration_dir, root, &database_url, name).await,
+        "up" | "" => migrate_up(&pool, migration_dir).await,
+        "status" => migrate_status(&pool, migration_dir).await,
+        "rollback" | "down" => migrate_rollback(&pool, migration_dir).await,
+        "diff" => diff::run(&pool, migration_dir, root, &database_url, name).await,
         other => Err(format!(
             "Unknown migrate action '{other}'. Available: up, status, rollback, diff"
         )),
@@ -488,8 +519,7 @@ async fn migrate_up(pool: &AnyPool, dir: &Path) -> Result<(), String> {
             continue;
         }
 
-        sqlx::raw_sql(AssertSqlSafe(up))
-            .execute(pool)
+        execute_script(pool, &up)
             .await
             .map_err(|e| format!("Migration {version} failed: {e}"))?;
 
@@ -553,8 +583,7 @@ async fn migrate_rollback(pool: &AnyPool, dir: &Path) -> Result<(), String> {
     println!("  {} Rolling back {}\n", "→".blue(), version.bold());
 
     if !down.trim().is_empty() {
-        sqlx::raw_sql(AssertSqlSafe(down))
-            .execute(pool)
+        execute_script(pool, &down)
             .await
             .map_err(|e| format!("Rollback of {version} failed: {e}"))?;
     }
@@ -633,6 +662,23 @@ fn list_migrations(dir: &Path) -> Result<Vec<(String, PathBuf)>, String> {
         .collect();
     files.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(files)
+}
+
+/// The whole script in one call, or statement by statement when it uses the `mysql`
+/// client's `DELIMITER` directive, which the server does not understand.
+async fn execute_script(pool: &AnyPool, sql: &str) -> Result<(), sqlx::Error> {
+    if !has_delimiter_directive(sql) {
+        sqlx::raw_sql(AssertSqlSafe(sql)).execute(pool).await?;
+        return Ok(());
+    }
+
+    for statement in split_statements(sql) {
+        sqlx::raw_sql(AssertSqlSafe(statement))
+            .execute(pool)
+            .await?;
+    }
+
+    Ok(())
 }
 
 /// Split a migration into its `up` and optional `down` parts.

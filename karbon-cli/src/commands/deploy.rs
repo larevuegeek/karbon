@@ -147,8 +147,17 @@ fn publish_to(
     }
 
     // Frontend (skipped for backend-only / micro projects)
+    let mut frontend_deployed = false;
     if let (Some(frontend_dir), Some(frontend_build)) = (config.frontend_dir(root), frontend_build)
     {
+        refuse_symlinked_dirs(
+            deploy,
+            host,
+            &[
+                format!("{}/frontend", deploy.path),
+                format!("{}/frontend/build", deploy.path),
+            ],
+        )?;
         run_on_target(host, &format!("mkdir -p {}/frontend", deploy.path))?;
 
         // Frontend build
@@ -172,16 +181,12 @@ fn publish_to(
         }
         println!("    {} frontend/package*.json", "✓".green());
 
-        // Install production dependencies on server
-        println!("\n  {} Installing frontend dependencies...", "→".blue());
-        run_on_target(
-            host,
-            &format!(
-                "cd {}/frontend && npm install --omit=dev --no-audit --no-fund 2>&1 | tail -1",
-                deploy.path
-            ),
-        )?;
-        println!("    {} npm install (production)", "✓".green());
+        frontend_deployed = true;
+        // With a `deploy.user`, npm runs as that user once the tree is theirs (below):
+        // run as root in their `frontend/`, it would obey a `.npmrc` they planted.
+        if deploy.user.is_none() {
+            install_frontend_deps(deploy, host)?;
+        }
     }
 
     // PM2 config (if exists)
@@ -196,8 +201,9 @@ fn publish_to(
     }
 
     // Migrations (if exist)
-    let migration_dir = root.join("migration");
+    let migration_dir = config.migration_dir(root);
     if migration_dir.exists() {
+        refuse_symlinked_dirs(deploy, host, &[format!("{}/migration", deploy.path)])?;
         rsync_to_target(
             host,
             &format!("{}/", migration_dir.to_str().unwrap()),
@@ -228,6 +234,10 @@ fn publish_to(
         );
         run_on_target(host, &format!("chown -R {user}:{group} {}", deploy.path))?;
         println!("    {} chown -R {}:{}", "✓".green(), user, group);
+
+        if frontend_deployed {
+            install_frontend_deps(deploy, host)?;
+        }
     }
 
     // ── Step 6: Restart process manager ──
@@ -286,6 +296,62 @@ fn probe_on_target(host: Option<&str>, cmd: &str) -> bool {
 }
 
 /// Run rsync — local if no host, SSH if host is set
+/// `npm install --omit=dev` in the deployed `frontend/`, as `deploy.user` when one is set.
+fn install_frontend_deps(
+    deploy: &crate::config::DeployConfig,
+    host: Option<&str>,
+) -> Result<(), String> {
+    println!("\n  {} Installing frontend dependencies...", "→".blue());
+    let cmd = npm_install_cmd(&deploy.path);
+    if deploy.user.is_some() {
+        run_as_user(deploy, host, &cmd)?;
+    } else {
+        run_on_target(host, &cmd)?;
+    }
+    println!("    {} npm install (production)", "✓".green());
+    Ok(())
+}
+
+fn npm_install_cmd(path: &str) -> String {
+    format!("cd {path}/frontend && npm install --omit=dev --no-audit --no-fund 2>&1 | tail -1")
+}
+
+/// Refuse to write into a deployed directory that is a symbolic link.
+///
+/// After `chown -R`, `deploy.user` owns the tree. rsync follows a destination directory
+/// that is a symlink, so a link planted by that user (`migration -> /etc`) turned the
+/// next root publish's `rsync --delete` into a delete-and-write inside its target.
+/// Checked right before each write into such a directory, and only when a `deploy.user`
+/// exists — without one there is no less-privileged owner to plant the link. File
+/// destinations need no check: rsync replaces them by rename, which does not follow.
+fn refuse_symlinked_dirs(
+    deploy: &crate::config::DeployConfig,
+    host: Option<&str>,
+    dirs: &[String],
+) -> Result<(), String> {
+    if deploy.user.is_none() {
+        return Ok(());
+    }
+    run_on_target(host, &symlink_guard(dirs)).map_err(|_| {
+        format!(
+            "Refusing to publish: one of {} is a symbolic link. deploy.user owns this \
+             tree, so a link there would point root's rsync anywhere. Remove the link and \
+             publish again.",
+            dirs.join(", ")
+        )
+    })
+}
+
+/// Shell test that exits non-zero when any of `dirs` is a symbolic link. The paths come
+/// from `deploy.path`, validated by `validate_shell_safe`, so they hold no quote.
+fn symlink_guard(dirs: &[String]) -> String {
+    let quoted: Vec<String> = dirs.iter().map(|d| format!("'{d}'")).collect();
+    format!(
+        "for d in {}; do if [ -L \"$d\" ]; then echo \"$d is a symbolic link\" >&2; exit 1; fi; done",
+        quoted.join(" ")
+    )
+}
+
 fn rsync_to_target(host: Option<&str>, src: &str, dest: &str) -> Result<(), String> {
     let mut args = vec!["-a", "--delete", src];
 
@@ -900,6 +966,47 @@ fn which(cmd: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_symlink_guard_checks_every_directory() {
+        let guard = symlink_guard(&["/srv/app/frontend".into(), "/srv/app/migration".into()]);
+        assert_eq!(
+            guard,
+            "for d in '/srv/app/frontend' '/srv/app/migration'; do if [ -L \"$d\" ]; then \
+             echo \"$d is a symbolic link\" >&2; exit 1; fi; done"
+        );
+    }
+
+    /// The guard is shell: run it for real against a planted link.
+    #[cfg(unix)]
+    #[test]
+    fn the_symlink_guard_refuses_a_planted_link() {
+        let root = std::env::temp_dir().join(format!("karbon-guard-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("frontend")).unwrap();
+        std::os::unix::fs::symlink("/etc", root.join("migration")).unwrap();
+        let path = |p: &str| root.join(p).to_string_lossy().into_owned();
+        let runs_clean = |dirs: &[String]| {
+            Command::new("sh")
+                .args(["-c", &symlink_guard(dirs)])
+                .status()
+                .unwrap()
+                .success()
+        };
+
+        assert!(runs_clean(&[path("frontend"), path("absent")]));
+        assert!(!runs_clean(&[path("frontend"), path("migration")]));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn npm_install_targets_the_deployed_frontend() {
+        assert_eq!(
+            npm_install_cmd("/srv/app"),
+            "cd /srv/app/frontend && npm install --omit=dev --no-audit --no-fund 2>&1 | tail -1"
+        );
+    }
 
     #[test]
     fn remote_restart_runs_sudo_on_the_target_with_the_users_pm2() {

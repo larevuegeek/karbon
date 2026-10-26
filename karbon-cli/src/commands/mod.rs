@@ -8,3 +8,4 @@ pub mod maintenance;
 pub mod migrate;
 pub mod new;
 pub mod serve;
+pub mod sql_script;

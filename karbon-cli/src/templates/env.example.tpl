@@ -42,6 +42,10 @@ CORS_ORIGINS=
 # KARBON_DEBUG_KEY=change-me-to-a-long-random-secret
 # KARBON_DEBUG_IPS=203.0.113.7
 
+# Studio access token in release builds (32+ characters). A release build never logs the
+# generated token; set this to choose it, or open Studio from a debug session's toolbar.
+# KARBON_STUDIO_TOKEN=
+
 CORS_ORIGINS=http://localhost:3004,http://localhost:3005
 
 UPLOAD_DIR=./uploads

@@ -1,4 +1,5 @@
 mod date;
+mod domain;
 mod html;
 mod http;
 mod money;
@@ -9,6 +10,7 @@ mod slug;
 mod string;
 
 pub use date::DateHelper;
+pub use domain::DomainHelper;
 pub use html::Html;
 pub use http::{HttpHelper, UserAgentInfo};
 pub use money::MoneyHelper;

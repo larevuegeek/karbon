@@ -237,6 +237,63 @@ impl HttpHelper {
             .unwrap_or(peer)
     }
 
+    // ─── Request path ───
+
+    /// The request path as a handler resolves it, for a security check that must see the
+    /// same path the handler will serve.
+    ///
+    /// `Uri::path()` is still percent-encoded, while file servers and `Path` extractors
+    /// decode it: a check on the raw path is blind to `/%2eenv` (served as `/.env`) or
+    /// `/%70rivate` (served as `/private`). This decodes `%XX`, drops empty and `.`
+    /// segments (`//`, `/./`) and treats `\` as a separator.
+    ///
+    /// Returns `None` — the caller must refuse the request — for anything that could make
+    /// the checked path differ from the served one: a malformed escape, invalid UTF-8, a
+    /// NUL, an encoded `/` or `\`, or a `..` segment.
+    pub fn canonical_path(raw: &str) -> Option<String> {
+        let bytes = raw.as_bytes();
+        let mut decoded = Vec::with_capacity(bytes.len());
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'%' {
+                let hex = bytes.get(i + 1..i + 3)?;
+                // Exactly two hex digits: `from_str_radix` alone would also take "+1".
+                if !hex.iter().all(u8::is_ascii_hexdigit) {
+                    return None;
+                }
+                let byte = u8::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()?;
+                // An encoded separator would split differently once decoded.
+                if byte == b'/' || byte == b'\\' {
+                    return None;
+                }
+                decoded.push(byte);
+                i += 3;
+            } else {
+                decoded.push(bytes[i]);
+                i += 1;
+            }
+        }
+        if decoded.contains(&0) {
+            return None;
+        }
+        let decoded = String::from_utf8(decoded).ok()?;
+
+        let mut segments = Vec::new();
+        for segment in decoded.split(['/', '\\']) {
+            match segment {
+                "" | "." => {}
+                ".." => return None,
+                s => segments.push(s),
+            }
+        }
+
+        let mut path = format!("/{}", segments.join("/"));
+        if decoded.ends_with('/') && path != "/" {
+            path.push('/');
+        }
+        Some(path)
+    }
+
     // ─── Header Helpers ───
 
     /// Get a header value as string
@@ -508,6 +565,40 @@ mod tests {
         let socket: SocketAddr = "192.168.1.1:8080".parse().unwrap();
         let ip = HttpHelper::client_ip_from_socket(&headers, &socket);
         assert_eq!(ip, "192.168.1.1");
+    }
+
+    // ─── Canonical path ───
+
+    #[test]
+    fn canonical_path_decodes_what_handlers_decode() {
+        let c = |raw| HttpHelper::canonical_path(raw);
+        assert_eq!(c("/%2eenv").as_deref(), Some("/.env"));
+        assert_eq!(
+            c("/files/%70rivate/a.pdf").as_deref(),
+            Some("/files/private/a.pdf")
+        );
+        assert_eq!(c("//admin/./users").as_deref(), Some("/admin/users"));
+        assert_eq!(c("/a\\b").as_deref(), Some("/a/b"));
+        assert_eq!(c("/caf%C3%A9").as_deref(), Some("/café"));
+        assert_eq!(c("/admin/").as_deref(), Some("/admin/"));
+        assert_eq!(c("/").as_deref(), Some("/"));
+    }
+
+    #[test]
+    fn canonical_path_refuses_what_could_be_read_two_ways() {
+        for raw in [
+            "/a%2fb", // encoded separator
+            "/a%5cb",
+            "/../etc", // traversal
+            "/a/%2e%2e/b",
+            "/a%00b", // NUL
+            "/a%zzb", // malformed escapes
+            "/a%2",
+            "/a%+1b",
+            "/%ff", // invalid UTF-8
+        ] {
+            assert_eq!(HttpHelper::canonical_path(raw), None, "{raw}");
+        }
     }
 
     // ─── Header helpers ───

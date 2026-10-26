@@ -11,6 +11,94 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.11] - 2026-10-26
+
+> Feature and security release: `DomainHelper` cuts a domain name into name and
+> extension, against a list of known extensions or by the first dot; `karbon migrate`
+> takes its folder from `karbon.toml`, runs without one, and accepts `DELIMITER`;
+> `DeleteBuilder` gains comparisons and database-clock conditions, and refuses a DELETE
+> without condition unless `.all()` says so.
+>
+> It also fixes ten findings of a security audit, listed under **Security**. Some of the
+> fixes refuse what used to pass: request paths that decode ambiguously, SVG uploads
+> carrying obfuscated script, and root actions on paths the app user controls.
+
+### Added
+- **`util::DomainHelper`**: `normalize` (trim, lowercase, trailing root dot removed),
+  `split` (`"exemple.co.uk"` → `("exemple", "co.uk")`, everything after the first dot),
+  `extension(domain, known)` (the longest extension of a given list the name ends with —
+  `"www.exemple.fr"` with `["fr"]` → `"fr"` — otherwise everything after the first dot).
+  Both return `None` without a dot or with an empty label.
+- **CLI `[migration] dir`** in `karbon.toml`: the migrations folder, relative to
+  karbon.toml (default `migration`). Used by `migrate`, `doctor` and `deploy`.
+- **CLI `karbon migrate` without karbon.toml**: from a folder holding `migration/` and no
+  karbon.toml, that folder and its `.env` are used — a workspace whose applications share
+  one database runs its migrations from the root.
+- **CLI `karbon migrate` and `DELIMITER`**: a migration written for the `mysql` client
+  (`DELIMITER //` around a stored procedure) is cut into statements sent one by one; any
+  other migration is still sent whole.
+- **`DeleteBuilder`**: `where_lt` / `where_lte` / `where_gt` / `where_gte` (bound values);
+  `where_before_now(column)` and `where_older_than(column, Duration)`, compared with the
+  database clock (`NOW()`, `NOW() - INTERVAL ? SECOND` on MySQL, `make_interval` on
+  Postgres, `datetime('now', …)` on SQLite) — right for columns the database fills itself,
+  whatever the application's time zone; `limit(n)`, MySQL builds only (the method does not
+  exist with the other drivers).
+
+### Changed
+- **`DeleteBuilder::execute` refuses a DELETE without condition** (`AppError::Internal`):
+  call `.all()` to empty a table on purpose. A builder with a `where_*` is unaffected.
+
+### Security
+- **`ImgResizer` served `.env` through `/%2eenv`.** The hidden-file check read the raw,
+  still percent-encoded path, while the `ServeDir` fallback decodes it before opening the
+  file, so the 0.4.2 dotfile protection was bypassed by one escape. The check now runs on
+  the decoded path, and a path that cannot be decoded safely gets 404.
+- **The firewall matched rules against the raw path.** `/files/%70rivate/a.pdf` matched no
+  `^/files/private` rule while a decoding handler served `private/a.pdf`. `enforce` now
+  decides on the decoded, normalised path (`//`, `/./` collapsed), and answers 400 for one
+  it cannot decode safely: a malformed escape, invalid UTF-8, a NUL, an encoded `/` or `\`,
+  or a `..` segment. Both fixes share the new `HttpHelper::canonical_path`.
+- **SVG upload filter bypassed, then the SVG ran on the app origin.** `validate_svg_content`
+  matched literal substrings, so a namespace-prefixed `<s:script>` and an entity-encoded
+  `&#106;avascript:` both passed, and the comment claiming entity normalisation was
+  untrue. Active elements are now matched by local name whatever their prefix, numeric
+  character references are decoded, and schemes are matched with whitespace and control
+  characters removed, as browsers read them. Second line: `ImgResizer` sends
+  `default-src 'none'; sandbox` and `nosniff` on every SVG, HTML or XML it serves, so a
+  script that gets past the filter still does not run.
+- **A client could publish events indistinguishable from the server's.** Every frame a
+  `ChannelRegistry` subscriber receives now carries `"origin": "server"` or
+  `"origin": "client"` (with the publisher's `"sender"` id), written by the server and
+  impossible to forge from a payload. Additive: the documented `message` relay still
+  works. Check `origin` before acting on an event only the server should send.
+- **The Studio token leaked three ways.** It is no longer logged in release builds; set
+  `KARBON_STUDIO_TOKEN` (32+ characters) to choose it out of band, or open Studio from a
+  debug session's toolbar. A page carrying the toolbar is now `Cache-Control: private,
+  no-store` with its validators removed, so a shared cache cannot serve the token to
+  other visitors. The `_studio_token` cookie is `Secure` in every release build instead of
+  only behind `X-Forwarded-Proto: https`; browsers still accept it on
+  `http://localhost`. New `studio::build_with_token`.
+- **`sudo karbon maintenance on|off` acted on paths the app user chose.** The flag path
+  could come from the app user's `.env`, and `on` followed a symlink planted at the flag
+  path, so root could be made to delete or create any file. The flag is now created with
+  `O_CREAT|O_EXCL`, which never follows a symlink, for every user. As root, a path read
+  from a `.env` that is not root-owned is refused — pass it with
+  `sudo env MAINTENANCE_FLAG_FILE=… karbon maintenance on` — and the flag's directory
+  must be a root-owned directory nobody else can write. Run as root, the default
+  `storage/maintenance.flag` is therefore refused when `storage/` belongs to the app
+  user: keep the flag outside the web tree, as the command already advised.
+- **A root `karbon deploy publish` followed symlinks the app user planted.** After
+  `chown -R` the app user owns the tree, and rsync follows a destination directory that
+  is a link, so `migration -> /etc` turned the next `rsync --delete` into deletions
+  inside `/etc`. With `deploy.user` set, publishing now refuses to write into
+  `frontend`, `frontend/build` or `migration` when any of them is a symlink, checked
+  right before each write. `npm install` now runs as `deploy.user`, after the `chown`,
+  instead of as root in a directory whose `.npmrc` that user controls.
+- **`StringHelper::excerpt` and `mask_email` panicked on some Unicode.** `excerpt` sliced
+  the text with a byte offset found in its lowercased copy, and some characters change
+  length when lowercased (U+023A, U+0130, the Kelvin sign); `mask_email` sliced bytes
+  of a multi-byte first character. Both now work in characters.
+
 ## [0.4.10] - 2026-10-26
 
 > Additive release: helpers that applications kept rewriting — amounts in cents, a

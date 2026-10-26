@@ -181,6 +181,8 @@ impl ImgResizerConfig {
             .fallback_service(tower_http::services::ServeDir::new(&state.source_dir))
             // Hidden files and directories (`.env`, `.git/`, temp files) are never served.
             .layer(middleware::from_fn(deny_hidden))
+            // A user SVG (or HTML) holding a script must not run it on this origin.
+            .layer(middleware::from_fn(confine_active_content))
     }
 }
 
@@ -211,11 +213,58 @@ impl ImgResizer {
 }
 
 /// 404 for any path segment starting with a dot.
+///
+/// Checked on the decoded path: the `ServeDir` fallback decodes before opening the file,
+/// so a check on the raw path let `/%2eenv` through and served `.env`. A path that cannot
+/// be decoded safely is refused outright.
 async fn deny_hidden(req: Request, next: Next) -> Response {
-    if req.uri().path().split('/').any(|seg| seg.starts_with('.')) {
+    let hidden = match crate::util::HttpHelper::canonical_path(req.uri().path()) {
+        Some(path) => path.split('/').any(|seg| seg.starts_with('.')),
+        None => true,
+    };
+    if hidden {
         return StatusCode::NOT_FOUND.into_response();
     }
     next.run(req).await
+}
+
+/// Content types a browser runs script from when opened directly.
+const ACTIVE_CONTENT_TYPES: &[&str] = &[
+    "image/svg+xml",
+    "text/html",
+    "application/xhtml+xml",
+    "text/xml",
+    "application/xml",
+];
+
+/// `default-src 'none'; sandbox` and `nosniff` on every response of a scriptable type.
+///
+/// The upload filter is a denylist and cannot be complete; this is what makes a script
+/// that got past it inert: no script runs, and `sandbox` gives the document an opaque
+/// origin, so it cannot read this site's cookies either. Limited to scriptable types:
+/// `sandbox` also stops browsers rendering a PDF inline.
+async fn confine_active_content(req: Request, next: Next) -> Response {
+    let mut res = next.run(req).await;
+    let active = res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| ct.trim().to_ascii_lowercase())
+        .is_some_and(|ct| ACTIVE_CONTENT_TYPES.iter().any(|t| ct.starts_with(t)));
+    if active {
+        let headers = res.headers_mut();
+        headers.insert(
+            header::CONTENT_SECURITY_POLICY,
+            header::HeaderValue::from_static(
+                "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+            ),
+        );
+        headers.insert(
+            header::X_CONTENT_TYPE_OPTIONS,
+            header::HeaderValue::from_static("nosniff"),
+        );
+    }
+    res
 }
 
 // ── Resize spec parsing ──
@@ -884,6 +933,57 @@ mod tests {
             StatusCode::NOT_FOUND
         );
         assert_eq!(get(&router, "/photo.jpg").await.status(), StatusCode::OK);
+    }
+
+    /// `ServeDir` decodes before opening the file, so the hidden-file check must too:
+    /// before, `/%2eenv` passed it and was served as `.env`.
+    #[tokio::test]
+    async fn test_encoded_hidden_paths_are_never_served() {
+        let fx = Fixture::new("hidden-encoded");
+        let router = fx.router(|c| c);
+        for path in [
+            "/%2eenv",
+            "/%2Eenv",
+            "/./.env",
+            "//.env",
+            "/%2e%2e/x",
+            "/a%2f.env",
+        ] {
+            assert_eq!(
+                get(&router, path).await.status(),
+                StatusCode::NOT_FOUND,
+                "{path} must not be served"
+            );
+        }
+        // An encoded name that is not hidden is still served.
+        assert_eq!(get(&router, "/photo%2ejpg").await.status(), StatusCode::OK);
+    }
+
+    /// A script that got past the upload filter must still not run: SVG served from the
+    /// fallback is confined by a CSP with `sandbox`. Raster images are left alone.
+    #[tokio::test]
+    async fn test_served_svg_is_confined() {
+        let fx = Fixture::new("svg-csp");
+        std::fs::write(
+            fx.root.join("src/logo.svg"),
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>"#,
+        )
+        .unwrap();
+        let router = fx.router(|c| c);
+
+        let svg = get(&router, "/logo.svg").await;
+        assert_eq!(svg.status(), StatusCode::OK);
+        let csp = svg.headers()[header::CONTENT_SECURITY_POLICY]
+            .to_str()
+            .unwrap();
+        assert!(
+            csp.contains("default-src 'none'") && csp.contains("sandbox"),
+            "{csp}"
+        );
+        assert_eq!(svg.headers()[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+
+        let jpg = get(&router, "/photo.jpg").await;
+        assert!(jpg.headers().get(header::CONTENT_SECURITY_POLICY).is_none());
     }
 
     #[tokio::test]
