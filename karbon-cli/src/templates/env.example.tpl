@@ -53,6 +53,7 @@ BASE_URL=http://localhost:3005/
 
 MAIL_FROM=noreply@localhost
 SMTP_HOST=
+# 587 (or any port other than 465): STARTTLS, required. 465: implicit TLS (SMTPS).
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASSWORD=

@@ -47,7 +47,12 @@ impl TestApp {
             db,
             config,
             mailer,
-            role_hierarchy: crate::security::default_hierarchy(),
+            role_hierarchy: {
+                let (hierarchy, _) = crate::security::resolve_app_hierarchy(None)
+                    .expect("invalid config/security.yaml");
+                crate::security::activate_hierarchy(hierarchy.clone());
+                hierarchy
+            },
             #[cfg(feature = "templates")]
             templates: crate::template::TemplateEngine::empty(),
         };

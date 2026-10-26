@@ -90,7 +90,7 @@ MySQL is the default. To use PostgreSQL, change the feature flag:
 
 ```toml
 # Cargo.toml of your project
-karbon = { package = "karbon-framework", version = "0.4.6", default-features = false, features = ["postgres"] }
+karbon = { package = "karbon-framework", version = "0.4.7", default-features = false, features = ["postgres"] }
 ```
 
 Set the matching port in `.env`:

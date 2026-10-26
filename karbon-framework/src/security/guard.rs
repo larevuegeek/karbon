@@ -28,16 +28,17 @@ pub struct AuthGuard {
 }
 
 impl AuthGuard {
-    /// Build an AuthGuard from existing Claims using the **default** role hierarchy.
+    /// Build an AuthGuard from existing Claims using the app's hierarchy
+    /// ([`active_hierarchy`](crate::security::active_hierarchy): the one [`App`](crate::http::App)
+    /// resolved at startup, or [`default_hierarchy`](crate::security::default_hierarchy) outside
+    /// an app — the previous behaviour).
     ///
-    /// ⚠️ If your app configures a custom `RoleHierarchy`, use
-    /// [`from_claims_with`](Self::from_claims_with) instead — otherwise `has_role` /
-    /// `require_role` on this guard resolve against the default hierarchy, not yours,
-    /// which can produce wrong authorization decisions.
+    /// When you have the `AppState`, [`from_claims_with`](Self::from_claims_with) with
+    /// `state.role_hierarchy` says explicitly which hierarchy is used.
     pub fn from_claims(claims: Claims) -> Self {
         Self {
             claims,
-            role_hierarchy: crate::security::default_hierarchy(),
+            role_hierarchy: crate::security::active_hierarchy(),
         }
     }
 

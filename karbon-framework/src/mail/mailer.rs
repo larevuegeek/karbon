@@ -7,6 +7,12 @@ use lettre::{
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
 
+/// Port 465 is SMTPS (TLS from the first byte); the others negotiate TLS with STARTTLS,
+/// which is required (never falls back to plain text).
+fn uses_implicit_tls(port: u16) -> bool {
+    port == 465
+}
+
 /// Email sender using SMTP
 #[derive(Clone)]
 pub struct Mailer {
@@ -19,7 +25,14 @@ impl Mailer {
     pub fn new(config: &Config) -> AppResult<Self> {
         let credentials = Credentials::new(config.smtp_user.clone(), config.smtp_password.clone());
 
-        let transport = AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp_host)
+        // `relay()` is implicit TLS (SMTPS): only right on port 465. Any other port (587 by
+        // default) expects a plain connection upgraded with STARTTLS, which `relay()` cannot do.
+        let builder = if uses_implicit_tls(config.smtp_port) {
+            AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp_host)
+        } else {
+            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&config.smtp_host)
+        };
+        let transport = builder
             .map_err(|e| AppError::Internal(format!("SMTP config error: {}", e)))?
             .credentials(credentials)
             .port(config.smtp_port)
@@ -378,5 +391,18 @@ impl MailBuilder {
         } else {
             MultiPart::alternative().singlepart(SinglePart::plain(text_body.clone().unwrap()))
         }
+    }
+}
+
+#[cfg(test)]
+mod tls_mode_tests {
+    use super::uses_implicit_tls;
+
+    #[test]
+    fn smtps_port_uses_implicit_tls_others_starttls() {
+        assert!(uses_implicit_tls(465));
+        assert!(!uses_implicit_tls(587));
+        assert!(!uses_implicit_tls(25));
+        assert!(!uses_implicit_tls(2525));
     }
 }

@@ -11,6 +11,49 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.7] - 2026-10-26
+
+> Fix release: mail sending works on port 587. Nothing changes on port 465. The role
+> hierarchy can now be declared in `config/security.yaml`; nothing changes for an app that
+> neither ships that file nor sets a hierarchy.
+
+### Added
+- **Role hierarchy from a Symfony-style `security.yaml`.** `RoleHierarchy::from_yaml(&str)`
+  (to embed with `include_str!`, the hierarchy is then fixed at build time) and
+  `RoleHierarchy::from_file(path)` read the `security.role_hierarchy` section:
+  ```yaml
+  security:
+      role_hierarchy:
+          ROLE_ADMIN:       [ROLE_EDITOR]
+          ROLE_SUPER_ADMIN: [ROLE_ADMIN, ROLE_ALLOWED_TO_SWITCH]
+  ```
+  The reader is a strict whitelist of that shape, not a general YAML parser, so a tampered
+  file cannot say something other than what a human reads: tags, anchors and aliases (the
+  "billion laughs" expansion), merge keys, block scalars, several documents and any key
+  other than `security.role_hierarchy` are refused with their line number. Role names must
+  match `ROLE_[A-Z0-9_]+` (64 characters); a role declared twice, listed twice, inheriting
+  itself or part of a cycle is refused; size is capped (64 KiB, 256 roles, 64 children per
+  role); `from_file` also refuses a world-writable file on Unix. Offending text is quoted
+  escaped in error messages, which end up in logs. No new dependency.
+- `App::role_hierarchy(hierarchy)`. `App::serve()` picks the hierarchy in this order: the one
+  set in code, then `config/security.yaml` when the file exists and has a `role_hierarchy`
+  section, then `default_hierarchy()` as before. An invalid file stops the startup, it never
+  falls back silently. The chosen source is logged. `TestApp` resolves it the same way.
+- `security::active_hierarchy()`: the hierarchy the app resolved at startup, or
+  `default_hierarchy()` outside an app. `SECURITY_FILE` and `RoleHierarchyError` are exported.
+
+### Changed
+- `AuthGuard::from_claims` resolves roles against `active_hierarchy()` instead of always
+  `default_hierarchy()`: an app with its own hierarchy no longer gets wrong answers from it.
+  Identical behaviour for an app that sets none.
+
+### Fixed
+- **`Mailer` could not send on port 587.** It always built the transport with lettre's
+  `relay()`, which is implicit TLS (SMTPS, port 465): on 587 — the default `SMTP_PORT` — the
+  server expects a plain connection upgraded with STARTTLS, so the TLS handshake failed and
+  no mail left. The transport now uses implicit TLS on port 465 and **required** STARTTLS on
+  every other port (never a plain-text fallback).
+
 ## [0.4.6] - 2026-10-22
 
 > Security release: the client IP behind a reverse proxy can no longer be chosen by the

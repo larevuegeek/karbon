@@ -114,6 +114,7 @@ pub struct App {
     modules: Vec<Box<dyn Module>>,
     bundles: Vec<Box<dyn Bundle>>,
     access_control: Option<crate::security::AccessControl>,
+    role_hierarchy: Option<RoleHierarchy>,
 }
 
 impl App {
@@ -127,6 +128,7 @@ impl App {
             modules: Vec::new(),
             bundles: Vec::new(),
             access_control: None,
+            role_hierarchy: None,
         }
     }
 
@@ -138,6 +140,7 @@ impl App {
             modules: Vec::new(),
             bundles: Vec::new(),
             access_control: None,
+            role_hierarchy: None,
         }
     }
 
@@ -178,6 +181,19 @@ impl App {
         self
     }
 
+    /// Set the role hierarchy in code. Takes precedence over `config/security.yaml`; with
+    /// neither, [`default_hierarchy`](crate::security::default_hierarchy) applies as before.
+    ///
+    /// ```ignore
+    /// App::new()
+    ///     .role_hierarchy(RoleHierarchy::from_yaml(include_str!("../config/security.yaml"))?)
+    ///     .serve().await?;
+    /// ```
+    pub fn role_hierarchy(mut self, hierarchy: RoleHierarchy) -> Self {
+        self.role_hierarchy = Some(hierarchy);
+        self
+    }
+
     /// Initialize tracing/logging
     fn init_tracing(&self) {
         let filter = EnvFilter::try_from_default_env()
@@ -212,6 +228,15 @@ impl App {
     /// Start the server with graceful shutdown support
     pub async fn serve(mut self) -> anyhow::Result<()> {
         self.init_tracing();
+
+        // Refuse to start on an invalid security file rather than run with other roles.
+        let (role_hierarchy, hierarchy_source) =
+            crate::security::resolve_app_hierarchy(self.role_hierarchy.take()).map_err(|e| {
+                anyhow::anyhow!("Role hierarchy ({}): {e}", crate::security::SECURITY_FILE)
+            })?;
+
+        tracing::info!("Role hierarchy: {hierarchy_source}");
+        crate::security::activate_hierarchy(role_hierarchy.clone());
 
         let db = if self.config.has_database() {
             tracing::info!(
@@ -297,7 +322,7 @@ impl App {
             db,
             config: self.config.clone(),
             mailer,
-            role_hierarchy: crate::security::default_hierarchy(),
+            role_hierarchy,
             #[cfg(feature = "templates")]
             templates,
         };
