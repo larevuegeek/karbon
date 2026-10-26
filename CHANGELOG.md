@@ -11,6 +11,51 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.9] - 2026-10-26
+
+> Additive release: `AppError` covers what applications used to redefine (429, 503,
+> user-facing 500, form validation) and can answer `{"error": "<message>", "status": …}`;
+> `Database::lazy_from_env` opens the extra databases an application needs. The default
+> error body is unchanged.
+
+### Added
+- **`AppError::TooManyRequests` (429) and `AppError::ServiceUnavailable` (503)**, message
+  shown to the client.
+- **`AppError::Failure` and `AppError::internal(err, user_message)`.** A 500 whose message is
+  written for the user and always shown; `internal()` logs the technical cause and returns
+  one. `AppError::Internal` keeps its meaning: its message may hold technical detail and stays
+  masked outside development — Karbon's own `Internal` errors (builders, panic handler) are
+  therefore never exposed.
+- **`ErrorBody::Flat`**: `{"error": "<message>", "status": 404}`, the message without the
+  `Not found: ` prefix, for clients that display `error` as is. Chosen once at startup with
+  `karbon::error::set_error_body(ErrorBody::Flat)` or `App::error_body(…)`. `ErrorBody::Typed`
+  (`{"error": "not_found", "message": …}`) stays the default.
+- `AppError::public_message()`: the text a client may read, as error responses show it
+  (bare message, technical detail masked outside development). For an error carried in
+  another payload — a list of per-item failures — where `Display`, meant for logs, would
+  expose the raw detail.
+- `From<validator::ValidationErrors>`: a `#[derive(Validate)]` failure becomes
+  `AppError::Validation` (400) carrying the field messages, nested structures included.
+
+- **Several databases from the environment.** `Database::lazy_from_env(var, &settings)` builds
+  a lazy pool from the URL in `var` (nothing connects before the first query): `Ok(None)` when
+  the variable is unset or blank — an optional database the app runs without — and `Err` when
+  the URL is malformed, so a typo stops the startup instead of silently disabling whatever
+  needed that database. The URL must use the compiled driver's scheme (`mysql://` or
+  `mariadb://`, `postgres://` or `postgresql://`, `sqlite:`): without that check SQLite took
+  any string as a file path, so a typo passed and only failed at the first query. It also
+  catches a URL meant for another driver. The error does not quote the value, which usually
+  holds a password. Also `Database::connect_lazy_url_with(url, &settings)` (same check) and
+  `Database::into_pool()`.
+
+### Changed
+- **A refused JWT answers "Token invalide ou expiré"** instead of `JWT error: <reason>`: the
+  reason (expired, bad signature…) is no longer told to the client, in any environment.
+- `AppError` is now `#[non_exhaustive]`. Only a `match` listing every variant without a `_`
+  arm needs one.
+- Only raw server errors (`Internal`, `Database`, `Json`) are logged when rendered; a
+  `Failure` was logged by `AppError::internal`.
+
 ## [0.4.8] - 2026-10-26
 
 > Additive release: the role hierarchy can also be declared in TOML

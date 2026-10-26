@@ -115,6 +115,7 @@ pub struct App {
     bundles: Vec<Box<dyn Bundle>>,
     access_control: Option<crate::security::AccessControl>,
     role_hierarchy: Option<RoleHierarchy>,
+    error_body: Option<crate::error::ErrorBody>,
 }
 
 impl App {
@@ -129,6 +130,7 @@ impl App {
             bundles: Vec::new(),
             access_control: None,
             role_hierarchy: None,
+            error_body: None,
         }
     }
 
@@ -141,6 +143,7 @@ impl App {
             bundles: Vec::new(),
             access_control: None,
             role_hierarchy: None,
+            error_body: None,
         }
     }
 
@@ -195,6 +198,14 @@ impl App {
         self
     }
 
+    /// Choose the JSON body of error responses: [`ErrorBody::Typed`](crate::error::ErrorBody)
+    /// by default, [`ErrorBody::Flat`](crate::error::ErrorBody) for `{"error": "<message>",
+    /// "status": 404}`.
+    pub fn error_body(mut self, body: crate::error::ErrorBody) -> Self {
+        self.error_body = Some(body);
+        self
+    }
+
     /// Initialize tracing/logging
     fn init_tracing(&self) {
         let filter = EnvFilter::try_from_default_env()
@@ -241,6 +252,10 @@ impl App {
             })?;
 
         tracing::info!("Role hierarchy: {hierarchy_source}");
+
+        if let Some(body) = self.error_body {
+            crate::error::set_error_body(body);
+        }
         crate::security::activate_hierarchy(role_hierarchy.clone());
 
         let db = if self.config.has_database() {
