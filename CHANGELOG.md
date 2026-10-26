@@ -11,6 +11,44 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.10] - 2026-10-26
+
+> Additive release: helpers that applications kept rewriting — amounts in cents, a
+> redacted `Secret<T>`, serde defaults, `Idempotency-Key`, an anti-timing delay — and the
+> client-IP middleware and panic response that `App::serve()` used internally, now public
+> for applications that build their own router. Nothing changes for existing code.
+
+### Added
+- **`util::MoneyHelper`**: amounts in integer cents. `parse_cents` (strict: `.` only, at
+  most two decimals, `None` on overflow), `format_cents` (`"12.50"`, the `DECIMAL(x,2)`
+  format), `format_eur` (`"1 234,56 €"`), `parse_percent_hundredths` (`"5.5"` → `550`,
+  0–100 %).
+- **`security::Secret<T>`**: `Debug`, `Display` and `Serialize` print `[REDACTED]`;
+  `Deserialize` is transparent; read with `expose()`; constant-time `==` on
+  `Secret<String>`. Because `Serialize` writes `[REDACTED]`, a `Secret` stored through the
+  `Cache` or a `PersistentJob` — both serialized — comes back as `[REDACTED]`, with no
+  error: keep secrets out of serialized payloads.
+- **`security::anti_timing_delay()`**: waits 50–150 ms (jittered) before answering an
+  authentication failure, so its timing is not a recognisable constant. It does **not**
+  equalise paths of different cost on its own: the jitter averages out over a few requests
+  while the cost of an Argon2 check does not, so "unknown user" answered without hashing
+  stays distinguishable from "wrong password" answered after hashing. Against account
+  enumeration, also verify a dummy hash when the user does not exist.
+- **`util::serde_fields`**: `default_true`, `default_page`, `default_limit::<N>` for
+  `#[serde(default = "…")]`, and `trimmed` for `#[serde(deserialize_with = "…")]`.
+- **`StringHelper::trim_non_empty` / `trim_non_empty_owned`**: an optional field sent
+  empty becomes `None`.
+- **`http::idempotency`**: `idempotency_key` (absent → `None`, malformed → 400),
+  `require_idempotency_key`, `validate_idempotency_key` — 8 to 64 characters
+  `[a-zA-Z0-9-_]`.
+- **`http::middleware::{TrustedProxies, normalize_client_ip}`**: resolves the real client
+  through `HttpHelper::client_ip_trusted`, then drops `X-Forwarded-For` and sets
+  `X-Real-IP`, so every later reader sees one decided value. `TrustedProxies::from_env()`
+  reads `TRUSTED_PROXIES` like `Config`.
+- **`http::panic_response`**, for `CatchPanicLayer::custom`: the 500 `App::serve()`
+  already answered when a handler panics, now usable by applications that build their own
+  router.
+
 ## [0.4.9] - 2026-10-26
 
 > Additive release: `AppError` covers what applications used to redefine (429, 503,

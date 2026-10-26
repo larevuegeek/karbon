@@ -1,3 +1,4 @@
+mod client_ip;
 mod csrf;
 mod http_cache;
 mod maintenance;
@@ -6,6 +7,7 @@ mod request_id;
 mod request_logger;
 mod security_headers;
 
+pub use client_ip::{TrustedProxies, normalize_client_ip};
 pub use csrf::{CsrfConfig, csrf_protection, csrf_protection_with};
 pub use http_cache::http_cache;
 pub use maintenance::{

@@ -206,6 +206,19 @@ impl StringHelper {
         let padding: String = std::iter::repeat_n(pad_char, length - current_len).collect();
         format!("{}{}", value, padding)
     }
+
+    /// `Some(trimmed)`, or `None` when nothing is left after trimming — an optional field
+    /// sent empty becomes absent instead of an ambiguous `""`.
+    pub fn trim_non_empty(value: &str) -> Option<&str> {
+        let trimmed = value.trim();
+
+        (!trimmed.is_empty()).then_some(trimmed)
+    }
+
+    /// [`trim_non_empty`](Self::trim_non_empty) for an optional owned field.
+    pub fn trim_non_empty_owned(value: Option<&str>) -> Option<String> {
+        value.and_then(Self::trim_non_empty).map(str::to_string)
+    }
 }
 
 #[cfg(test)]
@@ -320,5 +333,16 @@ mod tests {
     fn test_pad_right() {
         assert_eq!(StringHelper::pad_right("42", 5, ' '), "42   ");
         assert_eq!(StringHelper::pad_right("hello", 3, ' '), "hello");
+    }
+
+    #[test]
+    fn test_trim_non_empty() {
+        assert_eq!(StringHelper::trim_non_empty("  a b  "), Some("a b"));
+        assert_eq!(StringHelper::trim_non_empty("   "), None);
+        assert_eq!(
+            StringHelper::trim_non_empty_owned(Some(" x ")),
+            Some("x".to_string())
+        );
+        assert_eq!(StringHelper::trim_non_empty_owned(None), None);
     }
 }

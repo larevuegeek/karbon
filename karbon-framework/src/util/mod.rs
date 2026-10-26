@@ -1,14 +1,17 @@
 mod date;
 mod html;
 mod http;
+mod money;
 mod number;
 mod random;
+pub mod serde_fields;
 mod slug;
 mod string;
 
 pub use date::DateHelper;
 pub use html::Html;
 pub use http::{HttpHelper, UserAgentInfo};
+pub use money::MoneyHelper;
 pub use number::NumberHelper;
 pub use random::RandomHelper;
 pub use slug::Slug;
