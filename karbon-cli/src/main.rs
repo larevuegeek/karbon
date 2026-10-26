@@ -1,3 +1,4 @@
+mod cargo_target;
 mod commands;
 mod config;
 mod process;

@@ -80,11 +80,7 @@ fn start_frontend_ssr(config: &KarbonConfig, root: &Path) -> Result<Child, Strin
 }
 
 fn start_backend(config: &KarbonConfig, root: &Path) -> Result<Child, String> {
-    let binary = if cfg!(windows) {
-        root.join(format!("target/release/{}.exe", config.backend.package))
-    } else {
-        root.join(format!("target/release/{}", config.backend.package))
-    };
+    let binary = crate::cargo_target::binary_path(root, "release", &config.backend.package, true);
 
     if !binary.exists() {
         return Err(format!(

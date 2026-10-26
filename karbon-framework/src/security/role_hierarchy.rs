@@ -2,10 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::OnceLock;
 
-use super::security_yaml::{self, RoleHierarchyError};
+use super::role_file::{self, RoleHierarchyError};
+use super::{security_toml, security_yaml};
 
-/// File [`App`](crate::http::App) reads at startup, relative to the working directory.
+/// YAML file [`App`](crate::http::App) reads at startup, relative to the working directory.
 pub const SECURITY_FILE: &str = "config/security.yaml";
+
+/// TOML file [`App`](crate::http::App) reads at startup, relative to the working directory.
+pub const SECURITY_TOML_FILE: &str = "config/security.toml";
 
 /// Symfony-style role hierarchy.
 ///
@@ -65,10 +69,31 @@ impl RoleHierarchy {
         Ok(Self { map })
     }
 
-    /// Same as [`from_yaml`](Self::from_yaml), reading the file at runtime. Refuses a file over
-    /// 64 KiB and, on Unix, a file every user of the server can write.
+    /// Build from the `security.role_hierarchy` table of a `security.toml`, with the same
+    /// checks as [`from_yaml`](Self::from_yaml):
+    ///
+    /// ```ignore
+    /// // [security.role_hierarchy]
+    /// // ROLE_ADMIN = ["ROLE_EDITOR"]
+    /// let hierarchy = RoleHierarchy::from_toml(include_str!("../config/security.toml"))?;
+    /// ```
+    pub fn from_toml(source: &str) -> Result<Self, RoleHierarchyError> {
+        let map = security_toml::parse(source)?.into_iter().collect();
+
+        Ok(Self { map })
+    }
+
+    /// Reads the file at runtime: TOML for a `.toml` extension, YAML otherwise. Refuses a file
+    /// over 64 KiB and, on Unix, a file every user of the server can write.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, RoleHierarchyError> {
-        Self::from_yaml(&security_yaml::read_file(path.as_ref())?)
+        let path = path.as_ref();
+        let source = role_file::read_file(path)?;
+
+        if path.extension().is_some_and(|ext| ext == "toml") {
+            Self::from_toml(&source)
+        } else {
+            Self::from_yaml(&source)
+        }
     }
 
     /// Resolve a set of user roles into the full set of effective roles
@@ -105,7 +130,7 @@ impl RoleHierarchy {
 }
 
 /// Default role hierarchy for LaRevueGeek. Still what an app runs with when it neither sets a
-/// hierarchy nor ships `config/security.yaml`.
+/// hierarchy nor ships `config/security.yaml` / `config/security.toml`.
 pub fn default_hierarchy() -> RoleHierarchy {
     RoleHierarchy::new(&[
         ("ROLE_SUPER_ADMIN", &["ROLE_ADMIN"]),
@@ -131,8 +156,9 @@ pub(crate) fn activate_hierarchy(hierarchy: RoleHierarchy) {
 /// Hierarchy an app runs with, and where it came from (for the startup log):
 ///
 /// 1. the one set in code with [`App::role_hierarchy`](crate::http::App::role_hierarchy);
-/// 2. `config/security.yaml`, when the file exists and has a `role_hierarchy` section;
-/// 3. [`default_hierarchy`], as before this file existed.
+/// 2. `config/security.yaml` or `config/security.toml`, when it exists and has a
+///    `role_hierarchy` section (both at once is an error: which one wins would be a guess);
+/// 3. [`default_hierarchy`], as before these files existed.
 ///
 /// A file that exists but is invalid is an error, never a silent fallback to step 3.
 pub(crate) fn resolve_app_hierarchy(
@@ -142,21 +168,36 @@ pub(crate) fn resolve_app_hierarchy(
         return Ok((hierarchy, "set by the application"));
     }
 
-    let path = Path::new(SECURITY_FILE);
-    let exists = path.try_exists().map_err(|source| RoleHierarchyError::Io {
-        path: SECURITY_FILE.to_string(),
-        source,
-    })?;
-
-    if exists {
+    if let Some(path) = find_security_file()? {
         match RoleHierarchy::from_file(path) {
-            Ok(hierarchy) => return Ok((hierarchy, SECURITY_FILE)),
+            Ok(hierarchy) => return Ok((hierarchy, path)),
             Err(RoleHierarchyError::MissingSection) => {}
             Err(e) => return Err(e),
         }
     }
 
     Ok((default_hierarchy(), "default"))
+}
+
+fn find_security_file() -> Result<Option<&'static str>, RoleHierarchyError> {
+    let exists = |path: &'static str| {
+        Path::new(path)
+            .try_exists()
+            .map_err(|source| RoleHierarchyError::Io {
+                path: path.to_string(),
+                source,
+            })
+    };
+
+    match (exists(SECURITY_FILE)?, exists(SECURITY_TOML_FILE)?) {
+        (true, true) => Err(RoleHierarchyError::Ambiguous {
+            first: SECURITY_FILE,
+            second: SECURITY_TOML_FILE,
+        }),
+        (true, false) => Ok(Some(SECURITY_FILE)),
+        (false, true) => Ok(Some(SECURITY_TOML_FILE)),
+        (false, false) => Ok(None),
+    }
 }
 
 #[cfg(test)]
@@ -197,10 +238,49 @@ mod tests {
         assert!(!h.has_role(&["ROLE_ADMIN".to_string()], "ROLE_SUPER_ADMIN"));
     }
 
-    /// An app that sets nothing and ships no `config/security.yaml` keeps the hierarchy it had.
+    #[test]
+    fn from_toml_resolves_transitively() {
+        let h = RoleHierarchy::from_toml(
+            "[security.role_hierarchy]\nROLE_SUPER_ADMIN = [\"ROLE_ADMIN\"]\nROLE_ADMIN = [\"ROLE_USER\"]\n",
+        )
+        .unwrap();
+
+        assert!(h.has_role(&["ROLE_SUPER_ADMIN".to_string()], "ROLE_USER"));
+        assert!(!h.has_role(&["ROLE_ADMIN".to_string()], "ROLE_SUPER_ADMIN"));
+    }
+
+    /// The extension picks the syntax; anything but `.toml` stays YAML, as in 0.4.7.
+    #[test]
+    fn from_file_picks_the_syntax_from_the_extension() {
+        let dir = std::env::temp_dir().join(format!("karbon-roles-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let toml = dir.join("security.toml");
+        let yaml = dir.join("roles.conf");
+        std::fs::write(
+            &toml,
+            "[security.role_hierarchy]\nROLE_A = [\"ROLE_USER\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &yaml,
+            "security:\n  role_hierarchy:\n    ROLE_A: [ROLE_USER]\n",
+        )
+        .unwrap();
+
+        for path in [&toml, &yaml] {
+            let h = RoleHierarchy::from_file(path).unwrap();
+            assert!(h.has_role(&["ROLE_A".to_string()], "ROLE_USER"), "{path:?}");
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// An app that sets nothing and ships no security file keeps the hierarchy it had.
     #[test]
     fn without_file_or_explicit_hierarchy_the_default_applies() {
         assert!(!Path::new(SECURITY_FILE).exists());
+        assert!(!Path::new(SECURITY_TOML_FILE).exists());
 
         let (h, source) = resolve_app_hierarchy(None).unwrap();
 

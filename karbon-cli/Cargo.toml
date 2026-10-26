@@ -16,6 +16,7 @@ path = "src/main.rs"
 clap = { version = "4", features = ["derive"] }
 toml = "1.1.2"
 serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
 colored = "3"
 ctrlc = "3"
 pulldown-cmark = { workspace = true }

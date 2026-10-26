@@ -189,11 +189,7 @@ fn latest_mtime(dir: &Path) -> SystemTime {
 
 /// Run the compiled binary directly — karbon owns the process, no intermediary.
 fn start_backend_binary(config: &KarbonConfig, root: &Path) -> Result<Child, String> {
-    let binary = if cfg!(windows) {
-        root.join(format!("target/debug/{}.exe", config.backend.package))
-    } else {
-        root.join(format!("target/debug/{}", config.backend.package))
-    };
+    let binary = crate::cargo_target::binary_path(root, "debug", &config.backend.package, true);
 
     if !binary.exists() {
         return Err(format!("Binary not found: {}", binary.display()));

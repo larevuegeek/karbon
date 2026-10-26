@@ -58,7 +58,7 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     let all_packages = config.backend.all_packages();
     let mut binary_paths: Vec<std::path::PathBuf> = Vec::with_capacity(all_packages.len());
     for pkg in &all_packages {
-        let p = root.join(format!("target/release/{}", pkg));
+        let p = crate::cargo_target::binary_path(root, "release", pkg, false);
         if !p.exists() {
             return Err(format!(
                 "Binary not found at {}. Run `karbon build` first.",

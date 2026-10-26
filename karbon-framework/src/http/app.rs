@@ -181,8 +181,9 @@ impl App {
         self
     }
 
-    /// Set the role hierarchy in code. Takes precedence over `config/security.yaml`; with
-    /// neither, [`default_hierarchy`](crate::security::default_hierarchy) applies as before.
+    /// Set the role hierarchy in code. Takes precedence over `config/security.yaml` and
+    /// `config/security.toml`; with none of them,
+    /// [`default_hierarchy`](crate::security::default_hierarchy) applies as before.
     ///
     /// ```ignore
     /// App::new()
@@ -232,7 +233,11 @@ impl App {
         // Refuse to start on an invalid security file rather than run with other roles.
         let (role_hierarchy, hierarchy_source) =
             crate::security::resolve_app_hierarchy(self.role_hierarchy.take()).map_err(|e| {
-                anyhow::anyhow!("Role hierarchy ({}): {e}", crate::security::SECURITY_FILE)
+                anyhow::anyhow!(
+                    "Role hierarchy ({} / {}): {e}",
+                    crate::security::SECURITY_FILE,
+                    crate::security::SECURITY_TOML_FILE
+                )
             })?;
 
         tracing::info!("Role hierarchy: {hierarchy_source}");

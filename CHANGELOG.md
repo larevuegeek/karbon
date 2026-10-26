@@ -11,6 +11,46 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.8] - 2026-10-26
+
+> Additive release: the role hierarchy can also be declared in TOML
+> (`config/security.toml`), and `karbon dev` / `serve` / `deploy` find the binary of an app
+> that is a Cargo workspace member. Nothing changes for an app that ships
+> `config/security.yaml` or neither file, nor for a single-crate app.
+
+### Added
+- **Role hierarchy in TOML.** `RoleHierarchy::from_toml(&str)` reads the same section as
+  `from_yaml`, in TOML:
+  ```toml
+  [security.role_hierarchy]
+  ROLE_ADMIN       = ["ROLE_EDITOR"]
+  ROLE_SUPER_ADMIN = ["ROLE_ADMIN", "ROLE_ALLOWED_TO_SWITCH"]
+  ```
+  TOML has no anchors, aliases, tags or guessed types, so the syntax is left to the `toml`
+  crate (already used by the CLI; built without `unbounded`, nesting depth stays capped). The
+  document is then walked as a whitelist like the YAML file — any key other than
+  `security.role_hierarchy` is refused — and goes through the same checks: role names,
+  duplicates, self-inheritance, cycles, size limits. Every error carries its line number.
+- `App::serve()` / `TestApp` also look for `config/security.toml` (`SECURITY_TOML_FILE`). If
+  both `config/security.yaml` and `config/security.toml` exist, startup stops: which one wins
+  would be a guess.
+- `RoleHierarchy::from_file` reads TOML for a `.toml` extension; any other extension stays
+  YAML, as in 0.4.7.
+
+### Changed
+- `RoleHierarchyError` is now `#[non_exhaustive]` and gains `Ambiguous { first, second }`.
+  Only a `match` listing every variant without a `_` arm needs one.
+
+### Fixed
+- **`karbon dev` / `serve` / `deploy` could not find the binary of a workspace member.** They
+  looked for it in `<karbon.toml dir>/target/{debug,release}/`, but cargo writes a workspace
+  member's output to the workspace root's `target/` (or wherever `CARGO_TARGET_DIR` /
+  `.cargo/config.toml` say): the build succeeded, then "Binary not found". The CLI now asks
+  cargo (`cargo metadata --no-deps`, no network) and falls back to `<project>/target` when
+  cargo cannot tell — the same path as before for a single-crate app. A project that worked
+  around it with a `.cargo/config.toml` `target-dir` keeps working, and can drop it to share
+  one `target/` between its binaries. The generated Dockerfile is unchanged.
+
 ## [0.4.7] - 2026-10-26
 
 > Fix release: mail sending works on port 587. Nothing changes on port 465. The role

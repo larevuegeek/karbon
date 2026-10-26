@@ -4,7 +4,9 @@ Une app Karbon se compile en **un binaire Rust** (backend + reverse proxy intég
 accompagné du **build frontend** (SvelteKit/Next.js servi en SSR par Node). Ce guide
 couvre les cibles de déploiement, de la plus simple à la plus avancée.
 
-> Pré-requis : `karbon build` produit `target/release/<app>` + le build frontend.
+> Pré-requis : `karbon build` produit `target/release/<app>` + le build frontend. Dans un
+> workspace Cargo, `target/` est celui de la racine du workspace (ou celui de
+> `CARGO_TARGET_DIR`) : Karbon le demande à cargo.
 > En production, le binaire Rust sert l'API et proxie le reste vers le SSR Node
 > quand `KARBON_FRONTEND_URL` est défini (ce que fait `karbon serve`).
 

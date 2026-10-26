@@ -46,15 +46,20 @@ unprotected. Add <code>auth: AuthGuard</code>.</p>
 <p>Roles inherit downward, so checking a lower role passes for a higher one:</p>
 <pre>ROLE_SUPER_ADMIN → ROLE_ADMIN → ROLE_REDACTEUR, ROLE_MODERATEUR → ROLE_USER</pre>
 <p><code>auth.require_role("ROLE_ADMIN")</code> succeeds for a <code>ROLE_SUPER_ADMIN</code>. Protect a whole controller with <code>role = "…"</code>, or a single handler with <code>#[require_role]</code>. See <a href="routing.html">Routing</a>.</p>
-<p>Declare your own hierarchy in <code>config/security.yaml</code>, in the Symfony shape:</p>
+<p>Declare your own hierarchy in <code>config/security.toml</code>:</p>
+<pre>[security.role_hierarchy]
+ROLE_ADMIN       = ["ROLE_EDITOR"]
+ROLE_EDITOR      = ["ROLE_USER"]
+ROLE_SUPER_ADMIN = ["ROLE_ADMIN", "ROLE_ALLOWED_TO_SWITCH"]</pre>
+<p>or in <code>config/security.yaml</code>, in the Symfony shape (pasted from a Symfony project as is):</p>
 <pre>security:
     role_hierarchy:
         ROLE_ADMIN:       [ROLE_EDITOR]
         ROLE_EDITOR:      [ROLE_USER]
         ROLE_SUPER_ADMIN: [ROLE_ADMIN, ROLE_ALLOWED_TO_SWITCH]</pre>
-<p><code>App::serve()</code> uses, in order: a hierarchy set with <code>App::role_hierarchy(…)</code>, then <code>config/security.yaml</code> when it exists, then the default above. To fix the hierarchy at build time, embed the file: <code>.role_hierarchy(RoleHierarchy::from_yaml(include_str!("../config/security.yaml"))?)</code>.</p>
+<p><code>App::serve()</code> uses, in order: a hierarchy set with <code>App::role_hierarchy(…)</code>, then <code>config/security.yaml</code> or <code>config/security.toml</code> when one exists (both at once stops the startup), then the default above. To fix the hierarchy at build time, embed the file: <code>.role_hierarchy(RoleHierarchy::from_toml(include_str!("../config/security.toml"))?)</code> (or <code>from_yaml</code>).</p>
 <div class="note ok">
-<p><b>Strict on purpose.</b> The file is read by a whitelist of that shape, not a general YAML parser: tags, anchors and aliases, merge keys, block scalars, several documents and keys other than <code>security.role_hierarchy</code> are refused with their line number. Role names must match <code>ROLE_[A-Z0-9_]+</code>; duplicates, self-inheritance and cycles are refused. An invalid file stops the startup instead of running with other roles.</p>
+<p><b>Strict on purpose.</b> Both files go through a whitelist: keys other than <code>security.role_hierarchy</code> are refused with their line number. YAML is not read by a general parser: tags, anchors and aliases, merge keys, block scalars and several documents are refused. Role names must match <code>ROLE_[A-Z0-9_]+</code>; duplicates, self-inheritance and cycles are refused. An invalid file stops the startup instead of running with other roles.</p>
 </div>
 
 <h2>Firewall (access control)</h2>
