@@ -194,7 +194,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         async move {
             if Self::SOFT_DELETE {
                 UpdateBuilder::table(Self::TABLE)
-                    .set_raw("deleted_at", "NOW()")
+                    .set_now("deleted_at")
                     .where_eq("id", id)
                     .execute(pool)
                     .await

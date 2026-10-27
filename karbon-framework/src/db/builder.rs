@@ -135,13 +135,57 @@ impl InsertBuilder {
 
 /// Runtime UPDATE query builder for custom updates.
 ///
-/// Accepts either a `&DbPool` or a `&mut Transaction` via `execute()`.
+/// Accepts either a `&DbPool` or a `&mut Transaction` via `execute()`. Values are bound in
+/// the order of the generated SQL (SET, then WHERE), whatever the order of the calls. An
+/// UPDATE without any condition is refused unless [`all`](Self::all) says so.
 pub struct UpdateBuilder {
     table: String,
-    set_clauses: Vec<String>,
-    where_clauses: Vec<String>,
-    args: DbArguments,
+    set_clauses: Vec<Clause>,
+    where_clauses: Vec<Clause>,
     param_count: usize,
+    all_rows: bool,
+    error: Option<String>,
+    #[cfg(feature = "mysql")]
+    limit: Option<u64>,
+}
+
+/// A piece of SQL whose `BIND` markers become placeholders, numbered in SQL order.
+struct Clause {
+    sql: String,
+    binders: Vec<Binder>,
+}
+
+type Binder = Box<dyn FnOnce(&mut DbArguments) + Send>;
+
+/// Stands for a bound value inside a clause until the SQL is rendered.
+const BIND: char = '\u{0}';
+
+impl Clause {
+    fn raw(sql: String) -> Self {
+        Self {
+            sql,
+            binders: Vec::new(),
+        }
+    }
+
+    fn bound<T>(sql: String, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+    {
+        Self {
+            sql,
+            binders: vec![binder(value)],
+        }
+    }
+}
+
+fn binder<T>(value: T) -> Binder
+where
+    T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+{
+    Box::new(move |args: &mut DbArguments| {
+        args.add(value).unwrap();
+    })
 }
 
 impl UpdateBuilder {
@@ -150,8 +194,11 @@ impl UpdateBuilder {
             table: table.to_string(),
             set_clauses: Vec::new(),
             where_clauses: Vec::new(),
-            args: DbArguments::default(),
             param_count: 0,
+            all_rows: false,
+            error: None,
+            #[cfg(feature = "mysql")]
+            limit: None,
         }
     }
 
@@ -162,58 +209,135 @@ impl UpdateBuilder {
     {
         self.param_count += 1;
         self.set_clauses
-            .push(format!("{} = {}", column, placeholder(self.param_count)));
-        self.args.add(value).unwrap();
+            .push(Clause::bound(format!("{column} = {BIND}"), value));
         self
     }
 
-    /// SET column = <raw SQL expression> (e.g. NOW(), NULL, column + 1)
+    /// SET column = <raw SQL expression> (e.g. NULL, column + 1)
     pub fn set_raw(mut self, column: &str, expr: &str) -> Self {
-        self.set_clauses.push(format!("{} = {}", column, expr));
+        self.set_clauses
+            .push(Clause::raw(format!("{column} = {expr}")));
+        self
+    }
+
+    /// SET column = now, by the database clock.
+    pub fn set_now(self, column: &str) -> Self {
+        self.set_raw(column, NOW_SQL)
+    }
+
+    /// SET column = <expression> where every `?` of the expression receives `value`:
+    /// `set_expr("quota", "GREATEST(COALESCE(quota, 0), ?)", 10)`. An expression without
+    /// `?` makes `execute()` fail.
+    pub fn set_expr<T>(mut self, column: &str, expr: &str, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + Clone + 'static,
+    {
+        let count = expr.matches('?').count();
+        if count == 0 {
+            self.error = Some(format!("set_expr({column}): no `?` in {expr:?}"));
+            return self;
+        }
+
+        self.param_count += count;
+        self.set_clauses.push(Clause {
+            sql: format!("{column} = {}", expr.replace('?', &BIND.to_string())),
+            binders: (0..count).map(|_| binder(value.clone())).collect(),
+        });
         self
     }
 
     /// SET column = ? only if value is Some, skip if None
-    pub fn set_if<T>(mut self, column: &str, value: Option<T>) -> Self
+    pub fn set_if<T>(self, column: &str, value: Option<T>) -> Self
     where
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
-        if let Some(v) = value {
-            self.param_count += 1;
-            self.set_clauses
-                .push(format!("{} = {}", column, placeholder(self.param_count)));
-            self.args.add(v).unwrap();
+        match value {
+            Some(v) => self.set(column, v),
+            None => self,
         }
-        self
     }
 
     /// WHERE column = ? with a bound value
-    pub fn where_eq<T>(mut self, column: &str, value: T) -> Self
+    pub fn where_eq<T>(self, column: &str, value: T) -> Self
     where
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
-        self.param_count += 1;
-        self.where_clauses
-            .push(format!("{} = {}", column, placeholder(self.param_count)));
-        self.args.add(value).unwrap();
-        self
-    }
-
-    /// WHERE <raw SQL> (e.g. "revoked = FALSE", "expires_at > NOW()")
-    pub fn where_raw(mut self, condition: &str) -> Self {
-        self.where_clauses.push(condition.to_string());
-        self
+        self.where_op(column, "=", value)
     }
 
     /// WHERE column != ? with a bound value
-    pub fn where_ne<T>(mut self, column: &str, value: T) -> Self
+    pub fn where_ne<T>(self, column: &str, value: T) -> Self
     where
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
+        self.where_op(column, "!=", value)
+    }
+
+    /// WHERE column < ?
+    pub fn where_lt<T>(self, column: &str, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+    {
+        self.where_op(column, "<", value)
+    }
+
+    /// WHERE column <= ?
+    pub fn where_lte<T>(self, column: &str, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+    {
+        self.where_op(column, "<=", value)
+    }
+
+    /// WHERE column > ?
+    pub fn where_gt<T>(self, column: &str, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+    {
+        self.where_op(column, ">", value)
+    }
+
+    /// WHERE column >= ?
+    pub fn where_gte<T>(self, column: &str, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+    {
+        self.where_op(column, ">=", value)
+    }
+
+    /// WHERE column IS NULL
+    pub fn where_null(self, column: &str) -> Self {
+        self.where_raw(&format!("{column} IS NULL"))
+    }
+
+    /// WHERE column IS NOT NULL
+    pub fn where_not_null(self, column: &str) -> Self {
+        self.where_raw(&format!("{column} IS NOT NULL"))
+    }
+
+    /// WHERE column < now, by the database clock.
+    pub fn where_before_now(self, column: &str) -> Self {
+        self.where_raw(&format!("{column} < {NOW_SQL}"))
+    }
+
+    /// WHERE column > now, by the database clock.
+    pub fn where_after_now(self, column: &str) -> Self {
+        self.where_raw(&format!("{column} > {NOW_SQL}"))
+    }
+
+    /// WHERE column < now − `age`, by the database clock. The age is bound, in seconds.
+    pub fn where_older_than(mut self, column: &str, age: std::time::Duration) -> Self {
         self.param_count += 1;
-        self.where_clauses
-            .push(format!("{} != {}", column, placeholder(self.param_count)));
-        self.args.add(value).unwrap();
+        self.where_clauses.push(Clause::bound(
+            format!("{column} < {}", older_than_sql(&BIND.to_string())),
+            age_seconds(age),
+        ));
+        self
+    }
+
+    /// WHERE <raw SQL> (e.g. "revoked = FALSE", "COALESCE(active, 0) = 0")
+    pub fn where_raw(mut self, condition: &str) -> Self {
+        self.where_clauses.push(Clause::raw(condition.to_string()));
         self
     }
 
@@ -222,19 +346,67 @@ impl UpdateBuilder {
     where
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + Clone + 'static,
     {
-        let clause = in_clause(column, values, &mut self.args, &mut self.param_count);
-        self.where_clauses.push(clause);
+        if values.is_empty() {
+            return self.where_raw("1 = 0");
+        }
+
+        self.param_count += values.len();
+        let markers = vec![BIND.to_string(); values.len()].join(", ");
+        self.where_clauses.push(Clause {
+            sql: format!("{column} IN ({markers})"),
+            binders: values.iter().cloned().map(binder).collect(),
+        });
+        self
+    }
+
+    /// Updates every row of the table: required to run an UPDATE without condition.
+    pub fn all(mut self) -> Self {
+        self.all_rows = true;
+        self
+    }
+
+    /// `LIMIT n` — MySQL only, hence absent from the other drivers.
+    #[cfg(feature = "mysql")]
+    pub fn limit(mut self, limit: u64) -> Self {
+        self.limit = Some(limit);
         self
     }
 
     /// Requête SQL générée (sans les valeurs).
     pub fn to_sql(&self) -> String {
-        format!(
-            "UPDATE {} SET {}{}",
-            self.table,
-            self.set_clauses.join(", "),
-            where_sql(&self.where_clauses)
-        )
+        let mut n = 0;
+        let mut render = |clauses: &[Clause]| -> Vec<String> {
+            clauses
+                .iter()
+                .map(|c| {
+                    c.sql
+                        .split(BIND)
+                        .enumerate()
+                        .map(|(i, part)| {
+                            if i == 0 {
+                                part.to_string()
+                            } else {
+                                n += 1;
+                                format!("{}{part}", placeholder(n))
+                            }
+                        })
+                        .collect()
+                })
+                .collect()
+        };
+
+        let set = render(&self.set_clauses).join(", ");
+        let conditions = render(&self.where_clauses);
+
+        #[allow(unused_mut)]
+        let mut sql = format!("UPDATE {} SET {set}{}", self.table, where_sql(&conditions));
+
+        #[cfg(feature = "mysql")]
+        if let Some(limit) = self.limit {
+            sql.push_str(&format!(" LIMIT {limit}"));
+        }
+
+        sql
     }
 
     /// Execute the UPDATE and return rows_affected
@@ -242,16 +414,46 @@ impl UpdateBuilder {
     where
         E: sqlx::Executor<'e, Database = Db>,
     {
+        if let Some(error) = self.error {
+            return Err(AppError::Internal(format!(
+                "UPDATE {}: {error}",
+                self.table
+            )));
+        }
         if self.set_clauses.is_empty() {
             return Ok(0);
         }
+        if self.where_clauses.is_empty() && !self.all_rows {
+            return Err(AppError::Internal(format!(
+                "UPDATE {} without condition refused: add a where_* or call .all()",
+                self.table
+            )));
+        }
+
         let sql = self.to_sql();
 
-        let result = sqlx::query_with(AssertSqlSafe(sql), self.args)
+        let mut args = DbArguments::default();
+        for clause in self.set_clauses.into_iter().chain(self.where_clauses) {
+            for bind in clause.binders {
+                bind(&mut args);
+            }
+        }
+
+        let result = sqlx::query_with(AssertSqlSafe(sql), args)
             .execute(executor)
             .await?;
 
         Ok(result.rows_affected())
+    }
+
+    fn where_op<T>(mut self, column: &str, op: &str, value: T) -> Self
+    where
+        T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
+    {
+        self.param_count += 1;
+        self.where_clauses
+            .push(Clause::bound(format!("{column} {op} {BIND}"), value));
+        self
     }
 }
 
@@ -330,6 +532,24 @@ impl DeleteBuilder {
     /// itself (`NOW()`), whatever the application's time zone.
     pub fn where_before_now(mut self, column: &str) -> Self {
         self.where_clauses.push(format!("{column} < {NOW_SQL}"));
+        self
+    }
+
+    /// WHERE column > now, by the database clock.
+    pub fn where_after_now(mut self, column: &str) -> Self {
+        self.where_clauses.push(format!("{column} > {NOW_SQL}"));
+        self
+    }
+
+    /// WHERE column IS NULL
+    pub fn where_null(mut self, column: &str) -> Self {
+        self.where_clauses.push(format!("{column} IS NULL"));
+        self
+    }
+
+    /// WHERE column IS NOT NULL
+    pub fn where_not_null(mut self, column: &str) -> Self {
+        self.where_clauses.push(format!("{column} IS NOT NULL"));
         self
     }
 
@@ -647,5 +867,123 @@ mod delete_tests {
     fn without_condition_only_all_is_explicit() {
         assert_eq!(DeleteBuilder::from("t").all().to_sql(), "DELETE FROM t");
         assert!(!DeleteBuilder::from("t").all_rows);
+    }
+}
+
+#[cfg(test)]
+mod update_tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn values_follow_the_sql_order_whatever_the_call_order() {
+        let b = UpdateBuilder::table("t")
+            .where_eq("id", 7_i64)
+            .set("name", "x".to_string())
+            .where_lt("n", 3_i64)
+            .set_now("updated");
+        assert_eq!(
+            b.to_sql(),
+            format!(
+                "UPDATE t SET name = {}, updated = {NOW_SQL} WHERE id = {} AND n < {}",
+                placeholder(1),
+                placeholder(2),
+                placeholder(3)
+            )
+        );
+        // SET first, then WHERE: the binders are applied in that order.
+        assert_eq!(b.set_clauses[0].binders.len(), 1);
+        assert_eq!(b.where_clauses[0].binders.len(), 1);
+    }
+
+    #[test]
+    fn set_expr_binds_each_question_mark() {
+        let b = UpdateBuilder::table("h")
+            .set_expr("quota", "GREATEST(COALESCE(quota, 0), ?)", 5_i64)
+            .set_expr("d", "IF(yearly, CEIL(? / 12), ?)", 24_i64)
+            .where_eq("id", 1_i64);
+        assert_eq!(
+            b.to_sql(),
+            format!(
+                "UPDATE h SET quota = GREATEST(COALESCE(quota, 0), {}), d = IF(yearly, CEIL({} / 12), {}) WHERE id = {}",
+                placeholder(1),
+                placeholder(2),
+                placeholder(3),
+                placeholder(4)
+            )
+        );
+        assert_eq!(b.param_count, 4);
+    }
+
+    #[test]
+    fn set_expr_without_question_mark_is_recorded_as_an_error() {
+        let b = UpdateBuilder::table("h").set_expr("q", "q + 1", 1_i64);
+        assert!(b.error.is_some());
+    }
+
+    #[test]
+    fn null_and_clock_conditions() {
+        let b = UpdateBuilder::table("s")
+            .set("used", 1_i64)
+            .where_null("used_at")
+            .where_not_null("token")
+            .where_after_now("expires_at")
+            .where_older_than("seen_at", Duration::from_secs(60));
+        assert_eq!(
+            b.to_sql(),
+            format!(
+                "UPDATE s SET used = {} WHERE used_at IS NULL AND token IS NOT NULL AND expires_at > {NOW_SQL} AND seen_at < {}",
+                placeholder(1),
+                older_than_sql(&placeholder(2))
+            )
+        );
+    }
+
+    #[test]
+    fn without_condition_only_all_is_explicit() {
+        assert!(!UpdateBuilder::table("t").set("a", 1_i64).all_rows);
+        assert_eq!(
+            UpdateBuilder::table("t").set_raw("a", "1").all().to_sql(),
+            "UPDATE t SET a = 1"
+        );
+    }
+
+    /// The binding order checked against a real database: `where_eq` before `set` used to
+    /// write the id into the column and filter on the value with `?` placeholders.
+    #[cfg(feature = "sqlite")]
+    #[tokio::test]
+    async fn a_where_called_first_still_binds_after_the_set() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::raw_sql(
+            "CREATE TABLE t (id INTEGER, name TEXT); INSERT INTO t VALUES (1, 'a'), (2, 'b');",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let changed = UpdateBuilder::table("t")
+            .where_eq("id", 2_i64)
+            .set("name", "z".to_string())
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let rows: Vec<(i64, String)> = sqlx::query_as("SELECT id, name FROM t ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(changed, 1);
+        assert_eq!(rows, vec![(1, "a".to_string()), (2, "z".to_string())]);
+    }
+
+    #[cfg(feature = "mysql")]
+    #[test]
+    fn mysql_limit_closes_the_statement() {
+        let b = UpdateBuilder::table("r")
+            .set_raw("restart", "1")
+            .all()
+            .limit(1);
+        assert_eq!(b.to_sql(), "UPDATE r SET restart = 1 LIMIT 1");
     }
 }

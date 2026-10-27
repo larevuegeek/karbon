@@ -11,6 +11,34 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.4.12] - 2026-10-27
+
+> `UpdateBuilder` catches up with `DeleteBuilder` and fixes a silent binding bug. Existing
+> code keeps working, except an UPDATE without condition, now refused unless `.all()`.
+
+### Fixed
+- **`UpdateBuilder` bound values in call order, not SQL order.** With `?` placeholders
+  (MySQL, SQLite), a `where_eq` called before a `set` wrote the WHERE value into the
+  column and filtered on the SET value — no error, wrong rows. Values are now bound when
+  the query runs, SET first then WHERE, whatever the order of the calls. Postgres (`$n`)
+  was not affected.
+- **`CrudRepository::delete` with `SOFT_DELETE` failed on SQLite**: it wrote
+  `deleted_at = NOW()`, a function SQLite does not have. It now uses the database clock of
+  the compiled driver (`set_now`).
+
+### Added
+- **`UpdateBuilder`**: `set_now(column)` (database clock), `set_expr(column, expr, value)`
+  where every `?` of the expression receives the value (`GREATEST(COALESCE(q, 0), ?)`);
+  `where_lt` / `where_lte` / `where_gt` / `where_gte`, `where_null` / `where_not_null`,
+  `where_before_now` / `where_after_now`, `where_older_than(column, Duration)`; `limit(n)`,
+  MySQL builds only.
+- **`DeleteBuilder`**: `where_after_now`, `where_null`, `where_not_null`.
+
+### Changed
+- **`UpdateBuilder::execute` refuses an UPDATE without condition** (`AppError::Internal`):
+  call `.all()` to update every row on purpose. A `set_expr` without `?` also makes it
+  fail instead of sending a broken query.
+
 ## [0.4.11] - 2026-10-26
 
 > Feature and security release: `DomainHelper` cuts a domain name into name and
