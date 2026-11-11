@@ -53,11 +53,7 @@ impl PoolSettings {
             max_connections: max_connections.max(1),
             min_connections: env_parse("DB_MIN_CONNECTIONS", 0),
             acquire_timeout: Duration::from_secs(
-                env_parse(
-                    "DB_ACQUIRE_TIMEOUT_SECS",
-                    Self::DEFAULT_ACQUIRE_TIMEOUT_SECS,
-                )
-                .max(1),
+                env_parse("DB_ACQUIRE_TIMEOUT_SECS", Self::DEFAULT_ACQUIRE_TIMEOUT_SECS).max(1),
             ),
             max_lifetime: optional_secs("DB_MAX_LIFETIME_SECS", Self::DEFAULT_MAX_LIFETIME_SECS),
             idle_timeout: optional_secs("DB_IDLE_TIMEOUT_SECS", Self::DEFAULT_IDLE_TIMEOUT_SECS),
@@ -89,10 +85,7 @@ fn optional_secs(key: &str, default: u64) -> Option<Duration> {
 }
 
 fn env_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
-    std::env::var(key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
+    std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
 #[cfg(test)]
@@ -114,18 +107,9 @@ mod tests {
         let reference = DbPoolOptions::new().max_connections(7);
         let applied = s.apply(DbPoolOptions::new());
 
-        assert_eq!(
-            applied.get_max_connections(),
-            reference.get_max_connections()
-        );
-        assert_eq!(
-            applied.get_min_connections(),
-            reference.get_min_connections()
-        );
-        assert_eq!(
-            applied.get_acquire_timeout(),
-            reference.get_acquire_timeout()
-        );
+        assert_eq!(applied.get_max_connections(), reference.get_max_connections());
+        assert_eq!(applied.get_min_connections(), reference.get_min_connections());
+        assert_eq!(applied.get_acquire_timeout(), reference.get_acquire_timeout());
         assert_eq!(applied.get_max_lifetime(), reference.get_max_lifetime());
         assert_eq!(applied.get_idle_timeout(), reference.get_idle_timeout());
     }
@@ -133,10 +117,7 @@ mod tests {
     #[test]
     fn zero_disables_recycling() {
         assert_eq!(optional_secs("KARBON_TEST_UNSET_LIFETIME", 0), None);
-        assert_eq!(
-            optional_secs("KARBON_TEST_UNSET_LIFETIME", 42),
-            Some(Duration::from_secs(42))
-        );
+        assert_eq!(optional_secs("KARBON_TEST_UNSET_LIFETIME", 42), Some(Duration::from_secs(42)));
     }
 
     #[test]

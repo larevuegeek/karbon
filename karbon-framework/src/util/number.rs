@@ -36,11 +36,7 @@ impl NumberHelper {
             result.push(*c);
         }
 
-        if negative {
-            format!("-{}", result)
-        } else {
-            result
-        }
+        if negative { format!("-{}", result) } else { result }
     }
 
     /// Format a float with specified decimal places and thousands separator
@@ -60,11 +56,7 @@ impl NumberHelper {
 
     /// Format as ordinal (French): 1 => "1er", 2 => "2e", etc.
     pub fn ordinal(value: u64) -> String {
-        if value == 1 {
-            "1er".to_string()
-        } else {
-            format!("{}e", value)
-        }
+        if value == 1 { "1er".to_string() } else { format!("{}e", value) }
     }
 
     /// Format as percentage

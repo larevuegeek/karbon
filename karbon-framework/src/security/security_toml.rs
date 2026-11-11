@@ -18,8 +18,7 @@ use toml::Spanned;
 use toml::de::{DeTable, DeValue};
 
 use super::role_file::{
-    Entry, RawEntry, RoleHierarchyError, check_source, excerpt, invalid, invalid_role_rule,
-    is_valid_role, validate,
+    Entry, RawEntry, RoleHierarchyError, check_source, excerpt, invalid, invalid_role_rule, is_valid_role, validate,
 };
 
 /// Parses `security.role_hierarchy` and checks the result.
@@ -64,18 +63,12 @@ fn single_table<'a>(
         if key.get_ref() != name {
             return Err(invalid(
                 line_of(source, key.span().start),
-                format!(
-                    "only `{name}` is allowed {place} (found `{}`)",
-                    excerpt(key.get_ref())
-                ),
+                format!("only `{name}` is allowed {place} (found `{}`)", excerpt(key.get_ref())),
             ));
         }
 
         let DeValue::Table(inner) = value.get_ref() else {
-            return Err(invalid(
-                line_of(source, value.span().start),
-                format!("`{name}` must be a table"),
-            ));
+            return Err(invalid(line_of(source, value.span().start), format!("`{name}` must be a table")));
         };
 
         found = Some(inner);
@@ -94,20 +87,13 @@ fn parse_entries(source: &str, section: &DeTable) -> Result<Vec<RawEntry>, RoleH
         .map(|(key, value)| {
             let line = line_of(source, key.span().start);
 
-            Ok(RawEntry {
-                role: parse_role(key.get_ref(), line)?,
-                line,
-                children: parse_children(source, value)?,
-            })
+            Ok(RawEntry { role: parse_role(key.get_ref(), line)?, line, children: parse_children(source, value)? })
         })
         .collect()
 }
 
 /// `["ROLE_A", "ROLE_B"]`, `[]` or a single `"ROLE_A"`.
-fn parse_children(
-    source: &str,
-    value: &Spanned<DeValue>,
-) -> Result<Vec<(String, usize)>, RoleHierarchyError> {
+fn parse_children(source: &str, value: &Spanned<DeValue>) -> Result<Vec<(String, usize)>, RoleHierarchyError> {
     let line = line_of(source, value.span().start);
 
     match value.get_ref() {
@@ -132,10 +118,7 @@ fn parse_children(
 
 fn parse_role(name: &str, line: usize) -> Result<String, RoleHierarchyError> {
     if !is_valid_role(name) {
-        return Err(invalid(
-            line,
-            format!("{} (found `{}`)", invalid_role_rule(), excerpt(name)),
-        ));
+        return Err(invalid(line, format!("{} (found `{}`)", invalid_role_rule(), excerpt(name))));
     }
 
     Ok(name.to_string())
@@ -150,11 +133,7 @@ fn syntax_error(source: &str, error: &toml::de::Error) -> RoleHierarchyError {
 fn line_of(source: &str, offset: usize) -> usize {
     let end = offset.min(source.len());
 
-    source.as_bytes()[..end]
-        .iter()
-        .filter(|&&b| b == b'\n')
-        .count()
-        + 1
+    source.as_bytes()[..end].iter().filter(|&&b| b == b'\n').count() + 1
 }
 
 #[cfg(test)]
@@ -182,16 +161,15 @@ mod tests {
 
         assert_eq!(map.len(), 3);
         assert_eq!(map["ROLE_ADMIN"], roles(&["ROLE_EMPLOYEE", "ROLE_USER"]));
-        assert_eq!(
-            map["ROLE_SUPER_ADMIN"],
-            roles(&["ROLE_USER", "ROLE_ADMIN", "ROLE_ALLOWED_TO_SWITCH"])
-        );
+        assert_eq!(map["ROLE_SUPER_ADMIN"], roles(&["ROLE_USER", "ROLE_ADMIN", "ROLE_ALLOWED_TO_SWITCH"]));
     }
 
     /// Same hierarchy as the YAML reader gets from the Symfony block.
     #[test]
     fn toml_and_yaml_give_the_same_hierarchy() {
-        let toml = parse("[security.role_hierarchy]\nROLE_ADMIN = [\"ROLE_EMPLOYEE\"]\nROLE_EMPLOYEE = \"ROLE_USER\"\n").unwrap();
+        let toml =
+            parse("[security.role_hierarchy]\nROLE_ADMIN = [\"ROLE_EMPLOYEE\"]\nROLE_EMPLOYEE = \"ROLE_USER\"\n")
+                .unwrap();
         let yaml = super::super::security_yaml::parse(
             "security:\n  role_hierarchy:\n    ROLE_ADMIN: [ROLE_EMPLOYEE]\n    ROLE_EMPLOYEE: ROLE_USER\n",
         )
@@ -218,10 +196,7 @@ mod tests {
     #[test]
     fn a_file_without_the_section_is_reported_as_such() {
         for source in ["", "# rien\n", "[security]\n"] {
-            assert!(
-                matches!(parse(source), Err(RoleHierarchyError::MissingSection)),
-                "{source:?}"
-            );
+            assert!(matches!(parse(source), Err(RoleHierarchyError::MissingSection)), "{source:?}");
         }
     }
 
@@ -253,10 +228,7 @@ mod tests {
 
         for key in ["role_admin", "\"ROLE_A;rm\"", "\"$(id)\"", "\"ROLE_A B\""] {
             let message = refused(&format!("{base}{key} = []\n"));
-            assert!(
-                message.contains("line 2: invalid role name"),
-                "{key} → {message}"
-            );
+            assert!(message.contains("line 2: invalid role name"), "{key} → {message}");
         }
 
         let message = refused(&format!("{base}ROLE_A = [\"ROLE_B\\u001b[31m\"]\n"));
@@ -269,28 +241,18 @@ mod tests {
         let base = "[security.role_hierarchy]\n";
 
         assert!(refused(&format!("{base}ROLE_A = [\"ROLE_B\"\n")).contains("invalid TOML"));
-        assert!(
-            refused(&format!("{base}ROLE_A = []\nROLE_A = [\"ROLE_USER\"]\n"))
-                .contains("line 3: invalid TOML")
-        );
+        assert!(refused(&format!("{base}ROLE_A = []\nROLE_A = [\"ROLE_USER\"]\n")).contains("line 3: invalid TOML"));
     }
 
     #[test]
     fn shared_checks_apply_with_line_numbers() {
         let base = "[security.role_hierarchy]\n";
 
+        assert!(refused(&format!("{base}ROLE_A = [\"ROLE_A\"]\n")).contains("line 2: `ROLE_A` cannot inherit itself"));
+        assert!(refused(&format!("{base}ROLE_A = [\"ROLE_B\", \"ROLE_B\"]\n")).contains("listed twice"));
         assert!(
-            refused(&format!("{base}ROLE_A = [\"ROLE_A\"]\n"))
-                .contains("line 2: `ROLE_A` cannot inherit itself")
-        );
-        assert!(
-            refused(&format!("{base}ROLE_A = [\"ROLE_B\", \"ROLE_B\"]\n")).contains("listed twice")
-        );
-        assert!(
-            refused(&format!(
-                "{base}ROLE_USER = [\"ROLE_ADMIN\"]\nROLE_ADMIN = [\"ROLE_USER\"]\n"
-            ))
-            .contains("ROLE_USER → ROLE_ADMIN → ROLE_USER")
+            refused(&format!("{base}ROLE_USER = [\"ROLE_ADMIN\"]\nROLE_ADMIN = [\"ROLE_USER\"]\n"))
+                .contains("ROLE_USER → ROLE_ADMIN → ROLE_USER")
         );
     }
 }

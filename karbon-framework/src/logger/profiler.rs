@@ -61,25 +61,9 @@ pub async fn profiler_middleware(request: Request, next: Next) -> Response {
     };
 
     if duration_ms > 100 {
-        tracing::warn!(
-            "[SLOW] {} {} → {} {} ({}ms) [{}]",
-            method,
-            uri,
-            status,
-            status_tag,
-            duration_ms,
-            size_str
-        );
+        tracing::warn!("[SLOW] {} {} → {} {} ({}ms) [{}]", method, uri, status, status_tag, duration_ms, size_str);
     } else {
-        tracing::debug!(
-            "[DEBUG] {} {} → {} {} ({}ms) [{}]",
-            method,
-            uri,
-            status,
-            status_tag,
-            duration_ms,
-            size_str
-        );
+        tracing::debug!("[DEBUG] {} {} → {} {} ({}ms) [{}]", method, uri, status, status_tag, duration_ms, size_str);
     }
 
     response

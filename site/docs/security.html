@@ -25,7 +25,7 @@ let ok   = Password::verify("…", &amp;hash)?;</pre>
   <li>Refresh tokens: 30-day lifetime, with rotation on each use.</li>
   <li>Refresh tokens are stored SHA-256-hashed in the database — never in clear text.</li>
 </ul>
-<p>The signing secret comes from <code>JWT_SECRET</code>. Leaving it empty disables auth entirely (useful for prototypes).</p>
+<p>The signing secret comes from <code>JWT_SECRET</code>. <code>karbon new</code> writes a random one in <code>.env</code>, and <code>karbon secret --write</code> replaces it. Leaving it empty disables auth entirely (useful for prototypes). The placeholders shipped in <code>.env.example</code> are public, so the application refuses to start with one of them in any environment; a secret shorter than 32 bytes is accepted in <code>development</code> and <code>test</code> only.</p>
 
 <h2>AuthGuard</h2>
 <p><code>AuthGuard</code> is an Axum extractor that verifies the JWT and resolves the role hierarchy. Inject it into a handler to require — and read — an authenticated user.</p>

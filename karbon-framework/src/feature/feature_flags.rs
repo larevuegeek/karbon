@@ -37,9 +37,7 @@ pub struct FeatureFlags {
 
 impl FeatureFlags {
     pub fn new() -> Self {
-        Self {
-            store: Arc::new(RwLock::new(HashMap::new())),
-        }
+        Self { store: Arc::new(RwLock::new(HashMap::new())) }
     }
 
     /// Register a feature flag with an initial state

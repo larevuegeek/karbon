@@ -104,8 +104,7 @@ pub trait Bundle: Send + Sync + 'static {
     fn boot<'a>(
         &'a self,
         _state: &'a AppState,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = crate::error::AppResult<()>> + Send + 'a>>
-    {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = crate::error::AppResult<()>> + Send + 'a>> {
         Box::pin(async { Ok(()) })
     }
 }
@@ -213,8 +212,7 @@ impl App {
 
     /// Initialize tracing/logging
     fn init_tracing(&self) {
-        let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new(&self.config.log_level));
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&self.config.log_level));
 
         tracing_subscriber::registry()
             .with(filter)
@@ -232,12 +230,7 @@ impl App {
             tracing::warn!("CORS_ORIGINS is empty — no cross-origin requests will be allowed");
             cors
         } else {
-            let origins: Vec<_> = self
-                .config
-                .cors_origins
-                .iter()
-                .filter_map(|o| o.parse().ok())
-                .collect();
+            let origins: Vec<_> = self.config.cors_origins.iter().filter_map(|o| o.parse().ok()).collect();
             cors.allow_origin(origins)
         }
     }
@@ -247,8 +240,8 @@ impl App {
         self.init_tracing();
 
         // Refuse to start on an invalid security file rather than run with other roles.
-        let (role_hierarchy, hierarchy_source) =
-            crate::security::resolve_app_hierarchy(self.role_hierarchy.take()).map_err(|e| {
+        let (role_hierarchy, hierarchy_source) = crate::security::resolve_app_hierarchy(self.role_hierarchy.take())
+            .map_err(|e| {
                 anyhow::anyhow!(
                     "Role hierarchy ({} / {}): {e}",
                     crate::security::SECURITY_FILE,
@@ -264,11 +257,7 @@ impl App {
         crate::security::activate_hierarchy(role_hierarchy.clone());
 
         let db = if self.config.has_database() {
-            tracing::info!(
-                "Connecting to database at {}:{}",
-                self.config.db_host,
-                self.config.db_port
-            );
+            tracing::info!("Connecting to database at {}:{}", self.config.db_host, self.config.db_port);
             let db = Database::connect(&self.config).await?;
             tracing::info!("Database connected");
             db
@@ -287,20 +276,14 @@ impl App {
                     crate::security::MIN_JWT_SECRET_LEN
                 );
             }
-            tracing::warn!(
-                "JWT_SECRET is not set — authentication is disabled (all tokens are rejected)"
-            );
+            tracing::warn!("JWT_SECRET is not set — authentication is disabled (all tokens are rejected)");
+        } else if let Some(refusal) = jwt_secret_refusal(&self.config.jwt_secret, &self.config.environment()) {
+            anyhow::bail!(refusal);
         } else if crate::security::is_weak_secret(&self.config.jwt_secret) {
-            if self.config.is_production() {
-                anyhow::bail!(
-                    "JWT_SECRET is too weak (a known placeholder or shorter than {} bytes). \
-                     Set a strong random secret before deploying to production.",
-                    crate::security::MIN_JWT_SECRET_LEN
-                );
-            }
             tracing::warn!(
-                "JWT_SECRET is weak (short or a placeholder) — acceptable in dev, but MUST be \
-                 replaced with a strong random value before production."
+                "JWT_SECRET is shorter than {} bytes — acceptable in dev, but MUST be replaced \
+                 with a strong random value before production.",
+                crate::security::MIN_JWT_SECRET_LEN
             );
         }
 
@@ -312,10 +295,7 @@ impl App {
                     Some(m)
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Mailer initialization failed: {} — emails will be disabled",
-                        e
-                    );
+                    tracing::warn!("Mailer initialization failed: {} — emails will be disabled", e);
                     None
                 }
             }
@@ -327,8 +307,7 @@ impl App {
         // Template engine (optional feature)
         #[cfg(feature = "templates")]
         let templates = {
-            let tpl_dir =
-                std::env::var("TEMPLATE_DIR").unwrap_or_else(|_| "./templates".to_string());
+            let tpl_dir = std::env::var("TEMPLATE_DIR").unwrap_or_else(|_| "./templates".to_string());
             if std::path::Path::new(&tpl_dir).exists() {
                 match crate::template::TemplateEngine::new(&tpl_dir) {
                     Ok(engine) => engine,
@@ -387,16 +366,11 @@ impl App {
 
         // Studio (dev dashboard)
         #[cfg(feature = "studio")]
-        let studio_enabled = cfg!(debug_assertions)
-            || std::env::var("KARBON_STUDIO").is_ok()
-            || self.config.debug_key.is_some();
+        let studio_enabled =
+            cfg!(debug_assertions) || std::env::var("KARBON_STUDIO").is_ok() || self.config.debug_key.is_some();
         #[cfg(feature = "studio")]
         let studio_collector = if studio_enabled {
-            let studio_db = if self.config.has_database() {
-                Some(state.db.pool().clone())
-            } else {
-                None
-            };
+            let studio_db = if self.config.has_database() { Some(state.db.pool().clone()) } else { None };
             // A token the operator chose, if long enough to be a credential.
             let chosen_token = std::env::var("KARBON_STUDIO_TOKEN")
                 .ok()
@@ -427,9 +401,7 @@ impl App {
                     token
                 );
             } else if from_env {
-                tracing::info!(
-                    "\x1b[38;5;141m⚡ Studio\x1b[0m → /_studio (token from KARBON_STUDIO_TOKEN)"
-                );
+                tracing::info!("\x1b[38;5;141m⚡ Studio\x1b[0m → /_studio (token from KARBON_STUDIO_TOKEN)");
             } else {
                 // Release: logs are shipped and read by more people than the operator, and
                 // the token opens Studio from any address. Never log it.
@@ -446,15 +418,10 @@ impl App {
         // Frontend reverse proxy (enabled via KARBON_FRONTEND_URL env var)
         if let Ok(frontend_url) = std::env::var("KARBON_FRONTEND_URL") {
             tracing::info!("Frontend proxy enabled → {}", frontend_url);
-            let proxy = super::FrontendProxy::new(&frontend_url)
-                .trust_proxies(self.config.trusted_proxies.clone());
+            let proxy = super::FrontendProxy::new(&frontend_url).trust_proxies(self.config.trusted_proxies.clone());
             router = router.fallback(
-                move |axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<
-                    std::net::SocketAddr,
-                >,
-                      req: axum::extract::Request| {
-                    proxy.clone().handle(addr.ip(), req)
-                },
+                move |axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+                      req: axum::extract::Request| { proxy.clone().handle(addr.ip(), req) },
             );
         }
 
@@ -464,9 +431,7 @@ impl App {
         #[cfg(feature = "studio")]
         if let Some((_, _, token)) = &studio_collector {
             router = router
-                .layer(middleware::from_fn(
-                    crate::studio::middleware::studio_toolbar_middleware,
-                ))
+                .layer(middleware::from_fn(crate::studio::middleware::studio_toolbar_middleware))
                 .layer(Extension(crate::studio::StudioToken(token.clone())));
         }
 
@@ -481,10 +446,8 @@ impl App {
         // The Origin check needs the same two settings the CORS layer and the rate limiter
         // already use: which origins the deployment declared, and which proxies may be
         // believed when they rewrite `Host` into `X-Forwarded-Host`.
-        let csrf_config = super::middleware::CsrfConfig::new(
-            self.config.cors_origins.clone(),
-            self.config.trusted_proxies.clone(),
-        );
+        let csrf_config =
+            super::middleware::CsrfConfig::new(self.config.cors_origins.clone(), self.config.trusted_proxies.clone());
 
         #[allow(unused_mut)]
         let mut router = router
@@ -501,12 +464,10 @@ impl App {
         // CSRF protection (double-submit cookie + same-site Origin check). On by default;
         // Bearer-token API requests are exempt automatically.
         if csrf_enabled {
-            router = router.layer(middleware::from_fn(
-                move |req: axum::extract::Request, next: middleware::Next| {
-                    let config = csrf_config.clone();
-                    async move { super::middleware::csrf_protection_with(config, req, next).await }
-                },
-            ));
+            router = router.layer(middleware::from_fn(move |req: axum::extract::Request, next: middleware::Next| {
+                let config = csrf_config.clone();
+                async move { super::middleware::csrf_protection_with(config, req, next).await }
+            }));
         }
 
         // Firewall (Symfony-style access_control): URL-pattern → roles, enforced centrally.
@@ -525,17 +486,10 @@ impl App {
 
         // Apply rate limiting if configured
         if rate_limit_max > 0 {
-            tracing::info!(
-                "Rate limiting: {} requests per {}s",
-                rate_limit_max,
-                rate_limit_window
-            );
+            tracing::info!("Rate limiting: {} requests per {}s", rate_limit_max, rate_limit_window);
             router = router.layer(
-                super::middleware::RateLimitLayer::new(
-                    rate_limit_max,
-                    Duration::from_secs(rate_limit_window),
-                )
-                .trust_proxies(self.config.trusted_proxies.clone()),
+                super::middleware::RateLimitLayer::new(rate_limit_max, Duration::from_secs(rate_limit_window))
+                    .trust_proxies(self.config.trusted_proxies.clone()),
             );
         }
 
@@ -547,9 +501,7 @@ impl App {
         if let Some((studio_router, collector, _token)) = studio_collector {
             router = router
                 .nest("/_studio", studio_router)
-                .layer(middleware::from_fn(
-                    crate::studio::middleware::studio_middleware,
-                ))
+                .layer(middleware::from_fn(crate::studio::middleware::studio_middleware))
                 .layer(Extension(collector));
         }
 
@@ -561,12 +513,8 @@ impl App {
                 key: self.config.debug_key.clone(),
                 allowed_ips: self.config.debug_ips.clone(),
                 trusted_proxies: self.config.trusted_proxies.clone(),
-                signing_key: format!(
-                    "{}{}",
-                    self.config.jwt_secret,
-                    self.config.debug_key.clone().unwrap_or_default()
-                )
-                .into_bytes(),
+                signing_key: format!("{}{}", self.config.jwt_secret, self.config.debug_key.clone().unwrap_or_default())
+                    .into_bytes(),
                 always_on: cfg!(debug_assertions),
             };
             router = router.layer(middleware::from_fn(
@@ -579,19 +527,13 @@ impl App {
             ));
         }
 
-        let addr = SocketAddr::new(
-            bind_ip(std::env::var("HOST").ok().as_deref()),
-            self.config.port,
-        );
+        let addr = SocketAddr::new(bind_ip(std::env::var("HOST").ok().as_deref()), self.config.port);
         tracing::info!("Server starting on http://{}", addr);
 
         let listener = TcpListener::bind(addr).await?;
-        axum::serve(
-            listener,
-            router.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+        axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
+            .with_graceful_shutdown(shutdown_signal())
+            .await?;
 
         tracing::info!("Server shut down gracefully");
         Ok(())
@@ -608,6 +550,35 @@ impl Default for App {
 /// the app off the public interface. Unset or empty keeps the historical `0.0.0.0`; so does a
 /// value that is not an IP address (with a warning), so a stray `HOST` inherited from the
 /// shell cannot stop an existing deployment from starting.
+/// Why the server must not start with this (non-empty) `JWT_SECRET`, if it must not.
+///
+/// - A published placeholder is refused in **every** environment: the key is in Karbon's
+///   source, and a development `.env` routinely ends up on a reachable machine (staging,
+///   `docker run --env-file .env`, a LAN).
+/// - A short secret is still private, so development and test only get a warning. Every
+///   other environment — production, but also `staging` or any custom name — refuses it:
+///   an unknown environment is treated as exposed, not as a developer's laptop.
+fn jwt_secret_refusal(secret: &str, env: &crate::config::Environment) -> Option<String> {
+    const HOW: &str = "Run `karbon secret --write` to put a random one in your .env \
+                       (or set JWT_SECRET to the output of `openssl rand -base64 48`)";
+
+    if crate::security::is_placeholder_secret(secret) {
+        return Some(format!(
+            "JWT_SECRET is a placeholder published with Karbon: anyone can sign a valid token \
+             with it. {HOW}."
+        ));
+    }
+    if crate::security::is_weak_secret(secret) && !(env.is_development() || env.is_test()) {
+        return Some(format!(
+            "JWT_SECRET is shorter than {} bytes, which is only tolerated when APP_ENV is \
+             development or test (here: {}). {HOW}.",
+            crate::security::MIN_JWT_SECRET_LEN,
+            env.name()
+        ));
+    }
+    None
+}
+
 fn bind_ip(host: Option<&str>) -> std::net::IpAddr {
     use std::net::{IpAddr, Ipv4Addr};
     let all = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
@@ -624,9 +595,7 @@ fn bind_ip(host: Option<&str>) -> std::net::IpAddr {
 /// Wait for SIGINT (Ctrl+C) or SIGTERM to gracefully shut down
 async fn shutdown_signal() {
     let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Failed to install Ctrl+C handler");
+        tokio::signal::ctrl_c().await.expect("Failed to install Ctrl+C handler");
     };
 
     #[cfg(unix)]
@@ -648,11 +617,43 @@ async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
-    use super::bind_ip;
+    use super::{bind_ip, jwt_secret_refusal};
+    use crate::config::Environment;
     use std::net::IpAddr;
 
     fn ip(s: &str) -> IpAddr {
         s.parse().unwrap()
+    }
+
+    /// The scaffolded `.env` paired the public placeholder with `APP_ENV=development`,
+    /// and only `production` refused it.
+    #[test]
+    fn a_published_placeholder_never_starts_the_server() {
+        for env in ["development", "test", "production", "staging", "Production"] {
+            let env = Environment::from_name(env);
+            for secret in ["change-me-to-a-random-secret", "change-me", "secret"] {
+                assert!(jwt_secret_refusal(secret, &env).is_some(), "{secret} accepted in {}", env.name());
+            }
+        }
+    }
+
+    #[test]
+    fn a_short_private_secret_is_tolerated_in_development_and_test_only() {
+        let short = "short-but-private";
+        for env in ["development", "dev", "test", "DEV"] {
+            assert!(jwt_secret_refusal(short, &Environment::from_name(env)).is_none());
+        }
+        for env in ["production", "prod", "staging", "preprod", "Production"] {
+            assert!(jwt_secret_refusal(short, &Environment::from_name(env)).is_some(), "{env}");
+        }
+    }
+
+    #[test]
+    fn a_strong_secret_starts_everywhere() {
+        let strong = "0123456789abcdef0123456789abcdef0123456789abcdef";
+        for env in ["development", "production", "staging"] {
+            assert!(jwt_secret_refusal(strong, &Environment::from_name(env)).is_none());
+        }
     }
 
     #[test]
@@ -687,8 +688,7 @@ mod tests {
             .route(
                 "/",
                 get(|| async {
-                    let _ =
-                        SelectBuilder::table("posts").order_by("id;DROP TABLE posts", Order::Asc);
+                    let _ = SelectBuilder::table("posts").order_by("id;DROP TABLE posts", Order::Asc);
                     "unreachable"
                 }),
             )
@@ -700,9 +700,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), 500);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["error"], "internal_error");
     }

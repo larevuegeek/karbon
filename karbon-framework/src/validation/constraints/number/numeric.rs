@@ -8,10 +8,7 @@ pub struct Numeric {
 
 impl Default for Numeric {
     fn default() -> Self {
-        Self {
-            message: "This value should be a valid number.".to_string(),
-            allow_float: true,
-        }
+        Self { message: "This value should be a valid number.".to_string(), allow_float: true }
     }
 }
 
@@ -22,10 +19,7 @@ impl Numeric {
 
     /// Only allow integer values
     pub fn integer_only() -> Self {
-        Self {
-            allow_float: false,
-            ..Self::default()
-        }
+        Self { allow_float: false, ..Self::default() }
     }
 
     pub fn with_message(mut self, message: impl Into<String>) -> Self {

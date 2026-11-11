@@ -7,9 +7,7 @@ pub struct NotEmpty {
 
 impl Default for NotEmpty {
     fn default() -> Self {
-        Self {
-            message: "This collection should not be empty.".to_string(),
-        }
+        Self { message: "This collection should not be empty.".to_string() }
     }
 }
 

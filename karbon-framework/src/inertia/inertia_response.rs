@@ -29,10 +29,7 @@ pub struct InertiaConfig {
 
 impl InertiaConfig {
     pub fn new(root_template: &str) -> Self {
-        Self {
-            root_template: root_template.to_string(),
-            version: String::new(),
-        }
+        Self { root_template: root_template.to_string(), version: String::new() }
     }
 
     pub fn version(mut self, version: &str) -> Self {
@@ -83,10 +80,7 @@ impl Inertia {
     /// - Otherwise → returns full HTML page with embedded page data
     pub fn render<T: Serialize>(component: &str, props: T) -> InertiaResponse {
         let props = serde_json::to_value(props).unwrap_or_default();
-        InertiaResponse {
-            component: component.to_string(),
-            props,
-        }
+        InertiaResponse { component: component.to_string(), props }
     }
 
     /// Create an Inertia redirect (303 See Other) — used after POST/PUT/DELETE
@@ -106,12 +100,7 @@ impl InertiaResponse {
     /// Build the final HTTP response.
     ///
     /// Called by the Inertia middleware which has access to the request headers and URL.
-    pub fn into_response_with(
-        self,
-        request_headers: &HeaderMap,
-        url: &str,
-        config: &InertiaConfig,
-    ) -> Response {
+    pub fn into_response_with(self, request_headers: &HeaderMap, url: &str, config: &InertiaConfig) -> Response {
         let page = InertiaPage {
             component: self.component,
             props: self.props,
@@ -124,12 +113,8 @@ impl InertiaResponse {
         if is_inertia {
             // Partial response — JSON only
             let mut response = axum::Json(&page).into_response();
-            response
-                .headers_mut()
-                .insert(INERTIA_HEADER, "true".parse().unwrap());
-            response
-                .headers_mut()
-                .insert("vary", "X-Inertia".parse().unwrap());
+            response.headers_mut().insert(INERTIA_HEADER, "true".parse().unwrap());
+            response.headers_mut().insert("vary", "X-Inertia".parse().unwrap());
             response
         } else {
             // Full page — render HTML with embedded page data

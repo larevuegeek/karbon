@@ -27,9 +27,7 @@ pub struct MigrationConfig {
 
 impl Default for MigrationConfig {
     fn default() -> Self {
-        Self {
-            dir: default_migration_dir(),
-        }
+        Self { dir: default_migration_dir() }
     }
 }
 
@@ -146,9 +144,7 @@ fn default_pm2_config() -> String {
 
 impl Default for ProxyConfig {
     fn default() -> Self {
-        Self {
-            backend_routes: default_backend_routes(),
-        }
+        Self { backend_routes: default_backend_routes() }
     }
 }
 
@@ -175,26 +171,20 @@ fn default_migration_dir() -> String {
 }
 
 fn default_backend_routes() -> Vec<String> {
-    vec![
-        "/api".to_string(),
-        "/files".to_string(),
-        "/health".to_string(),
-    ]
+    vec!["/api".to_string(), "/files".to_string(), "/health".to_string()]
 }
 
 impl KarbonConfig {
     /// Load karbon.toml from the project root (searches upward)
     pub fn load() -> Result<(Self, PathBuf), String> {
-        let mut dir =
-            std::env::current_dir().map_err(|e| format!("Cannot get current dir: {e}"))?;
+        let mut dir = std::env::current_dir().map_err(|e| format!("Cannot get current dir: {e}"))?;
 
         loop {
             let config_path = dir.join("karbon.toml");
             if config_path.exists() {
                 let content = std::fs::read_to_string(&config_path)
                     .map_err(|e| format!("Cannot read {}: {e}", config_path.display()))?;
-                let config: KarbonConfig =
-                    toml::from_str(&content).map_err(|e| format!("Invalid karbon.toml: {e}"))?;
+                let config: KarbonConfig = toml::from_str(&content).map_err(|e| format!("Invalid karbon.toml: {e}"))?;
                 return Ok((config, dir));
             }
             if !dir.pop() {
@@ -223,14 +213,9 @@ mod tests {
 
     #[test]
     fn a_single_host_stays_a_single_target() {
+        assert_eq!(deploy(r#"path = "/srv/app""#).targets().unwrap(), vec![None]);
         assert_eq!(
-            deploy(r#"path = "/srv/app""#).targets().unwrap(),
-            vec![None]
-        );
-        assert_eq!(
-            deploy("path = \"/srv/app\"\nhost = \"root@srv\"")
-                .targets()
-                .unwrap(),
+            deploy("path = \"/srv/app\"\nhost = \"root@srv\"").targets().unwrap(),
             vec![Some("root@srv".to_string())]
         );
     }
@@ -240,10 +225,7 @@ mod tests {
         let d = deploy(
             "path = \"/srv/app\"\nhosts = [\"root@10.99.0.12\", \"local\"]\nhealth_url = \"http://127.0.0.1:8080/api/health\"",
         );
-        assert_eq!(
-            d.targets().unwrap(),
-            vec![Some("root@10.99.0.12".to_string()), None]
-        );
+        assert_eq!(d.targets().unwrap(), vec![Some("root@10.99.0.12".to_string()), None]);
         assert_eq!(d.health_timeout, 120);
     }
 

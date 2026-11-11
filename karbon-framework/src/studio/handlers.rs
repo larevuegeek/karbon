@@ -17,51 +17,52 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// Authoritative gate for every `/_studio` route: allow only requests from the loopback
-/// interface (dev convenience — the dashboard is meant to be local) OR requests carrying a
-/// valid token. This fails closed for any network peer even when `APP_ENV` is unset, so the
-/// terminal and DB browser are never reachable unauthenticated from the network.
+/// Authoritative gate for every `/_studio` route. A request passes with:
+/// - a valid token (query or cookie), or
+/// - a signed debug session (`KARBON_DEBUG_KEY` presented from an allowed IP), or
+/// - in a debug build only, a request the developer's own browser addressed to loopback
+///   (see [`super::addressed_locally`]).
+///
+/// Running in debug mode is not on that list: a debug build answers every peer of the
+/// network in debug mode, and treating that as an authorization handed them the terminal.
 pub async fn studio_guard(
     State(state): State<StudioState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     request: Request,
     next: Next,
 ) -> Response {
-    let token_ok = {
-        let query_token = request.uri().query().and_then(|q| {
-            q.split('&')
-                .find_map(|kv| kv.strip_prefix("token=").map(str::to_string))
-        });
-        let cookie_token = request
-            .headers()
-            .get("cookie")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|c| {
-                c.split(';')
-                    .find_map(|p| p.trim().strip_prefix("_studio_token=").map(str::to_string))
-            });
-        query_token
-            .as_deref()
-            .is_some_and(|t| constant_time_eq(t, &state.token))
-            || cookie_token
-                .as_deref()
-                .is_some_and(|t| constant_time_eq(t, &state.token))
-    };
-
-    // The loopback bypass is a *local dev* convenience only. In a release build the peer is
+    // The local bypass is a *local dev* convenience only. In a release build the peer is
     // the reverse proxy (also loopback on a same-host deploy), so trusting it would expose
-    // Studio to the whole internet. Release builds require a token or an active debug session.
-    let loopback_ok = cfg!(debug_assertions) && peer.ip().is_loopback();
+    // Studio to the whole internet. Release builds require a token or a debug session.
+    let local = cfg!(debug_assertions) && super::addressed_locally(peer.ip(), request.headers());
 
-    if loopback_ok || token_ok || crate::http::dev_mode::active() {
+    if is_authorized(&state.token, &request, local, crate::http::dev_mode::session()) {
         next.run(request).await
     } else {
         (
             StatusCode::UNAUTHORIZED,
-            "Unauthorized — Studio requires a valid token or an active debug session",
+            "Unauthorized — Studio requires its token (the link printed at startup), a debug \
+             session, or a browser on the same machine at http://localhost",
         )
             .into_response()
     }
+}
+
+fn is_authorized(token: &str, request: &Request, local: bool, session: bool) -> bool {
+    local || session || presents_token(token, request)
+}
+
+fn presents_token(token: &str, request: &Request) -> bool {
+    let query_token = request
+        .uri()
+        .query()
+        .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("token=")));
+    let cookie_token = request
+        .headers()
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|c| c.split(';').find_map(|p| p.trim().strip_prefix("_studio_token=")));
+    query_token.is_some_and(|t| constant_time_eq(t, token)) || cookie_token.is_some_and(|t| constant_time_eq(t, token))
 }
 
 #[derive(Clone)]
@@ -77,10 +78,11 @@ pub struct TokenQuery {
     pub token: Option<String>,
 }
 
-/// In development the dashboard is dev-only and localhost-bound already, so we
-/// don't require the random token — otherwise links that can't carry it (the
-/// debug toolbar, the welcome page) would 403. Token enforcement stays on as
-/// soon as `APP_ENV` is anything production-like.
+/// In development the handlers don't ask for the token a second time — otherwise links
+/// that can't carry it (the welcome page, a bookmark) would 401 for the developer. This
+/// is not what keeps strangers out: [`studio_guard`] runs first and has already required
+/// a token, a debug session or a local browser. Token enforcement stays on here as soon
+/// as `APP_ENV` is anything production-like.
 fn studio_dev_open() -> bool {
     match std::env::var("APP_ENV") {
         Ok(v) => {
@@ -92,7 +94,7 @@ fn studio_dev_open() -> bool {
 }
 
 fn check_token(state: &StudioState, query: &TokenQuery, headers: &HeaderMap) -> bool {
-    // 0. Development: localhost-only dev dashboard — skip the token entirely.
+    // 0. Development: the guard already vetted the caller — don't ask twice.
     if studio_dev_open() {
         return true;
     }
@@ -148,35 +150,19 @@ pub async fn dashboard(
 }
 
 /// Serve CSS
-pub async fn styles(
-    State(state): State<StudioState>,
-    Query(query): Query<TokenQuery>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn styles(State(state): State<StudioState>, Query(query): Query<TokenQuery>, headers: HeaderMap) -> Response {
     if !check_token(&state, &query, &headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    (
-        [(header::CONTENT_TYPE, "text/css")],
-        include_str!("assets/styles.css"),
-    )
-        .into_response()
+    ([(header::CONTENT_TYPE, "text/css")], include_str!("assets/styles.css")).into_response()
 }
 
 /// Serve JS
-pub async fn script(
-    State(state): State<StudioState>,
-    Query(query): Query<TokenQuery>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn script(State(state): State<StudioState>, Query(query): Query<TokenQuery>, headers: HeaderMap) -> Response {
     if !check_token(&state, &query, &headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    (
-        [(header::CONTENT_TYPE, "application/javascript")],
-        include_str!("assets/app.js"),
-    )
-        .into_response()
+    ([(header::CONTENT_TYPE, "application/javascript")], include_str!("assets/app.js")).into_response()
 }
 
 /// JSON API: get all recorded data
@@ -298,11 +284,7 @@ async fn describe_database(pool: &crate::db::DbPool) -> Vec<TableInfo> {
         }
         let rows = count_rows(pool, &name).await.unwrap_or(-1);
         let columns = table_columns(pool, &name).await.unwrap_or_default();
-        out.push(TableInfo {
-            name,
-            rows,
-            columns,
-        });
+        out.push(TableInfo { name, rows, columns });
     }
     out
 }
@@ -316,10 +298,7 @@ async fn count_rows(pool: &crate::db::DbPool, table: &str) -> Option<i64> {
     };
     // Audited: `table` comes from the driver's own schema listing, never from a request,
     // and is quoted for the driver above.
-    let (n,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(sql))
-        .fetch_one(pool)
-        .await
-        .ok()?;
+    let (n,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(sql)).fetch_one(pool).await.ok()?;
     Some(n)
 }
 
@@ -329,10 +308,7 @@ async fn table_columns(pool: &crate::db::DbPool, table: &str) -> Option<Vec<Colu
         use sqlx::Row;
         // Audited: same as `count_rows` — `table` comes from the schema listing, not a request.
         let sql = format!("PRAGMA table_info(\"{table}\")");
-        let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
-            .fetch_all(pool)
-            .await
-            .ok()?;
+        let rows = sqlx::query(sqlx::AssertSqlSafe(sql)).fetch_all(pool).await.ok()?;
         Some(
             rows.iter()
                 .map(|r| ColumnInfo {
@@ -350,13 +326,8 @@ async fn table_columns(pool: &crate::db::DbPool, table: &str) -> Option<Vec<Colu
         #[cfg(not(feature = "postgres"))]
         let sql = "SELECT COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS \
                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION";
-        let rows: Vec<(String, String)> =
-            sqlx::query_as(sql).bind(table).fetch_all(pool).await.ok()?;
-        Some(
-            rows.into_iter()
-                .map(|(name, ty)| ColumnInfo { name, ty })
-                .collect(),
-        )
+        let rows: Vec<(String, String)> = sqlx::query_as(sql).bind(table).fetch_all(pool).await.ok()?;
+        Some(rows.into_iter().map(|(name, ty)| ColumnInfo { name, ty }).collect())
     }
 }
 
@@ -370,12 +341,7 @@ async fn list_tables(pool: &crate::db::DbPool) -> Option<Vec<String>> {
     let sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name";
 
     let rows: Vec<(String,)> = sqlx::query_as(sql).fetch_all(pool).await.ok()?;
-    Some(
-        rows.into_iter()
-            .map(|(t,)| t)
-            .filter(|t| !t.starts_with("_karbon_"))
-            .collect(),
-    )
+    Some(rows.into_iter().map(|(t,)| t).filter(|t| !t.starts_with("_karbon_")).collect())
 }
 
 #[derive(Deserialize)]
@@ -400,11 +366,7 @@ pub async fn api_terminal(
         return StatusCode::UNAUTHORIZED.into_response();
     }
     if !studio_dev_open() {
-        return (
-            StatusCode::FORBIDDEN,
-            "Terminal disabled outside development",
-        )
-            .into_response();
+        return (StatusCode::FORBIDDEN, "Terminal disabled outside development").into_response();
     }
 
     let parts: Vec<String> = req.command.split_whitespace().map(String::from).collect();
@@ -483,10 +445,7 @@ pub async fn api_docs(
             let Ok(md) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            let stem = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
+            let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
             let title = md
                 .lines()
                 .find_map(|l| l.trim().strip_prefix("# ").map(|h| h.trim().to_string()))
@@ -544,9 +503,8 @@ pub async fn ws_handler(
 async fn handle_ws(mut socket: WebSocket, state: StudioState) {
     let mut rx = state.collector.subscribe();
 
-    if let Ok(stats) = serde_json::to_string(&super::collector::StudioMessage::Stats(
-        state.collector.get_stats().await,
-    )) {
+    if let Ok(stats) = serde_json::to_string(&super::collector::StudioMessage::Stats(state.collector.get_stats().await))
+    {
         let _ = socket.send(Message::Text(stats.into())).await;
     }
 
@@ -576,37 +534,92 @@ async fn handle_ws(mut socket: WebSocket, state: StudioState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use tower::ServiceExt;
+
+    const TOKEN: &str = "tttttttttttttttttttttttttttttttt";
+
+    /// `GET uri` on the real Studio router, from `peer`, as a debug build scopes it.
+    async fn studio_status(peer: &str, uri: &str, headers: &[(&str, &str)]) -> StatusCode {
+        let (router, _, _) = super::super::build_with_token(None, TOKEN.to_string());
+        let mut request = Request::builder().uri(uri);
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let mut request = request.body(Body::empty()).unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(peer.parse::<SocketAddr>().unwrap()));
+        crate::http::dev_mode::scoped_debug_build(router.oneshot(request))
+            .await
+            .unwrap()
+            .status()
+    }
+
+    const LAN: &str = "192.168.1.20:50000";
+    const LOOPBACK: &str = "127.0.0.1:50000";
+
+    /// The audit's finding: `karbon dev` listens on every interface and a debug build runs
+    /// every request in debug mode, which the guard took for an authorization.
+    #[tokio::test]
+    async fn a_network_peer_needs_the_token_even_in_a_debug_build() {
+        let host = [("host", "192.168.1.5:3005")];
+        for uri in ["/", "/api/data", "/api/database", "/api/docs", "/ws"] {
+            assert_eq!(studio_status(LAN, uri, &host).await, StatusCode::UNAUTHORIZED, "{uri} open to the network");
+        }
+        assert_ne!(studio_status(LAN, &format!("/api/stats?token={TOKEN}"), &host).await, StatusCode::UNAUTHORIZED);
+        assert_eq!(studio_status(LAN, "/api/stats?token=wrong", &host).await, StatusCode::UNAUTHORIZED);
+    }
+
+    /// DNS rebinding and cross-site WebSockets both arrive from 127.0.0.1.
+    #[tokio::test]
+    async fn loopback_alone_does_not_waive_the_token() {
+        assert_eq!(studio_status(LOOPBACK, "/api/data", &[("host", "evil.test:3005")]).await, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            studio_status(LOOPBACK, "/ws", &[("host", "localhost:3005"), ("origin", "https://evil.test")]).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[test]
+    fn the_guard_takes_a_token_a_session_or_a_local_browser() {
+        let bare = Request::builder().uri("/").body(Body::empty()).unwrap();
+        assert!(!is_authorized(TOKEN, &bare, false, false));
+        assert!(is_authorized(TOKEN, &bare, true, false));
+        assert!(is_authorized(TOKEN, &bare, false, true));
+
+        let cookie = Request::builder()
+            .uri("/")
+            .header("cookie", format!("a=b; _studio_token={TOKEN}"))
+            .body(Body::empty())
+            .unwrap();
+        assert!(is_authorized(TOKEN, &cookie, false, false));
+
+        let wrong = Request::builder()
+            .uri("/?token=nope")
+            .header("cookie", "_studio_token=nope")
+            .body(Body::empty())
+            .unwrap();
+        assert!(!is_authorized(TOKEN, &wrong, false, false));
+    }
 
     /// The cookie is the whole Studio credential: `Secure` in every release build, and in
     /// a debug build only behind an HTTPS-terminating proxy. Run under `--release` too —
     /// a debug test binary never takes the release branch.
     #[tokio::test]
     async fn the_studio_cookie_is_secure_outside_local_debug_builds() {
-        let state = StudioState {
-            collector: StudioCollector::new(),
-            token: "t".repeat(32),
-            db: None,
-        };
+        let state = StudioState { collector: StudioCollector::new(), token: "t".repeat(32), db: None };
         let cookie_for = |headers: HeaderMap| {
             let state = state.clone();
             async move {
-                let query = TokenQuery {
-                    token: Some("t".repeat(32)),
-                };
+                let query = TokenQuery { token: Some("t".repeat(32)) };
                 let res = dashboard(State(state), Query(query), headers).await;
-                res.headers()[header::SET_COOKIE]
-                    .to_str()
-                    .unwrap()
-                    .to_string()
+                res.headers()[header::SET_COOKIE].to_str().unwrap().to_string()
             }
         };
 
         let plain = cookie_for(HeaderMap::new()).await;
-        assert_eq!(
-            plain.contains("; Secure"),
-            !cfg!(debug_assertions),
-            "{plain}"
-        );
+        assert_eq!(plain.contains("; Secure"), !cfg!(debug_assertions), "{plain}");
 
         let mut behind_tls = HeaderMap::new();
         behind_tls.insert("x-forwarded-proto", "https".parse().unwrap());

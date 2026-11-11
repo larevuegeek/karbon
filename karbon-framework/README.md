@@ -7,7 +7,7 @@
 ```toml
 # Cargo.toml
 [dependencies]
-karbon = { package = "karbon-framework", version = "0.4.12" }
+karbon = { package = "karbon-framework", version = "0.5.0" }
 sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls", "mysql", "chrono"] }
 ```
 
@@ -18,7 +18,8 @@ DB_PORT=3306
 DB_NAME=myapp
 DB_USER=root
 DB_PASSWORD=
-JWT_SECRET=change-me-to-a-random-secret
+# Generate one with `karbon secret` (the app refuses published placeholders).
+JWT_SECRET=
 ```
 
 ```rust
@@ -36,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
 For **PostgreSQL** (or `sqlite`), swap the feature:
 
 ```toml
-karbon = { package = "karbon-framework", version = "0.4.12", default-features = false, features = ["postgres"] }
+karbon = { package = "karbon-framework", version = "0.5.0", default-features = false, features = ["postgres"] }
 sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono"] }
 ```
 
@@ -252,59 +253,36 @@ let app = Router::new()
 | `maintenance_mode` | Returns 503 globally when enabled |
 | `request_logger` | Logs method, path, status, duration |
 
-## Background Jobs
+## Messages, events and background work
 
-In-process job queue with configurable workers and automatic retry.
+One bus for both: `MessageBus` runs fallible handlers either now (`dispatch`, awaited) or
+in the background (`dispatch_async`, workers + retry). Several handlers may listen to the
+same message.
 
 ```rust
-use karbon::job::{Job, JobQueue};
-use std::future::Future;
-use std::pin::Pin;
+use karbon::message::{Message, MessageBus, RetryPolicy};
 use std::time::Duration;
 
-struct SendEmailJob { to: String, subject: String }
-
-impl Job for SendEmailJob {
-    fn name(&self) -> &str { "send_email" }
-    fn max_retries(&self) -> u32 { 3 }
-    fn retry_delay(&self) -> Duration { Duration::from_secs(10) }
-
-    fn execute(&self) -> Pin<Box<dyn Future<Output = Result<(), anyhow::Error>> + Send + '_>> {
-        Box::pin(async {
-            // send email logic here
-            Ok(())
-        })
-    }
-}
-
-let queue = JobQueue::new(4); // 4 concurrent workers
-queue.push(SendEmailJob { to: "user@example.com".into(), subject: "Hello".into() }).await;
-```
-
-## Event System
-
-Async pub/sub for decoupling logic.
-
-```rust
-use karbon::event::{Event, EventBus};
-
 struct UserCreated { user_id: i64, email: String }
-impl Event for UserCreated {}
+impl Message for UserCreated {}
 
-let bus = EventBus::new();
+// 4 background workers, 3 retries 10 s apart
+let bus = MessageBus::with_retry(4, RetryPolicy { max_retries: 3, backoff: Duration::from_secs(10) });
 
-// Register handlers
-bus.on::<UserCreated>(|event| async move {
-    println!("Send welcome email to {}", event.email);
+bus.handle::<UserCreated, _, _>(|msg| async move {
+    send_welcome_email(&msg.email).await?;   // -> anyhow::Result<()>
+    Ok(())
 }).await;
 
-bus.on::<UserCreated>(|event| async move {
-    println!("Update stats for user {}", event.user_id);
-}).await;
-
-// Emit — all handlers run concurrently
-bus.emit(UserCreated { user_id: 1, email: "david@example.com".into() }).await;
+bus.dispatch(UserCreated { user_id: 1, email: "a@b.c".into() }).await?;      // run now, get the error
+bus.dispatch_async(UserCreated { user_id: 2, email: "c@d.e".into() }).await; // background + retry
 ```
+
+For jobs that must survive a restart, `job::PersistentQueue` stores them in a
+`_karbon_jobs` table (retry + dead-letter).
+
+> `event::EventBus` and `job::JobQueue` are deprecated since 0.5.0 — `MessageBus` does
+> what both did. They still compile, with a warning that names the replacement.
 
 ## WebSocket
 
@@ -541,4 +519,7 @@ CLI, project scaffolding, and full docs: [github.com/larevuegeek/karbon](https:/
 
 ## License
 
-AGPL-3.0-or-later — Copyright (C) 2026 LaRevueGeek
+Licensed under either of [Apache License, Version 2.0](https://github.com/larevuegeek/karbon/blob/main/LICENSE-APACHE)
+or [MIT license](https://github.com/larevuegeek/karbon/blob/main/LICENSE-MIT), at your option.
+
+Copyright (c) 2026 LaRevueGeek

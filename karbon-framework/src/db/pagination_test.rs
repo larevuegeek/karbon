@@ -3,13 +3,7 @@ mod tests {
     use crate::db::PaginationParams;
 
     fn params(page: u32, per_page: u32, sort: Option<&str>, order: &str) -> PaginationParams {
-        PaginationParams {
-            page,
-            per_page,
-            sort: sort.map(|s| s.to_string()),
-            order: order.to_string(),
-            search: None,
-        }
+        PaginationParams { page, per_page, sort: sort.map(|s| s.to_string()), order: order.to_string(), search: None }
     }
 
     #[test]

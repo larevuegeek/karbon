@@ -44,9 +44,7 @@ pub fn spawn_command_with_env(
         .stderr(Stdio::inherit())
         .envs(env);
 
-    let child = command
-        .spawn()
-        .map_err(|e| format!("Failed to start {label} (`{cmd}`): {e}"))?;
+    let child = command.spawn().map_err(|e| format!("Failed to start {label} (`{cmd}`): {e}"))?;
 
     // On Windows, assign to a shared Job Object so all children
     // get killed when the parent (karbon-cli) exits.
@@ -160,11 +158,7 @@ pub fn wait_for_any(children: &mut [Child]) {
             match child.try_wait() {
                 Ok(Some(status)) => {
                     if !status.success() {
-                        eprintln!(
-                            "  {} A process exited with code {:?}",
-                            "✗".red(),
-                            status.code()
-                        );
+                        eprintln!("  {} A process exited with code {:?}", "✗".red(), status.code());
                     }
                     running.store(false, Ordering::SeqCst);
                     break;

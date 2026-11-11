@@ -11,9 +11,7 @@ pub async fn request_id(mut request: Request, next: Next) -> Response {
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())
         .filter(|s| {
-            (1..=128).contains(&s.len())
-                && s.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+            (1..=128).contains(&s.len()) && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
         })
         .map(|s| s.to_string());
 

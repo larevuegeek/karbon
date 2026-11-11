@@ -1,0 +1,6 @@
+edition = "2024"
+max_width = 120
+use_small_heuristics = "Max"
+chain_width = 80
+single_line_if_else_max_width = 80
+short_array_element_width_threshold = 40

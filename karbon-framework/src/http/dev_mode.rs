@@ -31,26 +31,57 @@ const ACTIVATION_PARAM: &str = "__karbon_dev";
 const COOKIE_NAME: &str = "_karbon_dev";
 const SESSION_TTL_SECS: i64 = 3600; // 1 hour
 
+/// What a request is entitled to. `Debug` changes how the application *answers* (verbose
+/// errors, toolbar); only `Session` says who is asking.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Off,
+    /// A local debug build: every request runs in debug mode, whoever sends it.
+    Debug,
+    /// A session opened with `KARBON_DEBUG_KEY` from an allowed IP, proven by its cookie.
+    Session,
+}
+
 tokio::task_local! {
-    static DEV_MODE: bool;
+    static DEV_MODE: Mode;
 }
 
 /// Whether the current request runs in live debug mode.
 ///
 /// Reads a task-local set by [`run`]. Returns `false` when the middleware is not installed
 /// (plain production), so callers fall back to their own env-based defaults.
+///
+/// This is **not** an authorization: a local debug build is in debug mode for every peer
+/// on the network. Anything that must be restricted asks [`session`] instead.
 pub fn active() -> bool {
-    DEV_MODE.try_with(|v| *v).unwrap_or(false)
+    DEV_MODE.try_with(|m| *m != Mode::Off).unwrap_or(false)
+}
+
+/// Whether the current request holds a signed debug session: the secret key was presented
+/// from an allowed IP. Unlike [`active`], this identifies the caller.
+pub fn session() -> bool {
+    DEV_MODE.try_with(|m| *m == Mode::Session).unwrap_or(false)
 }
 
 /// Runs `fut` inside a debug-mode scope. Test helper — lets code exercise the
-/// `active()`-gated branches without going through the full middleware.
+/// `active()`-gated branches without going through the full middleware. `true` is a
+/// signed session; see [`scoped_debug_build`] for the weaker mode.
 #[cfg(test)]
 pub(crate) async fn scoped<F, T>(active: bool, fut: F) -> T
 where
     F: std::future::Future<Output = T>,
 {
-    DEV_MODE.scope(active, fut).await
+    let mode = if active { Mode::Session } else { Mode::Off };
+    DEV_MODE.scope(mode, fut).await
+}
+
+/// Runs `fut` as a local debug build does for a request without a session.
+#[cfg(test)]
+pub(crate) async fn scoped_debug_build<F, T>(fut: F) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    DEV_MODE.scope(Mode::Debug, fut).await
 }
 
 /// Everything the middleware needs, captured once at wiring time.
@@ -77,8 +108,18 @@ pub async fn run(peer: IpAddr, cfg: DevModeConfig, request: Request, next: Next)
         return handle_activation(action, &cfg, real_ip, &request);
     }
 
-    let session = cfg.always_on || cookie_valid(&request, &cfg, real_ip);
-    DEV_MODE.scope(session, next.run(request)).await
+    let mode = mode_for(cookie_valid(&request, &cfg, real_ip), cfg.always_on);
+    DEV_MODE.scope(mode, next.run(request)).await
+}
+
+fn mode_for(session: bool, always_on: bool) -> Mode {
+    if session {
+        Mode::Session
+    } else if always_on {
+        Mode::Debug
+    } else {
+        Mode::Off
+    }
 }
 
 enum Action {
@@ -88,10 +129,9 @@ enum Action {
 
 fn activation_action(query: Option<&str>) -> Option<Action> {
     let q = query?;
-    let raw = q.split('&').find_map(|kv| {
-        kv.strip_prefix(ACTIVATION_PARAM)
-            .and_then(|r| r.strip_prefix('='))
-    })?;
+    let raw = q
+        .split('&')
+        .find_map(|kv| kv.strip_prefix(ACTIVATION_PARAM).and_then(|r| r.strip_prefix('=')))?;
     if raw == "off" {
         Some(Action::Deactivate)
     } else {
@@ -99,21 +139,13 @@ fn activation_action(query: Option<&str>) -> Option<Action> {
     }
 }
 
-fn handle_activation(
-    action: Action,
-    cfg: &DevModeConfig,
-    real_ip: IpAddr,
-    request: &Request,
-) -> Response {
+fn handle_activation(action: Action, cfg: &DevModeConfig, real_ip: IpAddr, request: &Request) -> Response {
     let location = strip_param(request.uri());
     let https = is_https(request);
     match action {
         Action::Deactivate => redirect(&location, Some(clear_cookie(https))),
         Action::Activate(key) => {
-            let key_ok = cfg
-                .key
-                .as_deref()
-                .is_some_and(|k| !k.is_empty() && constant_time_eq(&key, k));
+            let key_ok = cfg.key.as_deref().is_some_and(|k| !k.is_empty() && constant_time_eq(&key, k));
             if key_ok && ip_allowed(real_ip, &cfg.allowed_ips) {
                 redirect(&location, Some(session_cookie(real_ip, cfg, https)))
             } else {
@@ -155,23 +187,19 @@ fn session_cookie(ip: IpAddr, cfg: &DevModeConfig, https: bool) -> HeaderValue {
     let payload = format!("{exp}|{ip}");
     let value = format!("{payload}|{}", sign(&payload, &cfg.signing_key));
     let secure = if https { "; Secure" } else { "" };
-    let cookie = format!(
-        "{COOKIE_NAME}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_TTL_SECS}{secure}"
-    );
+    let cookie =
+        format!("{COOKIE_NAME}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_TTL_SECS}{secure}");
     HeaderValue::from_str(&cookie).unwrap_or_else(|_| HeaderValue::from_static(""))
 }
 
 fn clear_cookie(https: bool) -> HeaderValue {
     let secure = if https { "; Secure" } else { "" };
-    HeaderValue::from_str(&format!(
-        "{COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0{secure}"
-    ))
-    .unwrap_or_else(|_| HeaderValue::from_static(""))
+    HeaderValue::from_str(&format!("{COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0{secure}"))
+        .unwrap_or_else(|_| HeaderValue::from_static(""))
 }
 
 fn redirect(location: &str, set_cookie: Option<HeaderValue>) -> Response {
-    let location =
-        HeaderValue::from_str(location).unwrap_or_else(|_| HeaderValue::from_static("/"));
+    let location = HeaderValue::from_str(location).unwrap_or_else(|_| HeaderValue::from_static("/"));
     let mut resp = match Response::builder()
         .status(StatusCode::SEE_OTHER)
         .header(header::LOCATION, location)
@@ -206,10 +234,7 @@ fn strip_param(uri: &Uri) -> String {
         .query()
         .map(|q| {
             q.split('&')
-                .filter(|kv| {
-                    !kv.strip_prefix(ACTIVATION_PARAM)
-                        .is_some_and(|r| r.starts_with('='))
-                })
+                .filter(|kv| !kv.strip_prefix(ACTIVATION_PARAM).is_some_and(|r| r.starts_with('=')))
                 .collect()
         })
         .unwrap_or_default();
@@ -283,11 +308,7 @@ mod tests {
         let ip: IpAddr = "1.2.3.4".parse().unwrap();
         let payload = format!("{}|{}", now_unix() + 60, ip);
         let value = format!("{payload}|{}", sign(&payload, &c.signing_key));
-        assert!(cookie_valid(
-            &req_with_cookie(&format!("{COOKIE_NAME}={value}")),
-            &c,
-            ip
-        ));
+        assert!(cookie_valid(&req_with_cookie(&format!("{COOKIE_NAME}={value}")), &c, ip));
     }
 
     #[test]
@@ -298,11 +319,7 @@ mod tests {
         let value = format!("{payload}|{}", sign(&payload, &c.signing_key));
         // Same cookie, replayed from another (even if allowed-list) IP → rejected.
         let other: IpAddr = "9.9.9.9".parse().unwrap();
-        assert!(!cookie_valid(
-            &req_with_cookie(&format!("{COOKIE_NAME}={value}")),
-            &c,
-            other
-        ));
+        assert!(!cookie_valid(&req_with_cookie(&format!("{COOKIE_NAME}={value}")), &c, other));
     }
 
     #[test]
@@ -311,11 +328,7 @@ mod tests {
         let ip: IpAddr = "1.2.3.4".parse().unwrap();
         let payload = format!("{}|{}", now_unix() + 60, ip);
         let value = format!("{payload}|deadbeef");
-        assert!(!cookie_valid(
-            &req_with_cookie(&format!("{COOKIE_NAME}={value}")),
-            &c,
-            ip
-        ));
+        assert!(!cookie_valid(&req_with_cookie(&format!("{COOKIE_NAME}={value}")), &c, ip));
     }
 
     #[test]
@@ -324,11 +337,7 @@ mod tests {
         let ip: IpAddr = "1.2.3.4".parse().unwrap();
         let payload = format!("{}|{}", now_unix() - 1, ip);
         let value = format!("{payload}|{}", sign(&payload, &c.signing_key));
-        assert!(!cookie_valid(
-            &req_with_cookie(&format!("{COOKIE_NAME}={value}")),
-            &c,
-            ip
-        ));
+        assert!(!cookie_valid(&req_with_cookie(&format!("{COOKIE_NAME}={value}")), &c, ip));
     }
 
     #[test]
@@ -338,11 +347,7 @@ mod tests {
         let ip: IpAddr = "1.2.3.4".parse().unwrap();
         let payload = format!("{}|{}", now_unix() + 60, ip);
         let value = format!("{payload}|{}", sign(&payload, &c.signing_key));
-        assert!(!cookie_valid(
-            &req_with_cookie(&format!("{COOKIE_NAME}={value}")),
-            &c,
-            ip
-        ));
+        assert!(!cookie_valid(&req_with_cookie(&format!("{COOKIE_NAME}={value}")), &c, ip));
     }
 
     #[test]
@@ -376,10 +381,7 @@ mod tests {
         let peer: IpAddr = "203.0.113.9".parse().unwrap();
         for (target, action) in [
             ("//evil.test?__karbon_dev=off", Action::Deactivate),
-            (
-                "//evil.test/phish?__karbon_dev=wrong",
-                Action::Activate("wrong".into()),
-            ),
+            ("//evil.test/phish?__karbon_dev=wrong", Action::Activate("wrong".into())),
         ] {
             let request = Request::builder().uri(target).body(Body::empty()).unwrap();
             let response = handle_activation(action, &cfg(), peer, &request);
@@ -397,5 +399,23 @@ mod tests {
         assert!(!active());
         assert!(scoped(true, async { active() }).await);
         assert!(!scoped(false, async { active() }).await);
+    }
+
+    /// A debug build answers every peer in debug mode. That must never read as "this
+    /// caller was authenticated": Studio's guard accepted it as such.
+    #[tokio::test]
+    async fn a_debug_build_is_active_but_is_not_a_session() {
+        assert!(!session());
+        assert!(scoped_debug_build(async { active() && !session() }).await);
+        assert!(scoped(true, async { session() }).await);
+        assert!(!scoped(false, async { session() }).await);
+    }
+
+    #[test]
+    fn only_a_valid_cookie_makes_a_session() {
+        assert!(mode_for(true, false) == Mode::Session);
+        assert!(mode_for(true, true) == Mode::Session);
+        assert!(mode_for(false, true) == Mode::Debug);
+        assert!(mode_for(false, false) == Mode::Off);
     }
 }

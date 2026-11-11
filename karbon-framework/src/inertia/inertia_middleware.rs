@@ -45,10 +45,7 @@ pub async fn inertia_middleware(request: Request, next: Next) -> Response {
     // Convert 302 to 303 for PUT/PATCH/DELETE (Inertia protocol)
     if is_inertia
         && response.status() == StatusCode::FOUND
-        && matches!(
-            method,
-            axum::http::Method::PUT | axum::http::Method::PATCH | axum::http::Method::DELETE
-        )
+        && matches!(method, axum::http::Method::PUT | axum::http::Method::PATCH | axum::http::Method::DELETE)
     {
         *response.status_mut() = StatusCode::SEE_OTHER;
     }

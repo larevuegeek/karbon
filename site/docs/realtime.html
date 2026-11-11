@@ -46,9 +46,7 @@ bus.dispatch_async(SendWelcome { email }).await;  // background: worker + retry<
 <p>Use <code>MessageBus::with_retry(workers, RetryPolicy { max_retries, backoff })</code> to tune retries.</p>
 
 <h2>Background jobs</h2>
-<pre>let queue = JobQueue::new(4);          // 4 workers
-queue.push(SendEmailJob { to: "foo@bar.com".into() }).await;</pre>
-<p>For jobs that must survive a restart, use the persistent queue backed by a <code>_karbon_jobs</code> table:</p>
+<p>Background work goes through <code>MessageBus::dispatch_async</code> above (workers, retry, dead-letter log). For jobs that must survive a restart, use the persistent queue backed by a <code>_karbon_jobs</code> table:</p>
 <pre>let queue = PersistentQueue::builder(pool)
     .register::&lt;SendEmailJob&gt;()
     .build();
@@ -57,9 +55,7 @@ queue.push(&amp;job).await?;
 queue.start(interval).await;           // retry + dead-letter</pre>
 
 <h2>Events</h2>
-<pre>let bus = EventBus::new();
-bus.on::&lt;UserCreated&gt;(|event| async move { /* send email */ }).await;
-bus.emit(UserCreated { user_id: 1 }).await;</pre>
+<p>An event is a message with several handlers: register each one with <code>bus.handle</code>, then <code>dispatch</code> (awaited, in order) or <code>dispatch_async</code> (background). <code>EventBus</code> and <code>JobQueue</code> are deprecated since 0.5.0 — <code>MessageBus</code> replaces both.</p>
 
 <h2>LiveWire components</h2>
 <p>Server-rendered interactive components — HTML over WebSocket, no JS framework. The server renders, handles events and re-renders; the client patches the DOM.</p>

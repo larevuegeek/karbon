@@ -25,22 +25,12 @@ impl HttpHelper {
         }
 
         let is_bot = Self::detect_bot(ua);
-        let is_mobile = ua.contains("Mobile")
-            || ua.contains("Android")
-            || ua.contains("iPhone")
-            || ua.contains("iPad");
+        let is_mobile = ua.contains("Mobile") || ua.contains("Android") || ua.contains("iPhone") || ua.contains("iPad");
 
         let (browser, browser_version) = Self::detect_browser(ua);
         let os = Self::detect_os(ua);
 
-        UserAgentInfo {
-            browser,
-            browser_version,
-            os,
-            is_mobile,
-            is_bot,
-            raw: ua.to_string(),
-        }
+        UserAgentInfo { browser, browser_version, os, is_mobile, is_bot, raw: ua.to_string() }
     }
 
     /// Parse User-Agent directly from headers
@@ -70,11 +60,7 @@ impl HttpHelper {
             }
         }
 
-        if !ua.is_empty() {
-            (Some("Other".to_string()), None)
-        } else {
-            (None, None)
-        }
+        if !ua.is_empty() { (Some("Other".to_string()), None) } else { (None, None) }
     }
 
     fn detect_os(ua: &str) -> Option<String> {
@@ -100,32 +86,10 @@ impl HttpHelper {
 
     fn detect_bot(ua: &str) -> bool {
         let bot_markers = [
-            "bot",
-            "Bot",
-            "crawler",
-            "Crawler",
-            "spider",
-            "Spider",
-            "Googlebot",
-            "Bingbot",
-            "Slurp",
-            "DuckDuckBot",
-            "Baiduspider",
-            "YandexBot",
-            "facebookexternalhit",
-            "Twitterbot",
-            "LinkedInBot",
-            "WhatsApp",
-            "Discordbot",
-            "Slackbot",
-            "TelegramBot",
-            "curl/",
-            "wget/",
-            "python-requests",
-            "Go-http-client",
-            "HeadlessChrome",
-            "PhantomJS",
-            "Lighthouse",
+            "bot", "Bot", "crawler", "Crawler", "spider", "Spider", "Googlebot", "Bingbot", "Slurp", "DuckDuckBot",
+            "Baiduspider", "YandexBot", "facebookexternalhit", "Twitterbot", "LinkedInBot", "WhatsApp", "Discordbot",
+            "Slackbot", "TelegramBot", "curl/", "wget/", "python-requests", "Go-http-client", "HeadlessChrome",
+            "PhantomJS", "Lighthouse",
         ];
         bot_markers.iter().any(|m| ua.contains(m))
     }
@@ -135,10 +99,7 @@ impl HttpHelper {
         ua.find(prefix)
             .map(|pos| {
                 let start = pos + prefix.len();
-                let version: String = ua[start..]
-                    .chars()
-                    .take_while(|c| c.is_ascii_digit() || *c == '.')
-                    .collect();
+                let version: String = ua[start..].chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
                 version
             })
             .filter(|v| !v.is_empty())
@@ -185,9 +146,7 @@ impl HttpHelper {
     /// Whether `peer` is a configured trusted reverse proxy: an exact address
     /// (`127.0.0.1`, `::1`), a CIDR range (`10.0.0.0/8`, `2001:db8::/32`), or `*` for every peer.
     pub fn is_trusted_proxy(peer: IpAddr, trusted: &[String]) -> bool {
-        trusted
-            .iter()
-            .any(|t| t == "*" || Self::matches_proxy(peer, t))
+        trusted.iter().any(|t| t == "*" || Self::matches_proxy(peer, t))
     }
 
     /// Exact address or CIDR range (`*` excluded)
@@ -298,10 +257,7 @@ impl HttpHelper {
 
     /// Get a header value as string
     pub fn get_header(headers: &HeaderMap, name: &str) -> Option<String> {
-        headers
-            .get(name)
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string())
+        headers.get(name).and_then(|v| v.to_str().ok()).map(|s| s.to_string())
     }
 
     /// Get the Referer header
@@ -312,8 +268,7 @@ impl HttpHelper {
     /// Get the Accept-Language header and extract the primary language
     /// e.g., "fr-FR,fr;q=0.9,en-US;q=0.8" → "fr-FR"
     pub fn accept_language(headers: &HeaderMap) -> Option<String> {
-        Self::get_header(headers, "accept-language")
-            .and_then(|val| val.split(',').next().map(|s| s.trim().to_string()))
+        Self::get_header(headers, "accept-language").and_then(|val| val.split(',').next().map(|s| s.trim().to_string()))
     }
 
     /// Get the Content-Type header
@@ -439,10 +394,7 @@ mod tests {
     #[test]
     fn test_ip_from_x_forwarded_for() {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-forwarded-for",
-            "203.0.113.50, 70.41.3.18".parse().unwrap(),
-        );
+        headers.insert("x-forwarded-for", "203.0.113.50, 70.41.3.18".parse().unwrap());
         let fallback: IpAddr = "127.0.0.1".parse().unwrap();
         let ip = HttpHelper::client_ip(&headers, fallback);
         // The last entry is the one our proxy appended; the first one is client-written
@@ -475,8 +427,7 @@ mod tests {
     fn trusted_ip_skips_every_trusted_hop() {
         // Apache → Karbon (frontend proxy) → SSR → Karbon: "visitor, 127.0.0.1"
         let h = xff("203.0.113.9, 127.0.0.1");
-        let ip_seen =
-            HttpHelper::client_ip_trusted(&h, ip("127.0.0.1"), &proxies(&["127.0.0.1", "::1"]));
+        let ip_seen = HttpHelper::client_ip_trusted(&h, ip("127.0.0.1"), &proxies(&["127.0.0.1", "::1"]));
         assert_eq!(ip_seen, ip("203.0.113.9"));
     }
 
@@ -485,36 +436,21 @@ mod tests {
         // CDN edge in 173.245.48.0/20 in front of the local proxy
         let h = xff("1.2.3.4, 198.51.100.7, 173.245.48.10");
         let list = proxies(&["127.0.0.1", "173.245.48.0/20"]);
-        assert_eq!(
-            HttpHelper::client_ip_trusted(&h, ip("127.0.0.1"), &list),
-            ip("198.51.100.7")
-        );
-        assert!(HttpHelper::is_trusted_proxy(
-            ip("2001:db8::1"),
-            &proxies(&["2001:db8::/32"])
-        ));
-        assert!(!HttpHelper::is_trusted_proxy(
-            ip("10.0.0.1"),
-            &proxies(&["10.0.0.0/33"])
-        ));
+        assert_eq!(HttpHelper::client_ip_trusted(&h, ip("127.0.0.1"), &list), ip("198.51.100.7"));
+        assert!(HttpHelper::is_trusted_proxy(ip("2001:db8::1"), &proxies(&["2001:db8::/32"])));
+        assert!(!HttpHelper::is_trusted_proxy(ip("10.0.0.1"), &proxies(&["10.0.0.0/33"])));
     }
 
     #[test]
     fn trusted_ip_with_a_wildcard_uses_the_last_entry() {
         let h = xff("1.2.3.4, 203.0.113.9");
-        assert_eq!(
-            HttpHelper::client_ip_trusted(&h, ip("10.1.2.3"), &proxies(&["*"])),
-            ip("203.0.113.9")
-        );
+        assert_eq!(HttpHelper::client_ip_trusted(&h, ip("10.1.2.3"), &proxies(&["*"])), ip("203.0.113.9"));
     }
 
     #[test]
     fn untrusted_peer_ignores_forwarding_headers() {
         let h = xff("1.2.3.4");
-        assert_eq!(
-            HttpHelper::client_ip_trusted(&h, ip("198.51.100.7"), &proxies(&["127.0.0.1"])),
-            ip("198.51.100.7")
-        );
+        assert_eq!(HttpHelper::client_ip_trusted(&h, ip("198.51.100.7"), &proxies(&["127.0.0.1"])), ip("198.51.100.7"));
     }
 
     #[test]
@@ -522,14 +458,8 @@ mod tests {
         let mut h = HeaderMap::new();
         h.insert("x-real-ip", "203.0.113.50".parse().unwrap());
         let list = proxies(&["127.0.0.1"]);
-        assert_eq!(
-            HttpHelper::client_ip_trusted(&h, ip("127.0.0.1"), &list),
-            ip("203.0.113.50")
-        );
-        assert_eq!(
-            HttpHelper::client_ip_trusted(&HeaderMap::new(), ip("127.0.0.1"), &list),
-            ip("127.0.0.1")
-        );
+        assert_eq!(HttpHelper::client_ip_trusted(&h, ip("127.0.0.1"), &list), ip("203.0.113.50"));
+        assert_eq!(HttpHelper::client_ip_trusted(&HeaderMap::new(), ip("127.0.0.1"), &list), ip("127.0.0.1"));
     }
 
     #[test]
@@ -573,10 +503,7 @@ mod tests {
     fn canonical_path_decodes_what_handlers_decode() {
         let c = |raw| HttpHelper::canonical_path(raw);
         assert_eq!(c("/%2eenv").as_deref(), Some("/.env"));
-        assert_eq!(
-            c("/files/%70rivate/a.pdf").as_deref(),
-            Some("/files/private/a.pdf")
-        );
+        assert_eq!(c("/files/%70rivate/a.pdf").as_deref(), Some("/files/private/a.pdf"));
         assert_eq!(c("//admin/./users").as_deref(), Some("/admin/users"));
         assert_eq!(c("/a\\b").as_deref(), Some("/a/b"));
         assert_eq!(c("/caf%C3%A9").as_deref(), Some("/café"));
@@ -588,14 +515,10 @@ mod tests {
     fn canonical_path_refuses_what_could_be_read_two_ways() {
         for raw in [
             "/a%2fb", // encoded separator
-            "/a%5cb",
-            "/../etc", // traversal
-            "/a/%2e%2e/b",
-            "/a%00b", // NUL
+            "/a%5cb", "/../etc", // traversal
+            "/a/%2e%2e/b", "/a%00b", // NUL
             "/a%zzb", // malformed escapes
-            "/a%2",
-            "/a%+1b",
-            "/%ff", // invalid UTF-8
+            "/a%2", "/a%+1b", "/%ff", // invalid UTF-8
         ] {
             assert_eq!(HttpHelper::canonical_path(raw), None, "{raw}");
         }
@@ -607,10 +530,7 @@ mod tests {
     fn test_get_header() {
         let mut headers = HeaderMap::new();
         headers.insert("x-custom", "value123".parse().unwrap());
-        assert_eq!(
-            HttpHelper::get_header(&headers, "x-custom").as_deref(),
-            Some("value123")
-        );
+        assert_eq!(HttpHelper::get_header(&headers, "x-custom").as_deref(), Some("value123"));
         assert!(HttpHelper::get_header(&headers, "x-missing").is_none());
     }
 
@@ -618,10 +538,7 @@ mod tests {
     fn test_bearer_token() {
         let mut headers = HeaderMap::new();
         headers.insert("authorization", "Bearer abc123xyz".parse().unwrap());
-        assert_eq!(
-            HttpHelper::bearer_token(&headers).as_deref(),
-            Some("abc123xyz")
-        );
+        assert_eq!(HttpHelper::bearer_token(&headers).as_deref(), Some("abc123xyz"));
     }
 
     #[test]
@@ -640,14 +557,8 @@ mod tests {
     #[test]
     fn test_accept_language() {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "accept-language",
-            "fr-FR,fr;q=0.9,en-US;q=0.8".parse().unwrap(),
-        );
-        assert_eq!(
-            HttpHelper::accept_language(&headers).as_deref(),
-            Some("fr-FR")
-        );
+        headers.insert("accept-language", "fr-FR,fr;q=0.9,en-US;q=0.8".parse().unwrap());
+        assert_eq!(HttpHelper::accept_language(&headers).as_deref(), Some("fr-FR"));
     }
 
     #[test]
@@ -674,9 +585,6 @@ mod tests {
     fn test_referer() {
         let mut headers = HeaderMap::new();
         headers.insert("referer", "https://example.com/page".parse().unwrap());
-        assert_eq!(
-            HttpHelper::referer(&headers).as_deref(),
-            Some("https://example.com/page")
-        );
+        assert_eq!(HttpHelper::referer(&headers).as_deref(), Some("https://example.com/page"));
     }
 }

@@ -9,9 +9,7 @@ pub struct Email {
 
 impl Default for Email {
     fn default() -> Self {
-        Self {
-            message: "This value is not a valid email address.".to_string(),
-        }
+        Self { message: "This value is not a valid email address.".to_string() }
     }
 }
 
@@ -67,9 +65,7 @@ impl Email {
         }
 
         // Local part: allowed characters
-        let valid_local = local
-            .chars()
-            .all(|c| c.is_alphanumeric() || ".!#$%&'*+/=?^_`{|}~-".contains(c));
+        let valid_local = local.chars().all(|c| c.is_alphanumeric() || ".!#$%&'*+/=?^_`{|}~-".contains(c));
 
         if !valid_local {
             return false;

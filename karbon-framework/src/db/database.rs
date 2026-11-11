@@ -27,14 +27,8 @@ impl Database {
     }
 
     /// Connect to the database using app config and explicit pool settings.
-    pub async fn connect_with(
-        config: &Config,
-        settings: &PoolSettings,
-    ) -> Result<Self, sqlx::Error> {
-        let pool = settings
-            .apply(DbPoolOptions::new())
-            .connect(&config.database_url())
-            .await?;
+    pub async fn connect_with(config: &Config, settings: &PoolSettings) -> Result<Self, sqlx::Error> {
+        let pool = settings.apply(DbPoolOptions::new()).connect(&config.database_url()).await?;
 
         Ok(Self { pool })
     }
@@ -60,20 +54,12 @@ impl Database {
     /// Used for apps that don't configure a database: the pool exists (so the
     /// `AppState` is well-formed) but never connects unless a query is run.
     pub fn connect_lazy(config: &Config) -> Result<Self, sqlx::Error> {
-        Self::connect_lazy_with(
-            config,
-            &PoolSettings::from_env(config.db_max_connections.max(1)),
-        )
+        Self::connect_lazy_with(config, &PoolSettings::from_env(config.db_max_connections.max(1)))
     }
 
     /// Lazy pool with explicit settings.
-    pub fn connect_lazy_with(
-        config: &Config,
-        settings: &PoolSettings,
-    ) -> Result<Self, sqlx::Error> {
-        let pool = settings
-            .apply(DbPoolOptions::new())
-            .connect_lazy(&config.database_url())?;
+    pub fn connect_lazy_with(config: &Config, settings: &PoolSettings) -> Result<Self, sqlx::Error> {
+        let pool = settings.apply(DbPoolOptions::new()).connect_lazy(&config.database_url())?;
         Ok(Self { pool })
     }
 
@@ -92,11 +78,7 @@ impl Database {
         if !has_scheme {
             // The value is not quoted: a database URL usually carries a password.
             return Err(sqlx::Error::Configuration(
-                format!(
-                    "database URL must start with {} for this build",
-                    URL_SCHEMES.join(" or ")
-                )
-                .into(),
+                format!("database URL must start with {} for this build", URL_SCHEMES.join(" or ")).into(),
             ));
         }
         let pool = settings.apply(DbPoolOptions::new()).connect_lazy(url)?;
@@ -221,10 +203,7 @@ mod tests {
     #[test]
     fn a_string_without_the_driver_scheme_is_refused() {
         for value in ["not a database url", "/var/data/app.db", "app.db"] {
-            assert!(
-                Database::connect_lazy_url_with(value, &settings()).is_err(),
-                "{value:?} was accepted"
-            );
+            assert!(Database::connect_lazy_url_with(value, &settings()).is_err(), "{value:?} was accepted");
         }
     }
 

@@ -7,11 +7,7 @@ use std::time::Instant;
 use crate::config::KarbonConfig;
 
 pub fn run(config: &KarbonConfig, root: &Path, target: &str) -> Result<(), String> {
-    println!(
-        "\n{}  deploy {}\n",
-        "▲ karbon".bold().red(),
-        target.bold().cyan()
-    );
+    println!("\n{}  deploy {}\n", "▲ karbon".bold().red(), target.bold().cyan());
 
     match target {
         "docker" | "dockerfile" => generate_dockerfile(config, root),
@@ -60,10 +56,7 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     for pkg in &all_packages {
         let p = crate::cargo_target::binary_path(root, "release", pkg, false);
         if !p.exists() {
-            return Err(format!(
-                "Binary not found at {}. Run `karbon build` first.",
-                p.display()
-            ));
+            return Err(format!("Binary not found at {}. Run `karbon build` first.", p.display()));
         }
         binary_paths.push(p);
     }
@@ -72,10 +65,7 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     if let Some(ref fb) = frontend_build
         && !fb.exists()
     {
-        return Err(format!(
-            "Frontend build not found at {}. Run `karbon build` first.",
-            fb.display()
-        ));
+        return Err(format!("Frontend build not found at {}. Run `karbon build` first.", fb.display()));
     }
 
     // ── Steps 3+: the same artifacts to every target, one after the other ──
@@ -85,30 +75,22 @@ fn deploy_publish(config: &KarbonConfig, root: &Path, build_first: bool) -> Resu
     for (i, target) in targets.iter().enumerate() {
         let host = target.as_deref();
         if total > 1 {
-            println!(
-                "\n  {} Target {}/{}: {}",
-                "▸".cyan().bold(),
-                i + 1,
-                total,
-                host.unwrap_or("local").bold()
-            );
+            println!("\n  {} Target {}/{}: {}", "▸".cyan().bold(), i + 1, total, host.unwrap_or("local").bold());
         }
-        publish_to(
-            deploy,
-            config,
-            root,
-            host,
-            &all_packages,
-            &binary_paths,
-            frontend_build.as_deref(),
-        )
-        .map_err(|e| {
-            if total > 1 {
-                format!("{e}\n  Stopped at target {}/{} ({}): the following targets were NOT published.", i + 1, total, host.unwrap_or("local"))
-            } else {
-                e
-            }
-        })?;
+        publish_to(deploy, config, root, host, &all_packages, &binary_paths, frontend_build.as_deref()).map_err(
+            |e| {
+                if total > 1 {
+                    format!(
+                        "{e}\n  Stopped at target {}/{} ({}): the following targets were NOT published.",
+                        i + 1,
+                        total,
+                        host.unwrap_or("local")
+                    )
+                } else {
+                    e
+                }
+            },
+        )?;
     }
     Ok(())
 }
@@ -138,25 +120,17 @@ fn publish_to(
     // ── Step 4: Sync files ──
     // Backend binaries (main + extras)
     for (pkg, binary_path) in all_packages.iter().zip(binary_paths.iter()) {
-        rsync_to_target(
-            host,
-            binary_path.to_str().unwrap(),
-            &format!("{}/", deploy.path),
-        )?;
+        rsync_to_target(host, binary_path.to_str().unwrap(), &format!("{}/", deploy.path))?;
         println!("    {} {}", "✓".green(), pkg);
     }
 
     // Frontend (skipped for backend-only / micro projects)
     let mut frontend_deployed = false;
-    if let (Some(frontend_dir), Some(frontend_build)) = (config.frontend_dir(root), frontend_build)
-    {
+    if let (Some(frontend_dir), Some(frontend_build)) = (config.frontend_dir(root), frontend_build) {
         refuse_symlinked_dirs(
             deploy,
             host,
-            &[
-                format!("{}/frontend", deploy.path),
-                format!("{}/frontend/build", deploy.path),
-            ],
+            &[format!("{}/frontend", deploy.path), format!("{}/frontend/build", deploy.path)],
         )?;
         run_on_target(host, &format!("mkdir -p {}/frontend", deploy.path))?;
 
@@ -172,11 +146,7 @@ fn publish_to(
         for name in &["package.json", "package-lock.json"] {
             let file = frontend_dir.join(name);
             if file.exists() {
-                rsync_to_target(
-                    host,
-                    file.to_str().unwrap(),
-                    &format!("{}/frontend/", deploy.path),
-                )?;
+                rsync_to_target(host, file.to_str().unwrap(), &format!("{}/frontend/", deploy.path))?;
             }
         }
         println!("    {} frontend/package*.json", "✓".green());
@@ -192,11 +162,7 @@ fn publish_to(
     // PM2 config (if exists)
     let pm2_path = root.join(&deploy.pm2_config);
     if pm2_path.exists() {
-        rsync_to_target(
-            host,
-            pm2_path.to_str().unwrap(),
-            &format!("{}/", deploy.path),
-        )?;
+        rsync_to_target(host, pm2_path.to_str().unwrap(), &format!("{}/", deploy.path))?;
         println!("    {} {}", "✓".green(), deploy.pm2_config);
     }
 
@@ -215,23 +181,14 @@ fn publish_to(
     // .env.example (if exists, as reference — never overwrite .env)
     let env_example = root.join(".env.example");
     if env_example.exists() {
-        rsync_to_target(
-            host,
-            env_example.to_str().unwrap(),
-            &format!("{}/", deploy.path),
-        )?;
+        rsync_to_target(host, env_example.to_str().unwrap(), &format!("{}/", deploy.path))?;
         println!("    {} .env.example", "✓".green());
     }
 
     // ── Step 5: Set ownership ──
     if let Some(ref user) = deploy.user {
         let group = deploy.group.as_deref().unwrap_or(user);
-        println!(
-            "\n  {} Setting ownership to {}:{}...",
-            "→".blue(),
-            user,
-            group
-        );
+        println!("\n  {} Setting ownership to {}:{}...", "→".blue(), user, group);
         run_on_target(host, &format!("chown -R {user}:{group} {}", deploy.path))?;
         println!("    {} chown -R {}:{}", "✓".green(), user, group);
 
@@ -267,18 +224,11 @@ fn wait_healthy(host: Option<&str>, url: &str, timeout_secs: u64) -> Result<(), 
     let probe = format!("curl -fsS -o /dev/null --max-time 5 {url}");
     loop {
         if probe_on_target(host, &probe) {
-            println!(
-                "    {} healthy after {:.0}s",
-                "✓".green(),
-                started.elapsed().as_secs_f64()
-            );
+            println!("    {} healthy after {:.0}s", "✓".green(), started.elapsed().as_secs_f64());
             return Ok(());
         }
         if started.elapsed().as_secs() >= timeout_secs {
-            return Err(format!(
-                "{} does not answer {url} after {timeout_secs}s",
-                host.unwrap_or("local")
-            ));
+            return Err(format!("{} does not answer {url} after {timeout_secs}s", host.unwrap_or("local")));
         }
         std::thread::sleep(std::time::Duration::from_secs(3));
     }
@@ -287,9 +237,7 @@ fn wait_healthy(host: Option<&str>, url: &str, timeout_secs: u64) -> Result<(), 
 /// Like `run_on_target`, but silent and returns whether the command succeeded.
 fn probe_on_target(host: Option<&str>, cmd: &str) -> bool {
     let output = match host {
-        Some(h) => Command::new("ssh")
-            .args(["-o", "BatchMode=yes", h, cmd])
-            .output(),
+        Some(h) => Command::new("ssh").args(["-o", "BatchMode=yes", h, cmd]).output(),
         None => Command::new("sh").args(["-c", cmd]).output(),
     };
     output.map(|o| o.status.success()).unwrap_or(false)
@@ -297,10 +245,7 @@ fn probe_on_target(host: Option<&str>, cmd: &str) -> bool {
 
 /// Run rsync — local if no host, SSH if host is set
 /// `npm install --omit=dev` in the deployed `frontend/`, as `deploy.user` when one is set.
-fn install_frontend_deps(
-    deploy: &crate::config::DeployConfig,
-    host: Option<&str>,
-) -> Result<(), String> {
+fn install_frontend_deps(deploy: &crate::config::DeployConfig, host: Option<&str>) -> Result<(), String> {
     println!("\n  {} Installing frontend dependencies...", "→".blue());
     let cmd = npm_install_cmd(&deploy.path);
     if deploy.user.is_some() {
@@ -398,11 +343,7 @@ fn run_on_target(host: Option<&str>, cmd: &str) -> Result<(), String> {
 
 /// Run a command as a specific user or as current user.
 /// For PM2: forces PM2_HOME to the user's home so it connects to the right daemon.
-fn run_as_user(
-    deploy: &crate::config::DeployConfig,
-    host: Option<&str>,
-    cmd: &str,
-) -> Result<(), String> {
+fn run_as_user(deploy: &crate::config::DeployConfig, host: Option<&str>, cmd: &str) -> Result<(), String> {
     // Remote target with a user: the sudo must run ON the target, not here.
     // (Before 0.4.4 it ran locally, so a remote publish restarted the LOCAL app.)
     if let (Some(user), Some(host)) = (deploy.user.as_deref(), host) {
@@ -422,17 +363,8 @@ fn run_as_user(
             .args(["-c", &format!("getent passwd {user} | cut -d: -f6")])
             .output()
             .map_err(|e| format!("Failed to resolve home for {user}: {e}"))?;
-        let user_home = String::from_utf8_lossy(&home_output.stdout)
-            .trim()
-            .to_string();
-        let pm2_home = format!(
-            "{}/.pm2",
-            if user_home.is_empty() {
-                format!("/home/{user}")
-            } else {
-                user_home
-            }
-        );
+        let user_home = String::from_utf8_lossy(&home_output.stdout).trim().to_string();
+        let pm2_home = format!("{}/.pm2", if user_home.is_empty() { format!("/home/{user}") } else { user_home });
 
         // PM2_HOME forces PM2 to use the user's daemon, not root's
         let full_cmd = format!("PM2_HOME={pm2_home} {cmd}");
@@ -481,17 +413,11 @@ fn restart_manager(
             run_as_user(
                 deploy,
                 host,
-                &format!(
-                    "cd {path} && pm2 stop {pm2_config} 2>/dev/null; pm2 delete {pm2_config} 2>/dev/null; true"
-                ),
+                &format!("cd {path} && pm2 stop {pm2_config} 2>/dev/null; pm2 delete {pm2_config} 2>/dev/null; true"),
             )?;
 
             // Start fresh
-            run_as_user(
-                deploy,
-                host,
-                &format!("cd {path} && pm2 start {pm2_config} && pm2 save"),
-            )?;
+            run_as_user(deploy, host, &format!("cd {path} && pm2 start {pm2_config} && pm2 save"))?;
 
             Ok(())
         }
@@ -518,16 +444,15 @@ fn validate_shell_safe(s: &str, field: &str) -> Result<(), String> {
         return Err(format!("{field} must not be empty"));
     }
     if s.starts_with('-') {
-        return Err(format!(
-            "{field} must not start with '-' (option injection): {s}"
-        ));
+        return Err(format!("{field} must not start with '-' (option injection): {s}"));
     }
     if s.contains("..") {
         return Err(format!("{field} must not contain '..': {s}"));
     }
-    if let Some(bad) = s.chars().find(|c| {
-        !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '@' | ':' | '+' | '=' | '-'))
-    }) {
+    if let Some(bad) = s
+        .chars()
+        .find(|c| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '@' | ':' | '+' | '=' | '-')))
+    {
         return Err(format!("{field} contains an unsafe character '{bad}': {s}"));
     }
     Ok(())
@@ -537,10 +462,8 @@ fn validate_shell_safe(s: &str, field: &str) -> Result<(), String> {
 /// directory) but are written into a generated Dockerfile/script. Rejects shell
 /// metacharacters and control chars while allowing spaces and normal path/command text.
 fn validate_no_shell_meta(s: &str, field: &str) -> Result<(), String> {
-    const BAD: &[char] = &[
-        ';', '&', '|', '`', '$', '\n', '\r', '\t', '<', '>', '(', ')', '{', '}', '!', '\\', '"',
-        '\'', '*', '?',
-    ];
+    const BAD: &[char] =
+        &[';', '&', '|', '`', '$', '\n', '\r', '\t', '<', '>', '(', ')', '{', '}', '!', '\\', '"', '\'', '*', '?'];
     if let Some(bad) = s.chars().find(|c| BAD.contains(c)) {
         return Err(format!("{field} contains an unsafe character '{bad}': {s}"));
     }
@@ -551,10 +474,7 @@ fn validate_no_shell_meta(s: &str, field: &str) -> Result<(), String> {
 }
 
 /// Validate every `karbon.toml` value that reaches a shell/ssh command in the publish path.
-fn validate_deploy_config(
-    deploy: &crate::config::DeployConfig,
-    config: &KarbonConfig,
-) -> Result<(), String> {
+fn validate_deploy_config(deploy: &crate::config::DeployConfig, config: &KarbonConfig) -> Result<(), String> {
     validate_shell_safe(&deploy.path, "deploy.path")?;
     validate_shell_safe(&deploy.pm2_config, "deploy.pm2_config")?;
     if let Some(host) = &deploy.host {
@@ -673,22 +593,15 @@ frontend/.next/
 
     let ignore_path = root.join(".dockerignore");
     if !ignore_path.exists() {
-        fs::write(&ignore_path, dockerignore)
-            .map_err(|e| format!("Cannot write .dockerignore: {e}"))?;
+        fs::write(&ignore_path, dockerignore).map_err(|e| format!("Cannot write .dockerignore: {e}"))?;
         println!("  {} .dockerignore generated", "✓".green());
     }
 
     println!("\n  {}  Build and run with:", "→".blue());
     println!("     docker build -t {} .", config.app.name);
-    println!(
-        "     docker run -p {port}:{port} --env-file .env {}",
-        config.app.name
-    );
+    println!("     docker run -p {port}:{port} --env-file .env -e APP_ENV=production {}", config.app.name);
     println!("\n  {}  Multi-arch (amd64 + arm64) via buildx:", "→".blue());
-    println!(
-        "     docker buildx build --platform linux/amd64,linux/arm64 -t {} --push .\n",
-        config.app.name
-    );
+    println!("     docker buildx build --platform linux/amd64,linux/arm64 -t {} --push .\n", config.app.name);
 
     Ok(())
 }
@@ -739,22 +652,15 @@ CMD ["/app/{package}"]
     let dockerignore = "target/\n.git/\n.gitignore\n.env\n.env.*\n!.env.example\n*.log\nDockerfile\n.dockerignore\n";
     let ignore_path = root.join(".dockerignore");
     if !ignore_path.exists() {
-        fs::write(&ignore_path, dockerignore)
-            .map_err(|e| format!("Cannot write .dockerignore: {e}"))?;
+        fs::write(&ignore_path, dockerignore).map_err(|e| format!("Cannot write .dockerignore: {e}"))?;
         println!("  {} .dockerignore generated", "✓".green());
     }
 
     println!("\n  {}  Build and run with:", "→".blue());
     println!("     docker build -t {} .", config.app.name);
-    println!(
-        "     docker run -p {port}:{port} --env-file .env {}",
-        config.app.name
-    );
+    println!("     docker run -p {port}:{port} --env-file .env -e APP_ENV=production {}", config.app.name);
     println!("\n  {}  Multi-arch (amd64 + arm64) via buildx:", "→".blue());
-    println!(
-        "     docker buildx build --platform linux/amd64,linux/arm64 -t {} --push .\n",
-        config.app.name
-    );
+    println!("     docker buildx build --platform linux/amd64,linux/arm64 -t {} --push .\n", config.app.name);
     Ok(())
 }
 
@@ -830,10 +736,7 @@ services:
     write_if_absent(root, "Procfile", procfile, &mut wrote)?;
 
     if wrote.is_empty() {
-        println!(
-            "  {} PaaS config already present (nothing overwritten)",
-            "✓".green()
-        );
+        println!("  {} PaaS config already present (nothing overwritten)", "✓".green());
     } else {
         for f in &wrote {
             println!("  {} {}", "✓".green(), f);
@@ -849,12 +752,7 @@ services:
 }
 
 /// Write a file only if it does not already exist; record what was written.
-fn write_if_absent(
-    root: &Path,
-    name: &str,
-    content: &str,
-    wrote: &mut Vec<String>,
-) -> Result<(), String> {
+fn write_if_absent(root: &Path, name: &str, content: &str, wrote: &mut Vec<String>) -> Result<(), String> {
     let path = root.join(name);
     if path.exists() {
         return Ok(());
@@ -916,26 +814,12 @@ fn deploy_paas_cli(config: &KarbonConfig, root: &Path, cli: PaasCli) -> Result<(
         PaasCli::Fly => &["flyctl", "fly"],
         PaasCli::Railway => &["railway"],
     };
-    let bin = candidates
-        .iter()
-        .copied()
-        .find(|c| which(c))
-        .ok_or_else(|| {
-            format!(
-                "{} CLI not found ({}). Install it: {}",
-                cli.label(),
-                cli.bin(),
-                cli.install_hint()
-            )
+    let bin =
+        candidates.iter().copied().find(|c| which(c)).ok_or_else(|| {
+            format!("{} CLI not found ({}). Install it: {}", cli.label(), cli.bin(), cli.install_hint())
         })?;
 
-    println!(
-        "  {} Deploying to {} via `{} {}`...\n",
-        "→".blue(),
-        cli.label().bold(),
-        bin,
-        cli.deploy_args().join(" ")
-    );
+    println!("  {} Deploying to {} via `{} {}`...\n", "→".blue(), cli.label().bold(), bin, cli.deploy_args().join(" "));
 
     let status = Command::new(bin)
         .args(cli.deploy_args())
@@ -1011,10 +895,7 @@ mod tests {
     #[test]
     fn remote_restart_runs_sudo_on_the_target_with_the_users_pm2() {
         assert_eq!(
-            remote_as_user(
-                "antispammeur",
-                "cd /var/www/app && pm2 start ecosystem.config.cjs"
-            ),
+            remote_as_user("antispammeur", "cd /var/www/app && pm2 start ecosystem.config.cjs"),
             "sudo -H -u antispammeur bash -lc 'PM2_HOME=$HOME/.pm2 cd /var/www/app && pm2 start ecosystem.config.cjs'"
         );
     }
@@ -1022,9 +903,7 @@ mod tests {
     #[test]
     fn hosts_and_health_url_are_validated() {
         assert!(validate_shell_safe("root@10.99.0.12", "deploy.hosts").is_ok());
-        assert!(
-            validate_shell_safe("http://127.0.0.1:8080/api/health", "deploy.health_url").is_ok()
-        );
+        assert!(validate_shell_safe("http://127.0.0.1:8080/api/health", "deploy.health_url").is_ok());
         assert!(validate_shell_safe("-oProxyCommand=x", "deploy.hosts").is_err());
         assert!(validate_shell_safe("http://x/health;reboot", "deploy.health_url").is_err());
     }

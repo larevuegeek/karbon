@@ -13,18 +13,11 @@ pub fn validate_idempotency_key(raw: &str) -> Result<&str, AppError> {
     let key = raw.trim();
 
     if key.len() < 8 || key.len() > 64 {
-        return Err(AppError::BadRequest(
-            "Idempotency-Key doit faire entre 8 et 64 caractères.".into(),
-        ));
+        return Err(AppError::BadRequest("Idempotency-Key doit faire entre 8 et 64 caractères.".into()));
     }
 
-    if !key
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(AppError::BadRequest(
-            "Idempotency-Key : caractères autorisés [a-zA-Z0-9-_].".into(),
-        ));
+    if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err(AppError::BadRequest("Idempotency-Key : caractères autorisés [a-zA-Z0-9-_].".into()));
     }
 
     Ok(key)
@@ -45,9 +38,8 @@ pub fn idempotency_key(headers: &HeaderMap) -> Result<Option<String>, AppError> 
 
 /// For endpoints where a replay must never have two effects (payments…).
 pub fn require_idempotency_key(headers: &HeaderMap) -> Result<String, AppError> {
-    idempotency_key(headers)?.ok_or_else(|| {
-        AppError::BadRequest("Header Idempotency-Key obligatoire sur cet endpoint.".into())
-    })
+    idempotency_key(headers)?
+        .ok_or_else(|| AppError::BadRequest("Header Idempotency-Key obligatoire sur cet endpoint.".into()))
 }
 
 #[cfg(test)]
@@ -58,32 +50,19 @@ mod tests {
 
     fn headers(value: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            IDEMPOTENCY_KEY_HEADER,
-            HeaderValue::from_str(value).unwrap(),
-        );
+        headers.insert(IDEMPOTENCY_KEY_HEADER, HeaderValue::from_str(value).unwrap());
         headers
     }
 
     #[test]
     fn accepts_reasonable_keys() {
         assert!(validate_idempotency_key("550e8400-e29b-41d4-a716-446655440000").is_ok());
-        assert_eq!(
-            idempotency_key(&headers("  order-1234_abcd  "))
-                .unwrap()
-                .as_deref(),
-            Some("order-1234_abcd")
-        );
+        assert_eq!(idempotency_key(&headers("  order-1234_abcd  ")).unwrap().as_deref(), Some("order-1234_abcd"));
     }
 
     #[test]
     fn rejects_short_or_odd_keys() {
-        for key in [
-            "short",
-            "key with spaces",
-            "key/with/slashes",
-            "key;DROP TABLE",
-        ] {
+        for key in ["short", "key with spaces", "key/with/slashes", "key;DROP TABLE"] {
             assert!(validate_idempotency_key(key).is_err(), "{key}");
         }
     }

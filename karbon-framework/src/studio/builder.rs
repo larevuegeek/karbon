@@ -29,17 +29,10 @@ pub fn build(db: Option<crate::db::DbPool>) -> (Router, StudioCollector, String)
 /// Like [`build`], with a token the operator chose (`KARBON_STUDIO_TOKEN`) instead of a
 /// random one. A release build no longer logs the token, so a deployment that enables
 /// Studio with `KARBON_STUDIO` alone needs a way to know it.
-pub fn build_with_token(
-    db: Option<crate::db::DbPool>,
-    token: String,
-) -> (Router, StudioCollector, String) {
+pub fn build_with_token(db: Option<crate::db::DbPool>, token: String) -> (Router, StudioCollector, String) {
     let collector = StudioCollector::new();
 
-    let state = StudioState {
-        collector: collector.clone(),
-        token: token.clone(),
-        db,
-    };
+    let state = StudioState { collector: collector.clone(), token: token.clone(), db };
 
     let router = Router::new()
         .route("/", get(handlers::dashboard))
@@ -53,10 +46,7 @@ pub fn build_with_token(
         .route("/api/terminal", post(handlers::api_terminal))
         .route("/api/docs", get(handlers::api_docs))
         .route("/api/clear", post(handlers::api_clear))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            handlers::studio_guard,
-        ))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), handlers::studio_guard))
         .with_state(state);
 
     (router, collector, token)
@@ -68,11 +58,7 @@ fn generate_token() -> String {
     (0..32)
         .map(|_| {
             let idx: u8 = rng.random_range(0..36);
-            if idx < 10 {
-                (b'0' + idx) as char
-            } else {
-                (b'a' + idx - 10) as char
-            }
+            if idx < 10 { (b'0' + idx) as char } else { (b'a' + idx - 10) as char }
         })
         .collect()
 }

@@ -11,11 +11,7 @@ use std::path::{Path, PathBuf};
 /// `generate admin` without an entity, a `crates.io` dependency in dev instead of
 /// `--local`, an incomplete Vite proxy, duplicate migration numbers, etc.
 pub fn run(config: &KarbonConfig, root: &Path, online: bool) -> Result<(), String> {
-    println!(
-        "\n{}  doctor — diagnostic du projet {}\n",
-        "▲ karbon".bold().red(),
-        config.app.name.bold().cyan()
-    );
+    println!("\n{}  doctor — diagnostic du projet {}\n", "▲ karbon".bold().red(), config.app.name.bold().cyan());
 
     let mut r = Report::new();
 
@@ -58,10 +54,7 @@ fn check_database_online(r: &mut Report, root: &Path, migration_dir: &Path) {
         })
         .unwrap_or(0) as i64;
 
-    let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    else {
+    let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
         return;
     };
     rt.block_on(async move {
@@ -80,11 +73,7 @@ fn check_database_online(r: &mut Report, root: &Path, migration_dir: &Path) {
                     .unwrap_or(0);
                 let pending = (migration_count - applied).max(0);
                 if pending > 0 {
-                    r.warn(
-                        "Migrations (online)",
-                        &format!("{pending} en attente"),
-                        Some("karbon migrate"),
-                    );
+                    r.warn("Migrations (online)", &format!("{pending} en attente"), Some("karbon migrate"));
                 } else {
                     r.ok("Migrations (online)", "à jour");
                 }
@@ -112,12 +101,7 @@ fn build_db_url(vars: &std::collections::HashMap<String, String>) -> Option<Stri
         .or_else(|| vars.get("DB_CONNECTION"))
         .map(String::as_str)
         .unwrap_or("mysql");
-    let get = |k: &str, d: &str| {
-        vars.get(k)
-            .filter(|v| !v.is_empty())
-            .cloned()
-            .unwrap_or_else(|| d.to_string())
-    };
+    let get = |k: &str, d: &str| vars.get(k).filter(|v| !v.is_empty()).cloned().unwrap_or_else(|| d.to_string());
     match driver {
         "sqlite" => Some(format!("sqlite://{name}")),
         "postgres" | "postgresql" => {
@@ -126,15 +110,8 @@ fn build_db_url(vars: &std::collections::HashMap<String, String>) -> Option<Stri
                 .or_else(|| vars.get("DB_USERNAME"))
                 .map(String::as_str)
                 .unwrap_or("postgres");
-            let (user, pass) = (
-                encode_userinfo(user),
-                encode_userinfo(&get("DB_PASSWORD", "")),
-            );
-            Some(format!(
-                "postgres://{user}:{pass}@{}:{}/{name}",
-                get("DB_HOST", "127.0.0.1"),
-                get("DB_PORT", "5432")
-            ))
+            let (user, pass) = (encode_userinfo(user), encode_userinfo(&get("DB_PASSWORD", "")));
+            Some(format!("postgres://{user}:{pass}@{}:{}/{name}", get("DB_HOST", "127.0.0.1"), get("DB_PORT", "5432")))
         }
         _ => {
             let user = vars
@@ -142,15 +119,8 @@ fn build_db_url(vars: &std::collections::HashMap<String, String>) -> Option<Stri
                 .or_else(|| vars.get("DB_USERNAME"))
                 .map(String::as_str)
                 .unwrap_or("root");
-            let (user, pass) = (
-                encode_userinfo(user),
-                encode_userinfo(&get("DB_PASSWORD", "")),
-            );
-            Some(format!(
-                "mysql://{user}:{pass}@{}:{}/{name}",
-                get("DB_HOST", "127.0.0.1"),
-                get("DB_PORT", "3306")
-            ))
+            let (user, pass) = (encode_userinfo(user), encode_userinfo(&get("DB_PASSWORD", "")));
+            Some(format!("mysql://{user}:{pass}@{}:{}/{name}", get("DB_HOST", "127.0.0.1"), get("DB_PORT", "3306")))
         }
     }
 }
@@ -200,15 +170,9 @@ fn check_dependency(r: &mut Report, root: &Path) {
     }
 
     if dep.contains("studio") {
-        r.info(
-            "Feature `studio`",
-            "activée — dashboard + toolbar dispo en dev",
-        );
+        r.info("Feature `studio`", "activée — dashboard + toolbar dispo en dev");
     } else {
-        r.info(
-            "Feature `studio`",
-            "absente — pas de Studio (ajoute `features = [\"studio\"]`)",
-        );
+        r.info("Feature `studio`", "absente — pas de Studio (ajoute `features = [\"studio\"]`)");
     }
 }
 
@@ -227,9 +191,7 @@ fn check_routing(r: &mut Report, root: &Path) {
         r.warn(
             "Auto-montage des routes",
             "marqueurs absents — les contrôleurs générés ne se câbleront pas tout seuls",
-            Some(
-                "ajoute `// karbon:api-routes` dans api_routes() et `// karbon:routes` dans build_router()",
-            ),
+            Some("ajoute `// karbon:api-routes` dans api_routes() et `// karbon:routes` dans build_router()"),
         );
     }
 
@@ -271,10 +233,7 @@ fn check_admin_entities(r: &mut Report, root: &Path) {
             r.fail(
                 "Admin sans entité",
                 &format!("`{base}_admin.rs` référence l'entité `{base}` introuvable"),
-                Some(&format!(
-                    "lance `karbon generate crud {}` avant l'admin",
-                    pascal(base)
-                )),
+                Some(&format!("lance `karbon generate crud {}` avant l'admin", pascal(base))),
             );
         }
     }
@@ -284,17 +243,14 @@ fn check_admin_entities(r: &mut Report, root: &Path) {
 fn check_database(r: &mut Report, root: &Path) {
     let env_path = root.join(".env");
     if !env_path.exists() {
-        r.warn(
-            "Fichier .env",
-            "absent",
-            Some("copie `.env.example` → `.env`"),
-        );
+        r.warn("Fichier .env", "absent", Some("copie `.env.example` → `.env`"));
         return;
     }
     let Ok(content) = fs::read_to_string(&env_path) else {
         return;
     };
     let vars = parse_env(&content);
+    check_jwt_secret(r, vars.get("JWT_SECRET").map(String::as_str).unwrap_or(""));
 
     let has_url = vars.get("DATABASE_URL").is_some_and(|v| !v.is_empty());
     let db_name = vars.get("DB_NAME").map(String::as_str).unwrap_or("");
@@ -311,6 +267,25 @@ fn check_database(r: &mut Report, root: &Path) {
             "Base de données",
             "non configurée (DB_NAME vide) — l'app tourne sans DB ; migrations & admin en ont besoin",
         );
+    }
+}
+
+/// `JWT_SECRET`: the published placeholder is a hard failure — the framework refuses to
+/// start with it, and anyone could forge a token if it did.
+fn check_jwt_secret(r: &mut Report, secret: &str) {
+    use super::secret::{MIN_LEN, PLACEHOLDERS};
+    const LABEL: &str = "JWT_SECRET";
+    const FIX: Option<&str> = Some("`karbon secret --write` en génère un et l'écrit dans .env");
+
+    let secret = secret.trim();
+    if secret.is_empty() {
+        r.info(LABEL, "vide — authentification désactivée (tout token est refusé)");
+    } else if PLACEHOLDERS.contains(&secret) {
+        r.fail(LABEL, "c'est la valeur d'exemple, publique : l'app refuse de démarrer avec", FIX);
+    } else if secret.len() < MIN_LEN {
+        r.warn(LABEL, &format!("moins de {MIN_LEN} caractères — refusé hors development/test"), FIX);
+    } else {
+        r.ok(LABEL, "défini");
     }
 }
 
@@ -347,10 +322,7 @@ fn check_migrations(r: &mut Report, dir: &Path) {
             Some("renumérote les fichiers en double dans migration/"),
         );
     } else {
-        r.ok(
-            "Migrations",
-            &format!("{} fichier(s), numérotation OK", files.len()),
-        );
+        r.ok("Migrations", &format!("{} fichier(s), numérotation OK", files.len()));
     }
 }
 
@@ -362,11 +334,7 @@ fn check_frontend(r: &mut Report, config: &KarbonConfig, root: &Path) {
     };
     let dir = root.join(&fc.dir);
     if !dir.exists() {
-        r.fail(
-            "Frontend",
-            &format!("dossier `{}` introuvable", fc.dir),
-            None,
-        );
+        r.fail("Frontend", &format!("dossier `{}` introuvable", fc.dir), None);
         return;
     }
     if !dir.join("package.json").exists() {
@@ -375,11 +343,7 @@ fn check_frontend(r: &mut Report, config: &KarbonConfig, root: &Path) {
 
     // SvelteKit needs src/app.html.
     if dir.join("svelte.config.js").exists() && !dir.join("src/app.html").exists() {
-        r.fail(
-            "Frontend (SvelteKit)",
-            "src/app.html manquant",
-            Some("crée src/app.html (requis par SvelteKit)"),
-        );
+        r.fail("Frontend (SvelteKit)", "src/app.html manquant", Some("crée src/app.html (requis par SvelteKit)"));
     }
 
     // Vite dev proxy must forward backend routes.
@@ -387,9 +351,7 @@ fn check_frontend(r: &mut Report, config: &KarbonConfig, root: &Path) {
     if let Ok(content) = fs::read_to_string(&vite) {
         let mut missing = Vec::new();
         for route in ["/api", "/_studio", "/health", "/admin"] {
-            if !content.contains(&format!("'{route}'"))
-                && !content.contains(&format!("\"{route}\""))
-            {
+            if !content.contains(&format!("'{route}'")) && !content.contains(&format!("\"{route}\"")) {
                 missing.push(route);
             }
         }
@@ -417,11 +379,7 @@ struct Report {
 
 impl Report {
     fn new() -> Self {
-        Self {
-            ok: 0,
-            warn: 0,
-            fail: 0,
-        }
+        Self { ok: 0, warn: 0, fail: 0 }
     }
 
     fn ok(&mut self, label: &str, detail: &str) {
@@ -452,11 +410,7 @@ impl Report {
     fn summary(&self) {
         println!();
         if self.fail == 0 && self.warn == 0 {
-            println!(
-                "  {} Tout est bon ({} vérifications OK)\n",
-                "✓".green().bold(),
-                self.ok
-            );
+            println!("  {} Tout est bon ({} vérifications OK)\n", "✓".green().bold(), self.ok);
         } else {
             println!(
                 "  {} {} OK · {} avertissement(s) · {} problème(s)\n",
@@ -535,10 +489,7 @@ fn parse_env(content: &str) -> std::collections::HashMap<String, String> {
             continue;
         }
         if let Some((k, v)) = line.split_once('=') {
-            vars.insert(
-                k.trim().to_string(),
-                v.trim().trim_matches('"').trim_matches('\'').to_string(),
-            );
+            vars.insert(k.trim().to_string(), v.trim().trim_matches('"').trim_matches('\'').to_string());
         }
     }
     vars
@@ -549,6 +500,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_public_placeholder_fails_the_diagnostic() {
+        let verdict = |secret: &str| {
+            let mut r = Report::new();
+            check_jwt_secret(&mut r, secret);
+            (r.ok, r.warn, r.fail)
+        };
+        assert_eq!(verdict("change-me-to-a-random-secret"), (0, 0, 1));
+        assert_eq!(verdict("short-but-private"), (0, 1, 0));
+        assert_eq!(verdict(&super::super::secret::generate()), (1, 0, 0));
+        assert_eq!(verdict(""), (0, 0, 0));
+    }
+
+    #[test]
     fn pascal_case() {
         assert_eq!(pascal("post"), "Post");
         assert_eq!(pascal("blog_comment"), "BlogComment");
@@ -556,14 +520,8 @@ mod tests {
 
     #[test]
     fn controller_types() {
-        assert_eq!(
-            controller_type("post_controller").as_deref(),
-            Some("PostController")
-        );
-        assert_eq!(
-            controller_type("blog_comment_admin").as_deref(),
-            Some("BlogCommentAdminController")
-        );
+        assert_eq!(controller_type("post_controller").as_deref(), Some("PostController"));
+        assert_eq!(controller_type("blog_comment_admin").as_deref(), Some("BlogCommentAdminController"));
         assert_eq!(controller_type("health"), None);
     }
 

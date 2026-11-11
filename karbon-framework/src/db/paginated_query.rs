@@ -130,22 +130,19 @@ where
 
     /// Ajoute une condition WHERE (col = ?).
     pub fn where_eq(mut self, column: &str, value: WhereValue) -> Self {
-        self.where_conditions
-            .push(Condition::Column(column.to_string(), "=", value));
+        self.where_conditions.push(Condition::Column(column.to_string(), "=", value));
         self
     }
 
     /// Ajoute une condition WHERE (col >= ?).
     pub fn where_gte(mut self, column: &str, value: WhereValue) -> Self {
-        self.where_conditions
-            .push(Condition::Column(column.to_string(), ">=", value));
+        self.where_conditions.push(Condition::Column(column.to_string(), ">=", value));
         self
     }
 
     /// Ajoute une condition WHERE (col <= ?).
     pub fn where_lte(mut self, column: &str, value: WhereValue) -> Self {
-        self.where_conditions
-            .push(Condition::Column(column.to_string(), "<=", value));
+        self.where_conditions.push(Condition::Column(column.to_string(), "<=", value));
         self
     }
 
@@ -154,8 +151,7 @@ where
     /// automatiquement en `$n` sous PostgreSQL). La condition est du SQL écrit par le code :
     /// n'y interpolez jamais une saisie utilisateur, passez-la en valeur.
     pub fn where_raw(mut self, condition: &str, values: Vec<WhereValue>) -> Self {
-        self.where_conditions
-            .push(Condition::Raw(condition.to_string(), values));
+        self.where_conditions.push(Condition::Raw(condition.to_string(), values));
         self
     }
 
@@ -174,11 +170,7 @@ where
     }
 
     /// Exécute la requête paginée et retourne `(Vec<T>, total)`.
-    pub async fn execute(
-        self,
-        pool: &DbPool,
-        params: &PaginationParams,
-    ) -> AppResult<(Vec<T>, u64)> {
+    pub async fn execute(self, pool: &DbPool, params: &PaginationParams) -> AppResult<(Vec<T>, u64)> {
         let p = self.prepare(params)?;
 
         let mut data_query = sqlx::query_as::<Db, T>(AssertSqlSafe(p.data_sql));
@@ -190,9 +182,7 @@ where
                 data_query = data_query.bind(like.as_str());
             }
         }
-        data_query = data_query
-            .bind(params.safe_per_page() as i64)
-            .bind(params.offset() as i64);
+        data_query = data_query.bind(params.safe_per_page() as i64).bind(params.offset() as i64);
         let items = data_query.fetch_all(pool).await?;
 
         let mut count_query = sqlx::query_as::<Db, (i64,)>(AssertSqlSafe(p.count_sql));
@@ -218,11 +208,8 @@ where
                 let sort_col = if self.allowed_sorts.is_empty() {
                     self.default_sort.clone()
                 } else {
-                    let allowed_refs: Vec<&str> =
-                        self.allowed_sorts.iter().map(|s| s.as_str()).collect();
-                    params
-                        .sort_column(&allowed_refs, &self.default_sort)
-                        .to_string()
+                    let allowed_refs: Vec<&str> = self.allowed_sorts.iter().map(|s| s.as_str()).collect();
+                    params.sort_column(&allowed_refs, &self.default_sort).to_string()
                 };
                 // Direction en liste blanche (jamais une chaîne de requête interpolée).
                 let order = if params.order.eq_ignore_ascii_case("asc") {
@@ -233,16 +220,12 @@ where
                     crate::db::normalize_direction(&self.default_order).unwrap_or("ASC")
                 };
                 if !crate::db::is_valid_identifier(&sort_col) {
-                    return Err(AppError::BadRequest(format!(
-                        "Invalid sort column: {sort_col}"
-                    )));
+                    return Err(AppError::BadRequest(format!("Invalid sort column: {sort_col}")));
                 }
                 let sort_expr = match &self.sort_prefix {
                     Some(prefix) if !sort_col.contains('.') => {
                         if !crate::db::is_valid_identifier(prefix) {
-                            return Err(AppError::BadRequest(format!(
-                                "Invalid sort prefix: {prefix}"
-                            )));
+                            return Err(AppError::BadRequest(format!("Invalid sort prefix: {prefix}")));
                         }
                         format!("{}.{}", prefix, sort_col)
                     }
@@ -260,9 +243,7 @@ where
             match cond {
                 Condition::Column(col, op, val) => {
                     if !crate::db::is_valid_identifier(col) {
-                        return Err(AppError::BadRequest(format!(
-                            "Invalid filter column: {col}"
-                        )));
+                        return Err(AppError::BadRequest(format!("Invalid filter column: {col}")));
                     }
                     ph_idx += 1;
                     where_clauses.push(format!("{} {} {}", col, op, placeholder(ph_idx)));
@@ -284,9 +265,7 @@ where
 
         for col in &self.search_columns {
             if !crate::db::is_valid_identifier(col) {
-                return Err(AppError::BadRequest(format!(
-                    "Invalid search column: {col}"
-                )));
+                return Err(AppError::BadRequest(format!("Invalid search column: {col}")));
             }
         }
         let has_search = !self.search_columns.is_empty() && params.search.is_some();
@@ -312,18 +291,12 @@ where
         let limit_ph = placeholder(ph_idx);
         ph_idx += 1;
         let offset_ph = placeholder(ph_idx);
-        let data_sql = format!(
-            "{}{} ORDER BY {} LIMIT {} OFFSET {}",
-            self.base_sql, where_sql, order_sql, limit_ph, offset_ph
-        );
+        let data_sql =
+            format!("{}{} ORDER BY {} LIMIT {} OFFSET {}", self.base_sql, where_sql, order_sql, limit_ph, offset_ph);
         // Le COUNT réutilise les mêmes index de placeholder que le WHERE.
         let count_sql = match &self.count_from {
             Some(custom) => format!("{}{}", custom, where_sql),
-            None => format!(
-                "SELECT COUNT(*) {}{}",
-                extract_from_clause(&self.base_sql).trim_start(),
-                where_sql
-            ),
+            None => format!("SELECT COUNT(*) {}{}", extract_from_clause(&self.base_sql).trim_start(), where_sql),
         };
 
         Ok(Prepared {
@@ -335,11 +308,7 @@ where
             } else {
                 None
             },
-            like_count: if has_search {
-                self.search_columns.len()
-            } else {
-                0
-            },
+            like_count: if has_search { self.search_columns.len() } else { 0 },
         })
     }
 }
@@ -388,10 +357,7 @@ fn extract_from_clause(sql: &str) -> &str {
         match bytes[i] {
             b'(' => depth += 1,
             b')' => depth = depth.saturating_sub(1),
-            b' ' if depth == 0
-                && i + 6 <= upper_bytes.len()
-                && &upper_bytes[i..i + 6] == b" FROM " =>
-            {
+            b' ' if depth == 0 && i + 6 <= upper_bytes.len() && &upper_bytes[i..i + 6] == b" FROM " => {
                 return &sql[i..];
             }
             _ => {}
@@ -443,23 +409,14 @@ mod tests {
     }
 
     fn params(search: Option<&str>) -> PaginationParams {
-        PaginationParams {
-            page: 2,
-            per_page: 10,
-            sort: None,
-            order: "desc".into(),
-            search: search.map(str::to_string),
-        }
+        PaginationParams { page: 2, per_page: 10, sort: None, order: "desc".into(), search: search.map(str::to_string) }
     }
 
     #[test]
     fn where_raw_keeps_value_order_and_wraps_condition() {
         let p = PaginatedQuery::<Row>::new("SELECT c.id FROM content c")
             .where_eq("c.type", "movie".into())
-            .where_raw(
-                "(c.status = ? OR c.user_id = ?)",
-                vec![1_i64.into(), 7_i64.into()],
-            )
+            .where_raw("(c.status = ? OR c.user_id = ?)", vec![1_i64.into(), 7_i64.into()])
             .default_sort("c.id")
             .prepare(&params(None))
             .unwrap();
@@ -475,9 +432,7 @@ mod tests {
         );
         assert_eq!(
             p.count_sql,
-            format!(
-                "SELECT COUNT(*) FROM content c WHERE c.type = {p1} AND ((c.status = {p2} OR c.user_id = {p3}))"
-            )
+            format!("SELECT COUNT(*) FROM content c WHERE c.type = {p1} AND ((c.status = {p2} OR c.user_id = {p3}))")
         );
         assert_eq!(p.binds.len(), 3);
     }
@@ -488,10 +443,7 @@ mod tests {
             .where_raw("title <> '?' AND id = ?", vec![3_i64.into()])
             .prepare(&params(None))
             .unwrap();
-        assert!(
-            p.data_sql
-                .contains(&format!("(title <> '?' AND id = {})", placeholder(1)))
-        );
+        assert!(p.data_sql.contains(&format!("(title <> '?' AND id = {})", placeholder(1))));
     }
 
     #[test]

@@ -2,8 +2,8 @@
 //!
 //! A unified command/message bus with **fallible handlers**, two transports
 //! (synchronous and background), retry/backoff and dead-letter logging. It
-//! generalizes both the [`crate::event::EventBus`] (fan-out, fire-and-forget)
-//! and the [`crate::job::JobQueue`] (background work with retry).
+//! replaces both the `EventBus` (fan-out, fire-and-forget) and the `JobQueue`
+//! (background work with retry), deprecated since 0.5.0.
 //!
 //! ```ignore
 //! use karbon::message::{Message, MessageBus};
@@ -47,10 +47,7 @@ pub struct RetryPolicy {
 
 impl Default for RetryPolicy {
     fn default() -> Self {
-        Self {
-            max_retries: 0,
-            backoff: Duration::from_secs(1),
-        }
+        Self { max_retries: 0, backoff: Duration::from_secs(1) }
     }
 }
 
@@ -75,8 +72,7 @@ impl MessageBus {
 
     /// Create a bus with a custom [`RetryPolicy`] for background handling.
     pub fn with_retry(workers: usize, retry: RetryPolicy) -> Self {
-        let handlers: Arc<RwLock<HashMap<TypeId, Vec<Handler>>>> =
-            Arc::new(RwLock::new(HashMap::new()));
+        let handlers: Arc<RwLock<HashMap<TypeId, Vec<Handler>>>> = Arc::new(RwLock::new(HashMap::new()));
         let (sender, mut receiver) = mpsc::channel::<Queued>(256);
 
         let worker_handlers = handlers.clone();
@@ -89,12 +85,7 @@ impl MessageBus {
                     let Ok(_permit) = sem.acquire().await else {
                         return;
                     };
-                    let list = handlers
-                        .read()
-                        .await
-                        .get(&queued.type_id)
-                        .cloned()
-                        .unwrap_or_default();
+                    let list = handlers.read().await.get(&queued.type_id).cloned().unwrap_or_default();
                     for handler in list {
                         run_with_retry(&handler, &queued, retry).await;
                     }
@@ -124,12 +115,7 @@ impl MessageBus {
             }) as BoxFuture
         });
 
-        self.handlers
-            .write()
-            .await
-            .entry(TypeId::of::<M>())
-            .or_default()
-            .push(boxed);
+        self.handlers.write().await.entry(TypeId::of::<M>()).or_default().push(boxed);
     }
 
     /// Dispatch a message **synchronously**: run every handler in order and
@@ -148,11 +134,7 @@ impl MessageBus {
     /// Dispatch a message to the **background** transport: it is queued and
     /// handled by a worker with retry/backoff. Fire-and-forget.
     pub async fn dispatch_async<M: Message>(&self, msg: M) {
-        let queued = Queued {
-            type_id: TypeId::of::<M>(),
-            msg: Arc::new(msg),
-            name: std::any::type_name::<M>(),
-        };
+        let queued = Queued { type_id: TypeId::of::<M>(), msg: Arc::new(msg), name: std::any::type_name::<M>() };
         if self.sender.send(queued).await.is_err() {
             tracing::error!("MessageBus is closed; message dropped");
         }
@@ -218,21 +200,14 @@ mod tests {
     #[tokio::test]
     async fn sync_dispatch_propagates_error() {
         let bus = MessageBus::new(1);
-        bus.handle::<Ping, _, _>(|_msg| async { Err(anyhow::anyhow!("boom")) })
-            .await;
+        bus.handle::<Ping, _, _>(|_msg| async { Err(anyhow::anyhow!("boom")) }).await;
         let res = bus.dispatch(Ping).await;
         assert!(res.is_err());
     }
 
     #[tokio::test]
     async fn async_dispatch_retries_then_succeeds() {
-        let bus = MessageBus::with_retry(
-            1,
-            RetryPolicy {
-                max_retries: 3,
-                backoff: Duration::from_millis(1),
-            },
-        );
+        let bus = MessageBus::with_retry(1, RetryPolicy { max_retries: 3, backoff: Duration::from_millis(1) });
         let attempts = Arc::new(AtomicU32::new(0));
         let a = attempts.clone();
         bus.handle::<Ping, _, _>(move |_msg| {
@@ -240,11 +215,7 @@ mod tests {
             async move {
                 // Fail the first two attempts, succeed on the third.
                 let n = a.fetch_add(1, Ordering::SeqCst);
-                if n < 2 {
-                    Err(anyhow::anyhow!("transient"))
-                } else {
-                    Ok(())
-                }
+                if n < 2 { Err(anyhow::anyhow!("transient")) } else { Ok(()) }
             }
         })
         .await;

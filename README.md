@@ -77,6 +77,7 @@ karbon serve
 | `karbon migrate status` / `rollback` | Show migration status / roll back the last one |
 | `karbon migrate diff [name]` | Generate a migration from the entity ↔ database diff |
 | `karbon doctor` / `doctor --db` | Diagnose the project (offline; `--db` checks connectivity) |
+| `karbon secret` / `secret --write` | Generate a random `JWT_SECRET` (print it, or write it to `.env`) |
 | `karbon docs build` | Render `docs/**.md` to a static site (`docs/_site/`) |
 | `karbon deploy docker` | Generate optimized multi-stage Dockerfile |
 | `karbon deploy paas` | Generate Fly.io / Render / Procfile config |
@@ -90,7 +91,7 @@ MySQL is the default. To use PostgreSQL, change the feature flag:
 
 ```toml
 # Cargo.toml of your project
-karbon = { package = "karbon-framework", version = "0.4.12", default-features = false, features = ["postgres"] }
+karbon = { package = "karbon-framework", version = "0.5.0", default-features = false, features = ["postgres"] }
 ```
 
 Set the matching port in `.env`:
@@ -393,23 +394,21 @@ if cfg!(debug_assertions) {
 }
 ```
 
-### Background Jobs
+### Messages, events and background jobs
 
 ```rust
-let queue = JobQueue::new(4); // 4 concurrent workers
-queue.push(SendEmailJob { to: "user@example.com".into() }).await;
-// Runs in background with automatic retry on failure
-```
-
-### Event System
-
-```rust
-let bus = EventBus::new();
-bus.on::<UserCreated>(|event| async move {
-    // send welcome email, update stats, etc.
+let bus = MessageBus::new(4); // 4 background workers
+bus.handle::<UserCreated, _, _>(|msg| async move {
+    send_welcome_email(&msg.email).await?; // handlers return anyhow::Result<()>
+    Ok(())
 }).await;
-bus.emit(UserCreated { user_id: 1 }).await;
+
+bus.dispatch(UserCreated { user_id: 1 }).await?;      // run now, await the result
+bus.dispatch_async(UserCreated { user_id: 2 }).await; // background worker, with retry
 ```
+
+`PersistentQueue` keeps jobs in the database across restarts. (`EventBus` and `JobQueue`
+are deprecated since 0.5.0 in favour of `MessageBus`.)
 
 ### i18n
 
@@ -434,7 +433,7 @@ At startup, the terminal shows:
 ⚡ Studio → http://localhost:3000/_studio?token=a7f3b9c2...
 ```
 
-Monitors in real-time: HTTP requests, EventBus events, background jobs, sent emails.
+Monitors in real-time: HTTP requests, events, background jobs, sent emails.
 Protected by a random token, only active in debug mode by default.
 
 ### Database Seeder
@@ -506,4 +505,6 @@ host = "user@server"                 # optional — if absent, deploys locally
 
 ## License
 
-AGPL-3.0 — see [LICENSE](LICENSE) for details.
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT), at your option. An application built with Karbon keeps
+whatever license you choose for it.

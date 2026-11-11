@@ -5,11 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub struct PaginationParams {
     #[serde(default = "default_page", deserialize_with = "string_or_u32")]
     pub page: u32,
-    #[serde(
-        default = "default_per_page",
-        deserialize_with = "string_or_u32",
-        alias = "limit"
-    )]
+    #[serde(default = "default_per_page", deserialize_with = "string_or_u32", alias = "limit")]
     pub per_page: u32,
     #[serde(default)]
     pub sort: Option<String>,

@@ -27,10 +27,7 @@ impl Crypto {
     /// Keyed token hash (HMAC-SHA256) for storing refresh tokens. With a server-side `key`
     /// (e.g. `JWT_SECRET`), a leaked DB row can't be used to look tokens up without the key.
     pub fn hash_token_keyed(token: &str, key: &[u8]) -> String {
-        hmac_sha256(key, token.as_bytes())
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect()
+        hmac_sha256(key, token.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
     }
 
     /// Constant-time comparison of two hex/ASCII token hashes (avoids timing leaks when

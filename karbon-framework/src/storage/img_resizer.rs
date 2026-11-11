@@ -87,9 +87,7 @@ const OUTPUT_FORMATS: [&str; 5] = ["jpg", "jpeg", "png", "webp", "gif"];
 
 impl ImgResizerConfig {
     pub fn new(source_dir: impl Into<PathBuf>, cache_dir: impl Into<PathBuf>) -> Self {
-        let cpus = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(2);
+        let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
         Self {
             source_dir: source_dir.into(),
             cache_dir: cache_dir.into(),
@@ -204,10 +202,7 @@ impl ImgResizer {
     ///     .default_quality(90)
     ///     .build());
     /// ```
-    pub fn config(
-        source_dir: impl Into<PathBuf>,
-        cache_dir: impl Into<PathBuf>,
-    ) -> ImgResizerConfig {
+    pub fn config(source_dir: impl Into<PathBuf>, cache_dir: impl Into<PathBuf>) -> ImgResizerConfig {
         ImgResizerConfig::new(source_dir, cache_dir)
     }
 }
@@ -229,13 +224,8 @@ async fn deny_hidden(req: Request, next: Next) -> Response {
 }
 
 /// Content types a browser runs script from when opened directly.
-const ACTIVE_CONTENT_TYPES: &[&str] = &[
-    "image/svg+xml",
-    "text/html",
-    "application/xhtml+xml",
-    "text/xml",
-    "application/xml",
-];
+const ACTIVE_CONTENT_TYPES: &[&str] =
+    &["image/svg+xml", "text/html", "application/xhtml+xml", "text/xml", "application/xml"];
 
 /// `default-src 'none'; sandbox` and `nosniff` on every response of a scriptable type.
 ///
@@ -255,14 +245,9 @@ async fn confine_active_content(req: Request, next: Next) -> Response {
         let headers = res.headers_mut();
         headers.insert(
             header::CONTENT_SECURITY_POLICY,
-            header::HeaderValue::from_static(
-                "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-            ),
+            header::HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'; sandbox"),
         );
-        headers.insert(
-            header::X_CONTENT_TYPE_OPTIONS,
-            header::HeaderValue::from_static("nosniff"),
-        );
+        headers.insert(header::X_CONTENT_TYPE_OPTIONS, header::HeaderValue::from_static("nosniff"));
     }
     res
 }
@@ -369,15 +354,7 @@ fn parse_spec(spec: &str) -> Option<ResizeSpec> {
         }
     }
 
-    Some(ResizeSpec {
-        width,
-        height,
-        mode,
-        format,
-        quality,
-        grayscale,
-        blur,
-    })
+    Some(ResizeSpec { width, height, mode, format, quality, grayscale, blur })
 }
 
 /// Parse crop anchor from query param (`None` if unknown).
@@ -411,9 +388,7 @@ fn is_safe_spec(spec: &str) -> bool {
     !spec.is_empty()
         && spec.len() <= 64
         && !spec.starts_with('.')
-        && spec
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        && spec.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
 /// A relative file path from the URL. Rejects traversal, absolute paths, backslashes,
@@ -422,8 +397,7 @@ fn is_safe_rel_path(p: &str) -> bool {
     if p.is_empty() || p.contains('\0') || p.contains('\\') || p.starts_with('/') {
         return false;
     }
-    p.split('/')
-        .all(|seg| !seg.is_empty() && !seg.starts_with('.'))
+    p.split('/').all(|seg| !seg.is_empty() && !seg.starts_with('.'))
 }
 
 /// Join `rel` onto `base` and confirm the canonicalized result stays inside `base`.
@@ -437,10 +411,7 @@ fn resolve_within(base: &std::path::Path, rel: &str) -> Option<std::path::PathBu
 
 /// `mtime(a) >= mtime(b)`; false if either is unreadable.
 fn newer_or_same(a: &StdPath, b: &StdPath) -> bool {
-    match (
-        a.metadata().and_then(|m| m.modified()),
-        b.metadata().and_then(|m| m.modified()),
-    ) {
+    match (a.metadata().and_then(|m| m.modified()), b.metadata().and_then(|m| m.modified())) {
         (Ok(a), Ok(b)) => a >= b,
         _ => false,
     }
@@ -478,15 +449,8 @@ async fn handle_resize(
         let Some(pos) = path.find(&needle) else {
             return (StatusCode::BAD_REQUEST, "Invalid resize spec").into_response();
         };
-        let query = original_uri
-            .query()
-            .map(|q| format!("?{q}"))
-            .unwrap_or_default();
-        let target = format!(
-            "{}/r/{canonical}/{}{query}",
-            &path[..pos],
-            &path[pos + needle.len()..]
-        );
+        let query = original_uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+        let target = format!("{}/r/{canonical}/{}{query}", &path[..pos], &path[pos + needle.len()..]);
         return Redirect::permanent(&target).into_response();
     }
 
@@ -534,10 +498,7 @@ async fn handle_resize(
     // Cache layout: cache_dir/<source path>/<spec>[@anchor].<ext> — every variant of one
     // image sits in one directory, so the per-image variant cap is a cheap directory count.
     let variant_dir = state.cache_dir.join(file_path.replace('/', "_"));
-    let anchor_suffix = anchor
-        .as_ref()
-        .map(|(a, _)| format!("@{a}"))
-        .unwrap_or_default();
+    let anchor_suffix = anchor.as_ref().map(|(a, _)| format!("@{a}")).unwrap_or_default();
     let cache_path = variant_dir.join(format!("{canonical}{anchor_suffix}.{out_ext}"));
     let failed_marker = variant_dir.join(format!("{canonical}{anchor_suffix}.{out_ext}.failed"));
 
@@ -567,28 +528,16 @@ async fn handle_resize(
     // Process image
     let mut processor = ImageProcessor::new()
         .resize(
-            if resize_spec.width > 0 {
-                resize_spec.width
-            } else {
-                1
-            },
-            if resize_spec.height > 0 {
-                resize_spec.height
-            } else {
-                1
-            },
+            if resize_spec.width > 0 { resize_spec.width } else { 1 },
+            if resize_spec.height > 0 { resize_spec.height } else { 1 },
         )
         .mode(resize_spec.mode);
 
     // Width-only or height-only
     if resize_spec.width == 0 {
-        processor = ImageProcessor::new()
-            .height(resize_spec.height)
-            .mode(resize_spec.mode);
+        processor = ImageProcessor::new().height(resize_spec.height).mode(resize_spec.mode);
     } else if resize_spec.height == 0 {
-        processor = ImageProcessor::new()
-            .width(resize_spec.width)
-            .mode(resize_spec.mode);
+        processor = ImageProcessor::new().width(resize_spec.width).mode(resize_spec.mode);
     }
 
     // Anchor
@@ -620,11 +569,7 @@ async fn handle_resize(
     let _permit = match tokio::time::timeout(QUEUE_TIMEOUT, state.permits.acquire()).await {
         Ok(Ok(permit)) => permit,
         _ => {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                [(header::RETRY_AFTER, "5")],
-                "Image processing busy",
-            )
+            return (StatusCode::SERVICE_UNAVAILABLE, [(header::RETRY_AFTER, "5")], "Image processing busy")
                 .into_response();
         }
     };
@@ -633,9 +578,7 @@ async fn handle_resize(
     let cache_path_clone = cache_path.clone();
     let source_clone = source_path.clone();
 
-    let result =
-        tokio::task::spawn_blocking(move || processor.process(&source_clone, &cache_path_clone))
-            .await;
+    let result = tokio::task::spawn_blocking(move || processor.process(&source_clone, &cache_path_clone)).await;
 
     match result {
         Ok(Ok(())) => serve_file(&cache_path).await,
@@ -683,10 +626,7 @@ async fn serve_file(path: &StdPath) -> Response {
             // Images should not be framed
             (header::X_FRAME_OPTIONS, "DENY"),
             // Block if browser detects XSS in image context
-            (
-                header::CONTENT_SECURITY_POLICY,
-                "default-src 'none'; style-src 'unsafe-inline'",
-            ),
+            (header::CONTENT_SECURITY_POLICY, "default-src 'none'; style-src 'unsafe-inline'"),
         ],
         data,
     )
@@ -776,15 +716,9 @@ mod tests {
 
     #[test]
     fn test_parse_anchor() {
-        assert!(matches!(
-            parse_anchor("top-left"),
-            Some(CropAnchor::TopLeft)
-        ));
+        assert!(matches!(parse_anchor("top-left"), Some(CropAnchor::TopLeft)));
         assert!(matches!(parse_anchor("center"), Some(CropAnchor::Center)));
-        assert!(matches!(
-            parse_anchor("bottom-right"),
-            Some(CropAnchor::BottomRight)
-        ));
+        assert!(matches!(parse_anchor("bottom-right"), Some(CropAnchor::BottomRight)));
         assert!(matches!(parse_anchor("top"), Some(CropAnchor::TopCenter)));
         assert!(parse_anchor("invalid").is_none());
     }
@@ -800,30 +734,13 @@ mod tests {
 
     #[test]
     fn test_canonical_spelling() {
-        assert_eq!(
-            parse_spec("800x600_cover_q90_gray.webp")
-                .unwrap()
-                .canonical(),
-            "800x600_cover_q90_gray.webp"
-        );
+        assert_eq!(parse_spec("800x600_cover_q90_gray.webp").unwrap().canonical(), "800x600_cover_q90_gray.webp");
         // Equivalent spellings collapse to one URL (the handler redirects to it).
         assert_eq!(parse_spec("320x180_fit").unwrap().canonical(), "320x180");
-        assert_eq!(
-            parse_spec("320x180_q075").unwrap().canonical(),
-            "320x180_q75"
-        );
-        assert_eq!(
-            parse_spec("320x180_gray_q75_cover").unwrap().canonical(),
-            "320x180_cover_q75_gray"
-        );
-        assert_eq!(
-            parse_spec("320x180_grayscale").unwrap().canonical(),
-            "320x180_gray"
-        );
-        assert_eq!(
-            parse_spec("320x180.WEBP").unwrap().canonical(),
-            "320x180.webp"
-        );
+        assert_eq!(parse_spec("320x180_q075").unwrap().canonical(), "320x180_q75");
+        assert_eq!(parse_spec("320x180_gray_q75_cover").unwrap().canonical(), "320x180_cover_q75_gray");
+        assert_eq!(parse_spec("320x180_grayscale").unwrap().canonical(), "320x180_gray");
+        assert_eq!(parse_spec("320x180.WEBP").unwrap().canonical(), "320x180.webp");
     }
 
     #[test]
@@ -847,8 +764,7 @@ mod tests {
 
     impl Fixture {
         fn new(name: &str) -> Self {
-            let root =
-                std::env::temp_dir().join(format!("karbon-resizer-{name}-{}", std::process::id()));
+            let root = std::env::temp_dir().join(format!("karbon-resizer-{name}-{}", std::process::id()));
             std::fs::remove_dir_all(&root).ok();
             std::fs::create_dir_all(root.join("src")).unwrap();
             let img = image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(120, 80, |x, y| {
@@ -862,11 +778,7 @@ mod tests {
         }
 
         fn router(&self, config: impl FnOnce(ImgResizerConfig) -> ImgResizerConfig) -> Router {
-            config(ImgResizer::config(
-                self.root.join("src"),
-                self.root.join("cache"),
-            ))
-            .build()
+            config(ImgResizer::config(self.root.join("src"), self.root.join("cache"))).build()
         }
     }
 
@@ -891,13 +803,8 @@ mod tests {
         let res = get(&router, "/r/60x40_cover_q75.webp/photo.jpg").await;
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(res.headers()[header::CONTENT_TYPE], "image/webp");
-        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        assert_eq!(
-            image::guess_format(&body).unwrap(),
-            image::ImageFormat::WebP
-        );
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(image::guess_format(&body).unwrap(), image::ImageFormat::WebP);
         assert_eq!(image::load_from_memory(&body).unwrap().width(), 60);
     }
 
@@ -907,20 +814,9 @@ mod tests {
         let router = fx.router(|c| c);
         let res = get(&router, "/r/60x40_q75_cover/photo.jpg?anchor=top").await;
         assert_eq!(res.status(), StatusCode::PERMANENT_REDIRECT);
-        assert_eq!(
-            res.headers()[header::LOCATION],
-            "/r/60x40_cover_q75/photo.jpg?anchor=top"
-        );
-        assert_eq!(
-            get(&router, "/r/60x40_bogus/photo.jpg").await.status(),
-            StatusCode::BAD_REQUEST
-        );
-        assert_eq!(
-            get(&router, "/r/60x40/photo.jpg?anchor=nowhere")
-                .await
-                .status(),
-            StatusCode::BAD_REQUEST
-        );
+        assert_eq!(res.headers()[header::LOCATION], "/r/60x40_cover_q75/photo.jpg?anchor=top");
+        assert_eq!(get(&router, "/r/60x40_bogus/photo.jpg").await.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(get(&router, "/r/60x40/photo.jpg?anchor=nowhere").await.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -928,10 +824,7 @@ mod tests {
         let fx = Fixture::new("hidden");
         let router = fx.router(|c| c);
         assert_eq!(get(&router, "/.env").await.status(), StatusCode::NOT_FOUND);
-        assert_eq!(
-            get(&router, "/r/original/.env").await.status(),
-            StatusCode::NOT_FOUND
-        );
+        assert_eq!(get(&router, "/r/original/.env").await.status(), StatusCode::NOT_FOUND);
         assert_eq!(get(&router, "/photo.jpg").await.status(), StatusCode::OK);
     }
 
@@ -941,19 +834,8 @@ mod tests {
     async fn test_encoded_hidden_paths_are_never_served() {
         let fx = Fixture::new("hidden-encoded");
         let router = fx.router(|c| c);
-        for path in [
-            "/%2eenv",
-            "/%2Eenv",
-            "/./.env",
-            "//.env",
-            "/%2e%2e/x",
-            "/a%2f.env",
-        ] {
-            assert_eq!(
-                get(&router, path).await.status(),
-                StatusCode::NOT_FOUND,
-                "{path} must not be served"
-            );
+        for path in ["/%2eenv", "/%2Eenv", "/./.env", "//.env", "/%2e%2e/x", "/a%2f.env"] {
+            assert_eq!(get(&router, path).await.status(), StatusCode::NOT_FOUND, "{path} must not be served");
         }
         // An encoded name that is not hidden is still served.
         assert_eq!(get(&router, "/photo%2ejpg").await.status(), StatusCode::OK);
@@ -973,13 +855,8 @@ mod tests {
 
         let svg = get(&router, "/logo.svg").await;
         assert_eq!(svg.status(), StatusCode::OK);
-        let csp = svg.headers()[header::CONTENT_SECURITY_POLICY]
-            .to_str()
-            .unwrap();
-        assert!(
-            csp.contains("default-src 'none'") && csp.contains("sandbox"),
-            "{csp}"
-        );
+        let csp = svg.headers()[header::CONTENT_SECURITY_POLICY].to_str().unwrap();
+        assert!(csp.contains("default-src 'none'") && csp.contains("sandbox"), "{csp}");
         assert_eq!(svg.headers()[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
 
         let jpg = get(&router, "/photo.jpg").await;
@@ -990,32 +867,14 @@ mod tests {
     async fn test_variant_cap_and_allowed_specs() {
         let fx = Fixture::new("cap");
         let router = fx.router(|c| c.max_variants_per_file(2));
-        assert_eq!(
-            get(&router, "/r/60x40/photo.jpg").await.status(),
-            StatusCode::OK
-        );
-        assert_eq!(
-            get(&router, "/r/50x40/photo.jpg").await.status(),
-            StatusCode::OK
-        );
-        assert_eq!(
-            get(&router, "/r/40x40/photo.jpg").await.status(),
-            StatusCode::BAD_REQUEST
-        );
+        assert_eq!(get(&router, "/r/60x40/photo.jpg").await.status(), StatusCode::OK);
+        assert_eq!(get(&router, "/r/50x40/photo.jpg").await.status(), StatusCode::OK);
+        assert_eq!(get(&router, "/r/40x40/photo.jpg").await.status(), StatusCode::BAD_REQUEST);
         // Cached variants keep being served.
-        assert_eq!(
-            get(&router, "/r/60x40/photo.jpg").await.status(),
-            StatusCode::OK
-        );
+        assert_eq!(get(&router, "/r/60x40/photo.jpg").await.status(), StatusCode::OK);
 
         let strict = fx.router(|c| c.allowed_specs(["30x20"]));
-        assert_eq!(
-            get(&strict, "/r/30x20/photo.jpg").await.status(),
-            StatusCode::OK
-        );
-        assert_eq!(
-            get(&strict, "/r/31x20/photo.jpg").await.status(),
-            StatusCode::NOT_FOUND
-        );
+        assert_eq!(get(&strict, "/r/30x20/photo.jpg").await.status(), StatusCode::OK);
+        assert_eq!(get(&strict, "/r/31x20/photo.jpg").await.status(), StatusCode::NOT_FOUND);
     }
 }

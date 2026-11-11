@@ -37,11 +37,7 @@ impl Range {
     }
 
     pub fn between(min: f64, max: f64) -> Self {
-        Self {
-            min: Some(min),
-            max: Some(max),
-            ..Self::default()
-        }
+        Self { min: Some(min), max: Some(max), ..Self::default() }
     }
 
     pub fn with_min_message(mut self, message: impl Into<String>) -> Self {

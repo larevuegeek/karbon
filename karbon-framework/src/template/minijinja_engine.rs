@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use minijinja::Environment;
+use minijinja::value::Serde;
 use serde_json::Value;
 
 use super::renderer::Renderer;
@@ -25,39 +26,21 @@ impl MinijinjaEngine {
         let mut names = BTreeSet::new();
         let base = Path::new(template_dir);
         load_dir(&mut env, &mut names, base, base)?;
-        tracing::info!(
-            "Minijinja engine loaded {} templates from '{}'",
-            names.len(),
-            template_dir
-        );
-        Ok(Self {
-            env: Arc::new(env),
-            names: Arc::new(names),
-        })
+        tracing::info!("Minijinja engine loaded {} templates from '{}'", names.len(), template_dir);
+        Ok(Self { env: Arc::new(env), names: Arc::new(names) })
     }
 
     /// An engine with no templates loaded.
     pub fn empty() -> Self {
-        Self {
-            env: Arc::new(Environment::new()),
-            names: Arc::new(BTreeSet::new()),
-        }
+        Self { env: Arc::new(Environment::new()), names: Arc::new(BTreeSet::new()) }
     }
 }
 
-fn load_dir(
-    env: &mut Environment<'static>,
-    names: &mut BTreeSet<String>,
-    base: &Path,
-    dir: &Path,
-) -> AppResult<()> {
+fn load_dir(env: &mut Environment<'static>, names: &mut BTreeSet<String>, base: &Path, dir: &Path) -> AppResult<()> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(e) => {
-            return Err(AppError::Internal(format!(
-                "Failed to read templates from '{}': {e}",
-                dir.display()
-            )));
+            return Err(AppError::Internal(format!("Failed to read templates from '{}': {e}", dir.display())));
         }
     };
 
@@ -76,11 +59,7 @@ fn load_dir(
             continue;
         }
 
-        let rel = path
-            .strip_prefix(base)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .replace('\\', "/");
+        let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
         let source = std::fs::read_to_string(&path)
             .map_err(|e| AppError::Internal(format!("Cannot read template {rel}: {e}")))?;
 
@@ -97,13 +76,13 @@ impl Renderer for MinijinjaEngine {
             .env
             .get_template(name)
             .map_err(|e| AppError::Internal(format!("Template '{name}' not found: {e}")))?;
-        tmpl.render(context)
+        tmpl.render(Serde(context))
             .map_err(|e| AppError::Internal(format!("Template render error '{name}': {e}")))
     }
 
     fn render_str(&self, source: &str, context: &Value) -> AppResult<String> {
         self.env
-            .render_str(source, context)
+            .render_str(source, Serde(context))
             .map_err(|e| AppError::Internal(format!("Template string render error: {e}")))
     }
 
@@ -124,9 +103,7 @@ mod tests {
     #[test]
     fn renders_inline_string() {
         let engine = MinijinjaEngine::empty();
-        let out = engine
-            .render_str("Hello {{ name }}!", &json!({ "name": "David" }))
-            .unwrap();
+        let out = engine.render_str("Hello {{ name }}!", &json!({ "name": "David" })).unwrap();
         assert_eq!(out, "Hello David!");
     }
 

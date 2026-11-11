@@ -155,13 +155,13 @@
 
         const html = filtered.map((r, i) => {
             const statusClass = statusBadgeClass(r.status);
-            const methodClass = 'method-' + r.method;
+            const methodClass = 'method-' + esc(r.method);
             const durationClass = r.duration_ms > 500 ? 'very-slow' : r.duration_ms > 200 ? 'slow' : '';
             const newClass = isNew && i === 0 ? ' new-row' : '';
 
             return `<tr class="${newClass}" onclick="showRequestDetail(${r.id})">
                 <td class="col-status"><span class="badge ${statusClass}">${r.status}</span></td>
-                <td class="col-method"><span class="method-badge ${methodClass}">${r.method}</span></td>
+                <td class="col-method"><span class="method-badge ${methodClass}">${esc(r.method)}</span></td>
                 <td class="col-path" title="${esc(r.path)}">${esc(r.path)}</td>
                 <td class="col-duration"><span class="duration ${durationClass}">${r.duration_ms}ms</span></td>
                 <td class="col-time"><span class="time-ago">${timeAgo(r.timestamp)}</span></td>
@@ -271,7 +271,7 @@
             <div class="detail-section">
                 <div class="detail-section-title">Overview</div>
                 <div class="detail-row"><span class="detail-key">Status</span><span class="detail-value"><span class="badge ${statusBadgeClass(r.status)}">${r.status}</span></span></div>
-                <div class="detail-row"><span class="detail-key">Method</span><span class="detail-value">${r.method}</span></div>
+                <div class="detail-row"><span class="detail-key">Method</span><span class="detail-value">${esc(r.method)}</span></div>
                 <div class="detail-row"><span class="detail-key">Path</span><span class="detail-value">${esc(r.path)}</span></div>
                 <div class="detail-row"><span class="detail-key">Duration</span><span class="detail-value">${r.duration_ms}ms</span></div>
                 ${r.request_id ? `<div class="detail-row"><span class="detail-key">Request ID</span><span class="detail-value">${esc(r.request_id)}</span></div>` : ''}
@@ -358,11 +358,12 @@
         return String(n);
     }
 
+    // Escapes for element content AND for quoted attributes. Going through
+    // textContent/innerHTML left `"` alone, so a recorded path could close a title="…".
+    const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
     function esc(s) {
         if (!s) return '';
-        const el = document.createElement('span');
-        el.textContent = s;
-        return el.innerHTML;
+        return String(s).replace(/[&<>"']/g, c => ESC[c]);
     }
 
     // ── Event listeners ──────────────────────────────
@@ -472,7 +473,7 @@
         requests.forEach(r => { methods[r.method] = (methods[r.method] || 0) + 1; });
         $('ovMethods').innerHTML = Object.keys(methods).length
             ? Object.entries(methods).sort((a, b) => b[1] - a[1])
-                .map(([m, c]) => `<span class="chip"><b class="method-${m}">${m}</b> ${c}</span>`).join('')
+                .map(([m, c]) => `<span class="chip"><b class="method-${esc(m)}">${esc(m)}</b> ${c}</span>`).join('')
             : '<span class="empty-inline">No traffic yet.</span>';
 
         // Slowest endpoints
@@ -487,7 +488,7 @@
             body.innerHTML = slow.map(r => {
                 const durationClass = r.duration_ms > 500 ? 'very-slow' : r.duration_ms > 200 ? 'slow' : '';
                 return `<tr onclick="showRequestDetail(${r.id})">
-                    <td class="col-method"><span class="method-badge method-${r.method}">${r.method}</span></td>
+                    <td class="col-method"><span class="method-badge method-${esc(r.method)}">${esc(r.method)}</span></td>
                     <td class="col-path" title="${esc(r.path)}">${esc(r.path)}</td>
                     <td class="col-status"><span class="badge ${statusBadgeClass(r.status)}">${r.status}</span></td>
                     <td class="col-duration"><span class="duration ${durationClass}">${r.duration_ms}ms</span></td>
@@ -761,7 +762,7 @@
                 `<span class="route-param" title="path parameter, validated as ${esc(p.type)}">${esc(p.name)}:${esc(p.type)}${p.c ? ' ' + esc(p.c) : ''}</span>`).join(' ');
             return `<tr>
             <td class="col-status"><span class="route-kind kind-${r.kind}">${r.kind}</span></td>
-            <td class="col-method"><span class="method-badge method-${r.method}">${r.method}</span></td>
+            <td class="col-method"><span class="method-badge method-${esc(r.method)}">${esc(r.method)}</span></td>
             <td class="col-path" title="${esc(r.path)}">${esc(r.path)} ${params}</td>
             <td>${r.tag ? `<span class="chip">${esc(r.tag)}</span>` : ''}</td>
         </tr>`;

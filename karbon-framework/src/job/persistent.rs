@@ -45,8 +45,7 @@ pub trait PersistentJob: Serialize + DeserializeOwned + Send + Sync + 'static {
     fn run(&self) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + '_>>;
 }
 
-type HandlerFn =
-    Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send>> + Send + Sync>;
+type HandlerFn = Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send>> + Send + Sync>;
 
 /// Builder for a [`PersistentQueue`] — register every job type before `build`.
 pub struct PersistentQueueBuilder {
@@ -75,11 +74,7 @@ impl PersistentQueueBuilder {
     }
 
     pub fn build(self) -> PersistentQueue {
-        PersistentQueue {
-            pool: self.pool,
-            handlers: Arc::new(self.handlers),
-            max_attempts: self.max_attempts,
-        }
+        PersistentQueue { pool: self.pool, handlers: Arc::new(self.handlers), max_attempts: self.max_attempts }
     }
 }
 
@@ -93,11 +88,7 @@ pub struct PersistentQueue {
 
 impl PersistentQueue {
     pub fn builder(pool: DbPool) -> PersistentQueueBuilder {
-        PersistentQueueBuilder {
-            pool,
-            handlers: HashMap::new(),
-            max_attempts: 3,
-        }
+        PersistentQueueBuilder { pool, handlers: HashMap::new(), max_attempts: 3 }
     }
 
     /// Create the `_karbon_jobs` table if it does not exist.
@@ -126,8 +117,8 @@ impl PersistentQueue {
 
     /// Enqueue a job for later execution.
     pub async fn push<J: PersistentJob>(&self, job: &J) -> AppResult<()> {
-        let payload = serde_json::to_string(job)
-            .map_err(|e| AppError::Internal(format!("serialize {}: {e}", J::KIND)))?;
+        let payload =
+            serde_json::to_string(job).map_err(|e| AppError::Internal(format!("serialize {}: {e}", J::KIND)))?;
         InsertBuilder::into(JOBS_TABLE)
             .set("kind", J::KIND.to_string())
             .set("payload", payload)
@@ -166,14 +157,11 @@ impl PersistentQueue {
         };
 
         // Claim by delete: if another worker already took it, rows_affected is 0.
-        let claimed = sqlx::query(AssertSqlSafe(format!(
-            "DELETE FROM {JOBS_TABLE} WHERE id = {}",
-            placeholder1()
-        )))
-        .bind(id)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| AppError::Internal(format!("claim job: {e}")))?;
+        let claimed = sqlx::query(AssertSqlSafe(format!("DELETE FROM {JOBS_TABLE} WHERE id = {}", placeholder1())))
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| AppError::Internal(format!("claim job: {e}")))?;
         if claimed.rows_affected() == 0 {
             return Ok(false);
         }

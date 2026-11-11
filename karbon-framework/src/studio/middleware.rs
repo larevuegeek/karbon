@@ -1,9 +1,7 @@
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Request};
 use axum::http::HeaderValue;
-use axum::http::header::{
-    CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG, EXPIRES, LAST_MODIFIED,
-};
+use axum::http::header::{CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG, EXPIRES, LAST_MODIFIED};
 use axum::middleware::Next;
 use axum::response::Response;
 use std::net::SocketAddr;
@@ -13,11 +11,7 @@ use super::collector::StudioCollector;
 
 /// Middleware that records every request/response into the StudioCollector.
 /// Skips studio's own routes to avoid noise.
-pub async fn studio_middleware(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn studio_middleware(ConnectInfo(addr): ConnectInfo<SocketAddr>, request: Request, next: Next) -> Response {
     let path = request.uri().path().to_string();
 
     // Don't record studio's own requests
@@ -81,9 +75,18 @@ pub async fn studio_toolbar_middleware(request: Request, next: Next) -> Response
         return next.run(request).await;
     }
     let method = request.method().to_string();
+    // A debug build shows the toolbar to every peer of the network, and the token in its
+    // links opens Studio. Only a caller who could open Studio anyway gets it: a signed
+    // debug session, or the developer's own browser on loopback.
+    let local = cfg!(debug_assertions)
+        && request
+            .extensions()
+            .get::<ConnectInfo<SocketAddr>>()
+            .is_some_and(|ConnectInfo(peer)| super::addressed_locally(peer.ip(), request.headers()));
     let token = request
         .extensions()
         .get::<super::StudioToken>()
+        .filter(|_| local || crate::http::dev_mode::session())
         .map(|t| t.0.clone());
 
     let start = Instant::now();
@@ -122,14 +125,7 @@ pub async fn studio_toolbar_middleware(request: Request, next: Next) -> Response
     let mut html = String::from_utf8_lossy(&bytes).into_owned();
 
     if let Some(pos) = html.rfind("</body>") {
-        let toolbar = render_toolbar(
-            &method,
-            &path,
-            status,
-            duration.as_millis(),
-            request_id,
-            token.as_deref(),
-        );
+        let toolbar = render_toolbar(&method, &path, status, duration.as_millis(), request_id, token.as_deref());
         html.insert_str(pos, &toolbar);
         // Body length changed — let the server recompute it.
         parts.headers.remove(CONTENT_LENGTH);
@@ -168,10 +164,7 @@ fn render_toolbar(
     let env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string());
     let features = super::enabled_features().join(", ");
     let rid_full = request_id.clone().unwrap_or_else(|| "—".to_string());
-    let rid_short: String = request_id
-        .as_deref()
-        .map(|r| r.chars().take(8).collect())
-        .unwrap_or_default();
+    let rid_short: String = request_id.as_deref().map(|r| r.chars().take(8).collect()).unwrap_or_default();
 
     let studio_link = match token {
         Some(t) => format!("/_studio?token={}", html_escape_attr(t)),
@@ -251,9 +244,7 @@ mod tests {
     use tower::ServiceExt;
 
     async fn body_string(res: Response) -> String {
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
-            .await
-            .unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
         String::from_utf8(bytes.to_vec()).unwrap()
     }
 
@@ -262,12 +253,10 @@ mod tests {
         let app = Router::new()
             .route("/", get(|| async { Html("<html><body>hi</body></html>") }))
             .layer(axum::middleware::from_fn(studio_toolbar_middleware));
-        let res = crate::http::dev_mode::scoped(
-            true,
-            app.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap()),
-        )
-        .await
-        .unwrap();
+        let res =
+            crate::http::dev_mode::scoped(true, app.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap()))
+                .await
+                .unwrap();
         let html = body_string(res).await;
         assert!(html.contains("karbon-toolbar"), "toolbar not injected");
         assert!(html.contains("hi"), "original content lost");
@@ -278,10 +267,7 @@ mod tests {
     #[tokio::test]
     async fn skips_non_html_responses() {
         let app = Router::new()
-            .route(
-                "/api",
-                get(|| async { Json(serde_json::json!({"ok": true})) }),
-            )
+            .route("/api", get(|| async { Json(serde_json::json!({"ok": true})) }))
             .layer(axum::middleware::from_fn(studio_toolbar_middleware));
         let res = crate::http::dev_mode::scoped(
             true,
@@ -296,19 +282,11 @@ mod tests {
     #[tokio::test]
     async fn skips_studio_routes() {
         let app = Router::new()
-            .route(
-                "/_studio",
-                get(|| async { Html("<html><body>dash</body></html>") }),
-            )
+            .route("/_studio", get(|| async { Html("<html><body>dash</body></html>") }))
             .layer(axum::middleware::from_fn(studio_toolbar_middleware));
         let res = crate::http::dev_mode::scoped(
             true,
-            app.oneshot(
-                Request::builder()
-                    .uri("/_studio")
-                    .body(Body::empty())
-                    .unwrap(),
-            ),
+            app.oneshot(Request::builder().uri("/_studio").body(Body::empty()).unwrap()),
         )
         .await
         .unwrap();
@@ -335,19 +313,44 @@ mod tests {
                 }),
             )
             .layer(axum::middleware::from_fn(studio_toolbar_middleware))
-            .layer(axum::Extension(super::super::StudioToken(
-                "s3cret-token".into(),
-            )));
-        let res = crate::http::dev_mode::scoped(
-            true,
-            app.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap()),
-        )
-        .await
-        .unwrap();
+            .layer(axum::Extension(super::super::StudioToken("s3cret-token".into())));
+        let res =
+            crate::http::dev_mode::scoped(true, app.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap()))
+                .await
+                .unwrap();
 
         assert_eq!(res.headers()[CACHE_CONTROL], "private, no-store");
         assert!(res.headers().get(ETAG).is_none());
         assert!(res.headers().get(EXPIRES).is_none());
         assert!(body_string(res).await.contains("s3cret-token"));
+    }
+
+    /// In a debug build the toolbar goes to every peer of the network. Its links must not
+    /// hand them the Studio token: with it, the guard lets them in.
+    #[tokio::test]
+    async fn a_network_peer_gets_the_toolbar_without_the_token() {
+        let page = |peer: &'static str, host: &'static str| async move {
+            let app = Router::new()
+                .route("/", get(|| async { Html("<html><body>hi</body></html>") }))
+                .layer(axum::middleware::from_fn(studio_toolbar_middleware))
+                .layer(axum::Extension(super::super::StudioToken("s3cret-token".into())));
+            let mut request = Request::builder().uri("/").header("host", host).body(Body::empty()).unwrap();
+            request
+                .extensions_mut()
+                .insert(ConnectInfo(peer.parse::<SocketAddr>().unwrap()));
+            let res = crate::http::dev_mode::scoped_debug_build(app.oneshot(request)).await.unwrap();
+            body_string(res).await
+        };
+
+        let lan = page("192.168.1.20:50000", "192.168.1.5:3005").await;
+        assert!(lan.contains("karbon-toolbar"));
+        assert!(!lan.contains("s3cret-token"), "token sent to a LAN peer");
+
+        let rebound = page("127.0.0.1:50000", "evil.test:3005").await;
+        assert!(!rebound.contains("s3cret-token"), "token sent to a rebound page");
+
+        // The developer's own browser keeps the working link — in a debug build.
+        let own = page("127.0.0.1:50000", "localhost:3005").await;
+        assert_eq!(own.contains("s3cret-token"), cfg!(debug_assertions));
     }
 }

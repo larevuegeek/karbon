@@ -4,9 +4,7 @@ use std::io::{IsTerminal, Write};
 use std::path::Path;
 
 /// Field types the assistant offers (matches `parse_fields`).
-const FIELD_TYPES: &[&str] = &[
-    "string", "text", "int", "bigint", "float", "bool", "datetime", "date", "json",
-];
+const FIELD_TYPES: &[&str] = &["string", "text", "int", "bigint", "float", "bool", "datetime", "date", "json"];
 
 /// Resolve the field specs for entity/crud: use the ones given on the command
 /// line, or — when none are given and stdin is interactive — launch the Symfony
@@ -22,10 +20,7 @@ fn resolve_fields(fields: &[String], opts: GenOptions) -> Result<Vec<String>, St
 
 /// Interactive field builder (one field at a time: name → type → nullable).
 fn prompt_fields() -> Result<Vec<String>, String> {
-    println!(
-        "\n  {} Assistant de champs — entrée vide sur le nom pour terminer\n",
-        "▸".cyan().bold()
-    );
+    println!("\n  {} Assistant de champs — entrée vide sur le nom pour terminer\n", "▸".cyan().bold());
     let mut fields: Vec<String> = Vec::new();
     loop {
         let name = prompt(&format!("  Champ #{} — nom : ", fields.len() + 1))?;
@@ -42,30 +37,18 @@ fn prompt_fields() -> Result<Vec<String>, String> {
             if FIELD_TYPES.contains(&t) {
                 break t.to_string();
             }
-            println!(
-                "    {} type inconnu. Disponibles : {}",
-                "✗".red(),
-                FIELD_TYPES.join(", ").dimmed()
-            );
+            println!("    {} type inconnu. Disponibles : {}", "✗".red(), FIELD_TYPES.join(", ").dimmed());
         };
 
-        let nullable = matches!(
-            prompt("    nullable ? (o/N) : ")?
-                .trim()
-                .to_lowercase()
-                .as_str(),
-            "o" | "oui" | "y" | "yes"
-        );
+        let nullable =
+            matches!(prompt("    nullable ? (o/N) : ")?.trim().to_lowercase().as_str(), "o" | "oui" | "y" | "yes");
 
         let spec = format!("{name}:{ty}{}", if nullable { "?" } else { "" });
         println!("    {} {}\n", "✓".green(), spec.cyan());
         fields.push(spec);
     }
     if fields.is_empty() {
-        println!(
-            "  {} aucun champ — valeurs par défaut (title, slug)\n",
-            "ℹ".blue()
-        );
+        println!("  {} aucun champ — valeurs par défaut (title, slug)\n", "ℹ".blue());
     }
     Ok(fields)
 }
@@ -74,9 +57,7 @@ fn prompt(label: &str) -> Result<String, String> {
     print!("{label}");
     std::io::stdout().flush().ok();
     let mut s = String::new();
-    std::io::stdin()
-        .read_line(&mut s)
-        .map_err(|e| format!("lecture stdin : {e}"))?;
+    std::io::stdin().read_line(&mut s).map_err(|e| format!("lecture stdin : {e}"))?;
     Ok(s)
 }
 
@@ -91,23 +72,22 @@ pub struct GenOptions {
     pub interactive: bool,
 }
 
-pub fn run(
-    kind: &str,
-    name: &str,
-    fields: &[String],
-    root: &Path,
-    opts: GenOptions,
-) -> Result<(), String> {
+pub fn run(kind: &str, name: &str, fields: &[String], root: &Path, opts: GenOptions) -> Result<(), String> {
+    // The name becomes a file path and a Rust type, and Studio's terminal forwards it from
+    // an HTTP request: `../../x` must never reach a `join`.
+    if !is_identifier(name) {
+        return Err(format!(
+            "Invalid name `{name}` — expected an identifier such as `Post` or `PostComment` \
+             (letters, digits and `_`, starting with a letter)"
+        ));
+    }
+
     println!(
         "\n{}  generate {} {}{}\n",
         "▲ karbon".bold().red(),
         kind.bold(),
         name.bold().cyan(),
-        if opts.dry_run {
-            "  (dry-run)".yellow().to_string()
-        } else {
-            String::new()
-        }
+        if opts.dry_run { "  (dry-run)".yellow().to_string() } else { String::new() }
     );
 
     match kind {
@@ -115,10 +95,7 @@ pub fn run(
         "controller" => generate_controller(name, root, opts),
         "crud" => generate_crud(name, &resolve_fields(fields, opts)?, root, opts),
         "admin" => generate_admin(name, root, opts),
-        _ => Err(format!(
-            "Unknown generator '{}'. Available: entity, controller, crud, admin",
-            kind
-        )),
+        _ => Err(format!("Unknown generator '{}'. Available: entity, controller, crud, admin", kind)),
     }
 }
 
@@ -137,10 +114,7 @@ fn detect_driver(root: &Path) -> Driver {
     for dir in ["app", "api"] {
         let cargo = root.join(dir).join("Cargo.toml");
         if let Ok(content) = fs::read_to_string(&cargo) {
-            let line = content
-                .lines()
-                .find(|l| l.trim_start().starts_with("karbon"))
-                .unwrap_or("");
+            let line = content.lines().find(|l| l.trim_start().starts_with("karbon")).unwrap_or("");
             if line.contains("postgres") {
                 return Driver::Postgres;
             }
@@ -177,21 +151,20 @@ fn parse_fields(specs: &[String]) -> Result<Vec<Field>, String> {
             let (raw_name, raw_ty) = spec
                 .split_once(':')
                 .ok_or_else(|| format!("Invalid field `{spec}` — expected `name:type`"))?;
+            // Written as-is into the generated Rust source.
+            if !is_identifier(raw_name) {
+                return Err(format!(
+                    "Invalid field name `{raw_name}` in `{spec}` — letters, digits and `_`, \
+                     starting with a letter"
+                ));
+            }
             let nullable = raw_ty.ends_with('?');
             let kind = raw_ty.trim_end_matches('?').to_lowercase();
-            let base_ty = rust_base_type(&kind)
-                .ok_or_else(|| format!("Unknown type `{kind}` in `{spec}` (string text int bigint float bool datetime date json)"))?;
-            let rust_ty = if nullable {
-                format!("Option<{base_ty}>")
-            } else {
-                base_ty.to_string()
-            };
-            Ok(Field {
-                name: snake(raw_name),
-                rust_ty,
-                base_ty: base_ty.to_string(),
-                kind,
-            })
+            let base_ty = rust_base_type(&kind).ok_or_else(|| {
+                format!("Unknown type `{kind}` in `{spec}` (string text int bigint float bool datetime date json)")
+            })?;
+            let rust_ty = if nullable { format!("Option<{base_ty}>") } else { base_ty.to_string() };
+            Ok(Field { name: snake(raw_name), rust_ty, base_ty: base_ty.to_string(), kind })
         })
         .collect()
 }
@@ -235,11 +208,10 @@ fn parse_entity_fields(src: &str) -> Vec<(String, String, bool)> {
                 return None;
             }
             let ty = ty.trim();
-            let (nullable, base) =
-                match ty.strip_prefix("Option<").and_then(|s| s.strip_suffix('>')) {
-                    Some(inner) => (true, inner.trim()),
-                    None => (false, ty),
-                };
+            let (nullable, base) = match ty.strip_prefix("Option<").and_then(|s| s.strip_suffix('>')) {
+                Some(inner) => (true, inner.trim()),
+                None => (false, ty),
+            };
             let kind = match base {
                 "String" => "string",
                 "i32" => "int",
@@ -278,18 +250,12 @@ fn display_expr(name: &str, nullable: bool) -> String {
 /// Coerce a submitted form string into the field's base (non-null) Rust value.
 fn base_coerce(name: &str, kind: &str) -> String {
     match kind {
-        "int" => format!(
-            "form.value(\"{name}\").and_then(|v| v.parse::<i32>().ok()).unwrap_or_default()"
-        ),
-        "bigint" => format!(
-            "form.value(\"{name}\").and_then(|v| v.parse::<i64>().ok()).unwrap_or_default()"
-        ),
-        "float" => format!(
-            "form.value(\"{name}\").and_then(|v| v.parse::<f64>().ok()).unwrap_or_default()"
-        ),
-        "bool" => format!(
-            "form.value(\"{name}\").map(|v| v == \"true\" || v == \"on\" || v == \"1\").unwrap_or(false)"
-        ),
+        "int" => format!("form.value(\"{name}\").and_then(|v| v.parse::<i32>().ok()).unwrap_or_default()"),
+        "bigint" => format!("form.value(\"{name}\").and_then(|v| v.parse::<i64>().ok()).unwrap_or_default()"),
+        "float" => format!("form.value(\"{name}\").and_then(|v| v.parse::<f64>().ok()).unwrap_or_default()"),
+        "bool" => {
+            format!("form.value(\"{name}\").map(|v| v == \"true\" || v == \"on\" || v == \"1\").unwrap_or(false)")
+        }
         "datetime" => format!(
             "form.value(\"{name}\").and_then(|v| v.parse().ok()).unwrap_or_else(|| chrono::Utc::now().naive_utc())"
         ),
@@ -312,9 +278,9 @@ fn opt_coerce(name: &str, kind: &str) -> String {
         "bool" => {
             format!("form.value(\"{name}\").map(|v| v == \"true\" || v == \"on\" || v == \"1\")")
         }
-        "json" => format!(
-            "form.value(\"{name}\").filter(|v| !v.is_empty()).and_then(|v| serde_json::from_str(v).ok())"
-        ),
+        "json" => {
+            format!("form.value(\"{name}\").filter(|v| !v.is_empty()).and_then(|v| serde_json::from_str(v).ok())")
+        }
         _ => {
             format!("form.value(\"{name}\").filter(|v| !v.is_empty()).and_then(|v| v.parse().ok())")
         }
@@ -322,6 +288,13 @@ fn opt_coerce(name: &str, kind: &str) -> String {
 }
 
 // ─── Helpers ───
+
+/// ASCII letters, digits and `_`, starting with a letter: safe as a file name and as a
+/// Rust identifier — no separator, no `..`, nothing a path or a source file interprets.
+fn is_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic()) && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
 
 fn snake(name: &str) -> String {
     // PascalCase → snake_case: "PostComment" → "post_comment"
@@ -367,24 +340,14 @@ fn write_file(path: &Path, content: &str, opts: GenOptions) -> Result<(), String
         return Ok(());
     }
     if exists && !opts.force {
-        println!(
-            "  {} {} {}",
-            "⊘".yellow(),
-            shown.dimmed(),
-            "(existe déjà — `--force` pour écraser)".dimmed()
-        );
+        println!("  {} {} {}", "⊘".yellow(), shown.dimmed(), "(existe déjà — `--force` pour écraser)".dimmed());
         return Ok(());
     }
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create dir {}: {e}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|e| format!("Cannot create dir {}: {e}", parent.display()))?;
     }
     fs::write(path, content).map_err(|e| format!("Cannot write {}: {e}", path.display()))?;
-    let mark = if exists {
-        "↻".yellow()
-    } else {
-        "✓".green()
-    };
+    let mark = if exists { "↻".yellow() } else { "✓".green() };
     println!("  {} {}", mark, shown.dimmed());
     Ok(())
 }
@@ -411,8 +374,7 @@ fn ensure_main_module(app_dir: &Path, module: &str, opts: GenOptions) -> Result<
     } else {
         format!("{line}\n{content}")
     };
-    fs::write(&main_rs, new_content)
-        .map_err(|e| format!("Cannot update {}: {e}", main_rs.display()))?;
+    fs::write(&main_rs, new_content).map_err(|e| format!("Cannot update {}: {e}", main_rs.display()))?;
     println!("  {} app/src/main.rs (added `{}`)", "✓".green(), line);
     Ok(())
 }
@@ -440,42 +402,25 @@ fn wire_route(
         return Ok(());
     };
     if opts.dry_run {
-        println!(
-            "  {} app/src/main.rs (monterait {})",
-            "○".dimmed(),
-            nest_line.trim()
-        );
+        println!("  {} app/src/main.rs (monterait {})", "○".dimmed(), nest_line.trim());
         return Ok(());
     }
     let line_start = content[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let indent: String = content[line_start..pos]
-        .chars()
-        .take_while(|c| c.is_whitespace())
-        .collect();
+    let indent: String = content[line_start..pos].chars().take_while(|c| c.is_whitespace()).collect();
     let insert = format!("{indent}{}\n", nest_line.trim());
     let mut new_content = String::with_capacity(content.len() + insert.len());
     new_content.push_str(&content[..line_start]);
     new_content.push_str(&insert);
     new_content.push_str(&content[line_start..]);
-    fs::write(&main_rs, new_content)
-        .map_err(|e| format!("Cannot update {}: {e}", main_rs.display()))?;
-    println!(
-        "  {} app/src/main.rs (mounted {})",
-        "✓".green(),
-        nest_line.trim()
-    );
+    fs::write(&main_rs, new_content).map_err(|e| format!("Cannot update {}: {e}", main_rs.display()))?;
+    println!("  {} app/src/main.rs (mounted {})", "✓".green(), nest_line.trim());
     Ok(())
 }
 
 /// Insert a line right before a marker comment in `main.rs` (idempotent). Unlike
 /// `wire_route`, it's silent when the marker is absent (older skeletons simply
 /// don't get OpenAPI aggregation).
-fn append_at_marker(
-    app_dir: &Path,
-    marker: &str,
-    line: &str,
-    opts: GenOptions,
-) -> Result<(), String> {
+fn append_at_marker(app_dir: &Path, marker: &str, line: &str, opts: GenOptions) -> Result<(), String> {
     let main_rs = app_dir.join("main.rs");
     let content = match fs::read_to_string(&main_rs) {
         Ok(c) => c,
@@ -496,17 +441,13 @@ fn append_at_marker(
         return Ok(());
     }
     let line_start = content[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let indent: String = content[line_start..pos]
-        .chars()
-        .take_while(|c| c.is_whitespace())
-        .collect();
+    let indent: String = content[line_start..pos].chars().take_while(|c| c.is_whitespace()).collect();
     let insert = format!("{indent}{}\n", line.trim());
     let mut new_content = String::with_capacity(content.len() + insert.len());
     new_content.push_str(&content[..line_start]);
     new_content.push_str(&insert);
     new_content.push_str(&content[line_start..]);
-    fs::write(&main_rs, new_content)
-        .map_err(|e| format!("Cannot update {}: {e}", main_rs.display()))?;
+    fs::write(&main_rs, new_content).map_err(|e| format!("Cannot update {}: {e}", main_rs.display()))?;
     println!("  {} app/src/main.rs (OpenAPI route)", "✓".green());
     Ok(())
 }
@@ -518,12 +459,7 @@ fn append_mod(mod_file: &Path, module_name: &str, opts: GenOptions) -> Result<()
         return Ok(());
     }
     if opts.dry_run {
-        println!(
-            "  {} {} (ajouterait `{}`)",
-            "○".dimmed(),
-            mod_file.display().to_string().dimmed(),
-            mod_line
-        );
+        println!("  {} {} (ajouterait `{}`)", "○".dimmed(), mod_file.display().to_string().dimmed(), mod_line);
         return Ok(());
     }
     let new_content = if content.trim().is_empty() {
@@ -531,25 +467,14 @@ fn append_mod(mod_file: &Path, module_name: &str, opts: GenOptions) -> Result<()
     } else {
         format!("{content}\n{mod_line}\n")
     };
-    fs::write(mod_file, new_content)
-        .map_err(|e| format!("Cannot update {}: {e}", mod_file.display()))?;
-    println!(
-        "  {} {} (added `{}`)",
-        "✓".green(),
-        mod_file.display().to_string().dimmed(),
-        mod_line
-    );
+    fs::write(mod_file, new_content).map_err(|e| format!("Cannot update {}: {e}", mod_file.display()))?;
+    println!("  {} {} (added `{}`)", "✓".green(), mod_file.display().to_string().dimmed(), mod_line);
     Ok(())
 }
 
 // ─── Generators ───
 
-fn generate_entity(
-    name: &str,
-    field_specs: &[String],
-    root: &Path,
-    opts: GenOptions,
-) -> Result<(), String> {
+fn generate_entity(name: &str, field_specs: &[String], root: &Path, opts: GenOptions) -> Result<(), String> {
     let app_dir = find_app_dir(root)?;
     let table = plural(name);
     let file_name = snake(name);
@@ -569,10 +494,7 @@ fn generate_entity(
         .iter()
         .map(|f| {
             if f.name == "slug" && has_title {
-                format!(
-                    "    #[slug_from(\"title\")]\n    pub {}: {},",
-                    f.name, f.rust_ty
-                )
+                format!("    #[slug_from(\"title\")]\n    pub {}: {},", f.name, f.rust_ty)
             } else {
                 format!("    pub {}: {},", f.name, f.rust_ty)
             }
@@ -624,23 +546,9 @@ pub struct Update{name} {{
 
     // No migration is written here: the entity is the source of truth. Run
     // `karbon migrate diff` to generate the migration from the entity ↔ DB diff.
-    let field_summary = fields
-        .iter()
-        .map(|f| f.name.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    println!(
-        "\n  {} Entity {} generated [{}] ({:?})",
-        "✓".green().bold(),
-        name.bold(),
-        field_summary.dimmed(),
-        driver
-    );
-    println!(
-        "  {} {} pour générer la migration (compare entités ↔ base)\n",
-        "→".blue(),
-        "karbon migrate diff".bold()
-    );
+    let field_summary = fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(", ");
+    println!("\n  {} Entity {} generated [{}] ({:?})", "✓".green().bold(), name.bold(), field_summary.dimmed(), driver);
+    println!("  {} {} pour générer la migration (compare entités ↔ base)\n", "→".blue(), "karbon migrate diff".bold());
     Ok(())
 }
 
@@ -694,11 +602,7 @@ impl {name}Controller {{
 
     let controller_path = app_dir.join(format!("controller/{file_name}_controller.rs"));
     write_file(&controller_path, &content, opts)?;
-    append_mod(
-        &app_dir.join("controller/mod.rs"),
-        &format!("{file_name}_controller"),
-        opts,
-    )?;
+    append_mod(&app_dir.join("controller/mod.rs"), &format!("{file_name}_controller"), opts)?;
     ensure_main_module(&app_dir, "controller", opts)?;
     wire_route(
         &app_dir,
@@ -729,12 +633,7 @@ impl {name}Controller {{
 
 const API_PREFIX: &str = "/api/v1";
 
-fn generate_crud(
-    name: &str,
-    field_specs: &[String],
-    root: &Path,
-    opts: GenOptions,
-) -> Result<(), String> {
+fn generate_crud(name: &str, field_specs: &[String], root: &Path, opts: GenOptions) -> Result<(), String> {
     let app_dir = find_app_dir(root)?;
     let file_name = snake(name);
     let table = plural(name);
@@ -746,12 +645,7 @@ fn generate_crud(
         .filter(|f| f.kind == "string" || f.kind == "text")
         .map(|f| f.name.as_str())
         .collect();
-    let quoted = |cols: &[&str]| {
-        cols.iter()
-            .map(|c| format!("\"{c}\""))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
+    let quoted = |cols: &[&str]| cols.iter().map(|c| format!("\"{c}\"")).collect::<Vec<_>>().join(", ");
     let search_cols = format!("&[{}]", quoted(&searchable));
     let mut sort_cols = vec!["id"];
     sort_cols.extend(&searchable);
@@ -822,11 +716,7 @@ impl {name}Repository {{
     // 3. Controller
     generate_controller(name, root, opts)?;
 
-    println!(
-        "\n  {} Full CRUD for {} generated (entity + repo + controller)\n",
-        "✓".green().bold(),
-        name.bold()
-    );
+    println!("\n  {} Full CRUD for {} generated (entity + repo + controller)\n", "✓".green().bold(), name.bold());
     Ok(())
 }
 
@@ -854,10 +744,7 @@ fn generate_admin(name: &str, root: &Path, opts: GenOptions) -> Result<(), Strin
     let entity_src = fs::read_to_string(&entity_file).unwrap_or_default();
     let fields = parse_entity_fields(&entity_src);
     if fields.is_empty() {
-        return Err(format!(
-            "could not read fields from entity `{name}` ({}).",
-            entity_file.display()
-        ));
+        return Err(format!("could not read fields from entity `{name}` ({}).", entity_file.display()));
     }
 
     let list_headers = fields
@@ -867,10 +754,7 @@ fn generate_admin(name: &str, root: &Path, opts: GenOptions) -> Result<(), Strin
     let list_cells = fields
         .iter()
         .map(|(n, _, nl)| {
-            format!(
-                "            cells.push_str(&format!(\"<td>{{}}</td>\", esc(&({}))));",
-                display_expr(n, *nl)
-            )
+            format!("            cells.push_str(&format!(\"<td>{{}}</td>\", esc(&({}))));", display_expr(n, *nl))
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -878,31 +762,19 @@ fn generate_admin(name: &str, root: &Path, opts: GenOptions) -> Result<(), Strin
         .iter()
         .map(|(n, _, nl)| {
             let req = if *nl { "" } else { ".required()" };
-            format!(
-                "        .add(Field::text(\"{n}\", \"{}\"){req})",
-                humanize_label(n)
-            )
+            format!("        .add(Field::text(\"{n}\", \"{}\"){req})", humanize_label(n))
         })
         .collect::<Vec<_>>()
         .join("\n");
     let form_fill = fields
         .iter()
-        .map(|(n, _, nl)| {
-            format!(
-                "        values.insert(\"{n}\".to_string(), {});",
-                display_expr(n, *nl)
-            )
-        })
+        .map(|(n, _, nl)| format!("        values.insert(\"{n}\".to_string(), {});", display_expr(n, *nl)))
         .collect::<Vec<_>>()
         .join("\n");
     let new_fields = fields
         .iter()
         .map(|(n, k, nl)| {
-            let expr = if *nl {
-                opt_coerce(n, k)
-            } else {
-                base_coerce(n, k)
-            };
+            let expr = if *nl { opt_coerce(n, k) } else { base_coerce(n, k) };
             format!("            {n}: {expr},")
         })
         .collect::<Vec<_>>()
@@ -927,11 +799,7 @@ fn generate_admin(name: &str, root: &Path, opts: GenOptions) -> Result<(), Strin
 
     let controller_path = app_dir.join(format!("controller/{file_name}_admin.rs"));
     write_file(&controller_path, &content, opts)?;
-    append_mod(
-        &app_dir.join("controller/mod.rs"),
-        &format!("{file_name}_admin"),
-        opts,
-    )?;
+    append_mod(&app_dir.join("controller/mod.rs"), &format!("{file_name}_admin"), opts)?;
     ensure_main_module(&app_dir, "controller", opts)?;
     ensure_main_module(&app_dir, "entity", opts)?;
     wire_route(
@@ -952,12 +820,7 @@ fn generate_admin(name: &str, root: &Path, opts: GenOptions) -> Result<(), Strin
         opts,
     )?;
 
-    println!(
-        "\n  {} Admin for {} generated (prefix: {})\n",
-        "✓".green().bold(),
-        name.bold(),
-        prefix.cyan()
-    );
+    println!("\n  {} Admin for {} generated (prefix: {})\n", "✓".green().bold(), name.bold(), prefix.cyan());
     Ok(())
 }
 
@@ -1112,3 +975,50 @@ document.addEventListener('submit', async function(e) {{
     )
 }
 "##;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identifiers_carry_no_path_and_no_code() {
+        for ok in ["Post", "PostComment", "post_comment", "V2Order"] {
+            assert!(is_identifier(ok), "{ok}");
+        }
+        for bad in
+            ["", "../../evil", "..", "a/b", "a\\b", "C:evil", "Post.rs", "2Fast", "_private", "a-b", "Post;", "é"]
+        {
+            assert!(!is_identifier(bad), "{bad:?}");
+        }
+    }
+
+    /// The Studio terminal forwards `generate entity <name>` from an HTTP request: a
+    /// traversing name used to be joined onto `app/src/entity` and written.
+    #[test]
+    fn a_traversing_name_is_refused_before_anything_is_written() {
+        let root = std::env::temp_dir().join(format!("karbon-gen-{}", std::process::id()));
+        let entity_dir = root.join("app/src/entity");
+        fs::create_dir_all(&entity_dir).unwrap();
+        let opts = GenOptions { force: true, ..GenOptions::default() };
+
+        for kind in ["entity", "controller", "crud", "admin"] {
+            let err = run(kind, "../../../escaped", &["title:string".into()], &root, opts)
+                .expect_err("a traversing name was accepted");
+            assert!(err.contains("Invalid name"), "{err}");
+        }
+        assert!(!root.join("escaped.rs").exists());
+        assert!(!root.parent().unwrap().join("escaped.rs").exists());
+        assert_eq!(fs::read_dir(&entity_dir).unwrap().count(), 0);
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_field_name_that_is_not_an_identifier_is_refused() {
+        let Err(err) = parse_fields(&["a}impl:string".into()]) else {
+            panic!("a field name carrying code was accepted");
+        };
+        assert!(err.contains("Invalid field name"), "{err}");
+        assert!(parse_fields(&["title:string".into(), "published_at:datetime?".into()]).is_ok());
+    }
+}

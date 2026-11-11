@@ -109,12 +109,7 @@ impl ChannelRegistry {
 
     /// Get the number of connected clients in a channel
     pub async fn client_count(&self, channel: &str) -> usize {
-        self.rooms
-            .read()
-            .await
-            .get(channel)
-            .map(|s| s.len())
-            .unwrap_or(0)
+        self.rooms.read().await.get(channel).map(|s| s.len()).unwrap_or(0)
     }
 
     /// Get all active channel names
@@ -134,9 +129,7 @@ impl ChannelRegistry {
     /// publisher's `"sender"` id), set by the server: check it before trusting an event
     /// that only the server is meant to send — any subscriber can publish any event name.
     pub async fn handle_socket(self, socket: WebSocket) {
-        let client_id = self
-            .next_client_id
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let client_id = self.next_client_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut rx = self.tx.subscribe();
         let (mut ws_tx, mut ws_rx) = socket.split();
 
@@ -158,11 +151,7 @@ impl ChannelRegistry {
 
                 let wire = wire_frame(&msg);
 
-                if ws_tx
-                    .send(Message::Text(wire.to_string().into()))
-                    .await
-                    .is_err()
-                {
+                if ws_tx.send(Message::Text(wire.to_string().into())).await.is_err() {
                     break;
                 }
             }
@@ -204,18 +193,12 @@ impl ChannelRegistry {
                         {
                             let mut subs = sub_write.write().await;
                             // Cap the number of channels a single connection can join.
-                            if !subs.contains(&wire.channel) && subs.len() >= MAX_CHANNELS_PER_CONN
-                            {
+                            if !subs.contains(&wire.channel) && subs.len() >= MAX_CHANNELS_PER_CONN {
                                 continue;
                             }
                             subs.insert(wire.channel.clone());
                         }
-                        rooms
-                            .write()
-                            .await
-                            .entry(wire.channel.clone())
-                            .or_default()
-                            .insert(client_id);
+                        rooms.write().await.entry(wire.channel.clone()).or_default().insert(client_id);
                     }
                     "leave" => {
                         sub_write.write().await.remove(&wire.channel);
@@ -297,9 +280,6 @@ mod tests {
         assert_eq!(frame["event"], "new_message");
         assert_eq!(frame["origin"], "client");
         assert_eq!(frame["sender"], 7);
-        assert_eq!(
-            frame["payload"]["origin"], "server",
-            "stays inside the payload"
-        );
+        assert_eq!(frame["payload"]["origin"], "server", "stays inside the payload");
     }
 }

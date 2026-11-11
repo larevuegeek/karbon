@@ -9,9 +9,7 @@ pub struct Positive {
 
 impl Default for Positive {
     fn default() -> Self {
-        Self {
-            message: "This value should be positive.".to_string(),
-        }
+        Self { message: "This value should be positive.".to_string() }
     }
 }
 
@@ -29,11 +27,7 @@ impl Positive {
 impl NumericConstraint for Positive {
     fn validate_f64(&self, value: f64) -> ConstraintResult {
         if value <= 0.0 {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                value.to_string(),
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, value.to_string()));
         }
         Ok(())
     }

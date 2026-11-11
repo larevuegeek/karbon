@@ -42,10 +42,7 @@ enum HmrEvent {
 impl HmrServer {
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel(64);
-        Self {
-            tx,
-            watch_paths: Arc::new(Vec::new()),
-        }
+        Self { tx, watch_paths: Arc::new(Vec::new()) }
     }
 
     /// Add a directory to watch for changes

@@ -34,9 +34,9 @@ karbon serve   # single public port; reverse proxy to SSR built in</pre>
 <table>
   <thead><tr><th>Feature</th><th>Engine</th></tr></thead>
   <tbody>
-    <tr><td><code>templates</code></td><td><code>TemplateEngine</code> (Tera) — filters + email rendering</td></tr>
-    <tr><td><code>minijinja</code></td><td><code>MinijinjaEngine</code></td></tr>
-    <tr><td><code>native-templates</code></td><td><code>NativeEngine</code> — a dependency-free in-house engine</td></tr>
+    <tr><td><code>templates</code></td><td><code>TemplateEngine</code> (Tera) — <b>the supported engine</b>: filters, email rendering, <code>AppState.templates</code></td></tr>
+    <tr><td><code>minijinja</code></td><td><code>MinijinjaEngine</code> — experimental</td></tr>
+    <tr><td><code>native-templates</code></td><td><code>NativeEngine</code> — a dependency-free in-house engine, experimental</td></tr>
   </tbody>
 </table>
 <pre>use karbon::template::{Renderer, MinijinjaEngine};

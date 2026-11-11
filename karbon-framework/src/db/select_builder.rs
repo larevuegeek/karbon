@@ -23,11 +23,7 @@ fn validate_join(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    !s.contains(';')
-        && !s.contains('\'')
-        && !s.contains('"')
-        && !s.contains("--")
-        && !s.contains("/*")
+    !s.contains(';') && !s.contains('\'') && !s.contains('"') && !s.contains("--") && !s.contains("/*")
 }
 
 /// Sort direction
@@ -189,32 +185,26 @@ impl SelectBuilder {
     /// defence: `t ON 1=1 UNION SELECT password FROM users` contains none of them and
     /// passes. Same for [`where_raw`](Self::where_raw).
     pub fn join(mut self, join_clause: &str) -> Self {
-        assert!(
-            validate_join(join_clause),
-            "Invalid JOIN clause: contains forbidden characters"
-        );
+        assert!(validate_join(join_clause), "Invalid JOIN clause: contains forbidden characters");
         self.joins.push(join_clause.to_string());
         self
     }
 
     pub fn where_eq<V: IntoBindValue>(mut self, column: &str, value: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions
-            .push(Condition::Eq(column.to_string(), value.into_bind_value()));
+        self.conditions.push(Condition::Eq(column.to_string(), value.into_bind_value()));
         self
     }
 
     pub fn where_ne<V: IntoBindValue>(mut self, column: &str, value: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions
-            .push(Condition::Ne(column.to_string(), value.into_bind_value()));
+        self.conditions.push(Condition::Ne(column.to_string(), value.into_bind_value()));
         self
     }
 
     pub fn where_gt<V: IntoBindValue>(mut self, column: &str, value: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions
-            .push(Condition::Gt(column.to_string(), value.into_bind_value()));
+        self.conditions.push(Condition::Gt(column.to_string(), value.into_bind_value()));
         self
     }
 
@@ -227,8 +217,7 @@ impl SelectBuilder {
 
     pub fn where_lt<V: IntoBindValue>(mut self, column: &str, value: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions
-            .push(Condition::Lt(column.to_string(), value.into_bind_value()));
+        self.conditions.push(Condition::Lt(column.to_string(), value.into_bind_value()));
         self
     }
 
@@ -241,10 +230,8 @@ impl SelectBuilder {
 
     pub fn where_like<V: IntoBindValue>(mut self, column: &str, pattern: V) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions.push(Condition::Like(
-            column.to_string(),
-            pattern.into_bind_value(),
-        ));
+        self.conditions
+            .push(Condition::Like(column.to_string(), pattern.into_bind_value()));
         self
     }
 
@@ -256,17 +243,14 @@ impl SelectBuilder {
 
     pub fn where_not_null(mut self, column: &str) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        self.conditions
-            .push(Condition::IsNotNull(column.to_string()));
+        self.conditions.push(Condition::IsNotNull(column.to_string()));
         self
     }
 
     pub fn where_in<V: IntoBindValue + Clone>(mut self, column: &str, values: &[V]) -> Self {
         assert!(validate_identifier(column), "Invalid column name: {column}");
-        let bind_values: Vec<BindValue> =
-            values.iter().map(|v| v.clone().into_bind_value()).collect();
-        self.conditions
-            .push(Condition::In(column.to_string(), bind_values));
+        let bind_values: Vec<BindValue> = values.iter().map(|v| v.clone().into_bind_value()).collect();
+        self.conditions.push(Condition::In(column.to_string(), bind_values));
         self
     }
 
@@ -274,19 +258,13 @@ impl SelectBuilder {
     /// Only use with hardcoded strings, NEVER with user input — the character check
     /// below does not stop keyword-based injection (see [`join`](Self::join)).
     pub fn where_raw(mut self, raw: &str) -> Self {
-        assert!(
-            validate_join(raw),
-            "where_raw contains forbidden characters"
-        );
+        assert!(validate_join(raw), "where_raw contains forbidden characters");
         self.conditions.push(Condition::Raw(raw.to_string()));
         self
     }
 
     pub fn order_by(mut self, column: &str, direction: Order) -> Self {
-        assert!(
-            validate_identifier(column),
-            "Invalid ORDER BY column: {column}"
-        );
+        assert!(validate_identifier(column), "Invalid ORDER BY column: {column}");
         self.order.push((column.to_string(), direction));
         self
     }
@@ -302,10 +280,7 @@ impl SelectBuilder {
     }
 
     pub fn group_by(mut self, clause: &str) -> Self {
-        assert!(
-            validate_column_list(clause),
-            "Invalid GROUP BY clause: {clause}"
-        );
+        assert!(validate_column_list(clause), "Invalid GROUP BY clause: {clause}");
         self.group_by_val = Some(clause.to_string());
         self
     }
@@ -358,11 +333,7 @@ impl SelectBuilder {
         let order_clause = if self.order.is_empty() {
             String::new()
         } else {
-            let parts: Vec<String> = self
-                .order
-                .iter()
-                .map(|(col, dir)| format!("{} {}", col, dir))
-                .collect();
+            let parts: Vec<String> = self.order.iter().map(|(col, dir)| format!("{} {}", col, dir)).collect();
             format!(" ORDER BY {}", parts.join(", "))
         };
 
@@ -372,15 +343,9 @@ impl SelectBuilder {
             .map(|g| format!(" GROUP BY {}", g))
             .unwrap_or_default();
 
-        let limit = self
-            .limit_val
-            .map(|l| format!(" LIMIT {}", l))
-            .unwrap_or_default();
+        let limit = self.limit_val.map(|l| format!(" LIMIT {}", l)).unwrap_or_default();
 
-        let offset = self
-            .offset_val
-            .map(|o| format!(" OFFSET {}", o))
-            .unwrap_or_default();
+        let offset = self.offset_val.map(|o| format!(" OFFSET {}", o)).unwrap_or_default();
 
         let sql = format!(
             "SELECT {} FROM {} {}{}{}{}{}{}",
@@ -403,10 +368,7 @@ impl SelectBuilder {
             .map(|g| format!(" GROUP BY {}", g))
             .unwrap_or_default();
 
-        let sql = format!(
-            "SELECT COUNT(*) FROM {} {}{}{}",
-            self.table, joins, where_clause, group
-        );
+        let sql = format!("SELECT COUNT(*) FROM {} {}{}{}", self.table, joins, where_clause, group);
 
         (sql.trim().to_string(), binds)
     }

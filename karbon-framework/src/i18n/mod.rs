@@ -36,10 +36,7 @@ pub struct I18n {
 impl I18n {
     /// Create a new I18n instance with a default locale
     pub fn new(default_locale: &str) -> Self {
-        Self {
-            default_locale: default_locale.to_string(),
-            translations: Arc::new(HashMap::new()),
-        }
+        Self { default_locale: default_locale.to_string(), translations: Arc::new(HashMap::new()) }
     }
 
     /// Add translations for a locale
@@ -70,11 +67,7 @@ impl I18n {
         self.translations
             .get(locale)
             .and_then(|m| m.get(key))
-            .or_else(|| {
-                self.translations
-                    .get(&self.default_locale)
-                    .and_then(|m| m.get(key))
-            })
+            .or_else(|| self.translations.get(&self.default_locale).and_then(|m| m.get(key)))
             .map(|s| s.as_str())
             .unwrap_or(key)
     }
@@ -109,9 +102,7 @@ impl I18n {
 
     /// Check if a key exists in the given locale
     pub fn has(&self, key: &str, locale: &str) -> bool {
-        self.translations
-            .get(locale)
-            .is_some_and(|m| m.contains_key(key))
+        self.translations.get(locale).is_some_and(|m| m.contains_key(key))
     }
 }
 
@@ -148,17 +139,13 @@ mod tests {
         let mut i18n = I18n::new("fr");
         i18n.add_translations("fr", &[("welcome", "Bienvenue {name}")]);
 
-        assert_eq!(
-            i18n.t_with("welcome", &[("name", "David")]),
-            "Bienvenue David"
-        );
+        assert_eq!(i18n.t_with("welcome", &[("name", "David")]), "Bienvenue David");
     }
 
     #[test]
     fn test_load_json() {
         let mut i18n = I18n::new("fr");
-        i18n.load_json("fr", r#"{"hello": "Bonjour", "bye": "Au revoir"}"#)
-            .unwrap();
+        i18n.load_json("fr", r#"{"hello": "Bonjour", "bye": "Au revoir"}"#).unwrap();
 
         assert_eq!(i18n.t("hello"), "Bonjour");
         assert_eq!(i18n.t("bye"), "Au revoir");

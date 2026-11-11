@@ -8,10 +8,7 @@ pub struct Hostname {
 
 impl Default for Hostname {
     fn default() -> Self {
-        Self {
-            message: "This value is not a valid hostname.".to_string(),
-            require_tld: true,
-        }
+        Self { message: "This value is not a valid hostname.".to_string(), require_tld: true }
     }
 }
 

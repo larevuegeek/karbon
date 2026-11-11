@@ -20,8 +20,7 @@
 //! UTF-8 BOM are accepted. Names, duplicates, cycles and limits: see [`super::role_file`].
 
 use super::role_file::{
-    Entry, RawEntry, RoleHierarchyError, check_source, excerpt, invalid, invalid_role_rule,
-    is_valid_role, validate,
+    Entry, RawEntry, RoleHierarchyError, check_source, excerpt, invalid, invalid_role_rule, is_valid_role, validate,
 };
 
 struct Line<'a> {
@@ -66,11 +65,7 @@ fn significant_lines(source: &str) -> Result<Vec<Line<'_>>, RoleHierarchyError> 
             return Err(invalid(number, "tab in indentation: indent with spaces"));
         }
 
-        lines.push(Line {
-            number,
-            indent: leading.len(),
-            text: content,
-        });
+        lines.push(Line { number, indent: leading.len(), text: content });
     }
 
     Ok(lines)
@@ -98,10 +93,7 @@ fn find_role_hierarchy(lines: &[Line]) -> Result<Option<usize>, RoleHierarchyErr
     };
 
     if first.indent != 0 || first.text != "security:" {
-        return Err(invalid(
-            first.number,
-            unsupported(first.text, "only `security:` is allowed at the top level"),
-        ));
+        return Err(invalid(first.number, unsupported(first.text, "only `security:` is allowed at the top level")));
     }
 
     let Some(second) = lines.get(1) else {
@@ -109,29 +101,17 @@ fn find_role_hierarchy(lines: &[Line]) -> Result<Option<usize>, RoleHierarchyErr
     };
 
     if second.indent == 0 {
-        return Err(invalid(
-            second.number,
-            unsupported(second.text, "`security:` can only appear once"),
-        ));
+        return Err(invalid(second.number, unsupported(second.text, "`security:` can only appear once")));
     }
 
     if second.text != "role_hierarchy:" {
-        return Err(invalid(
-            second.number,
-            unsupported(
-                second.text,
-                "only `role_hierarchy` is read under `security`",
-            ),
-        ));
+        return Err(invalid(second.number, unsupported(second.text, "only `role_hierarchy` is read under `security`")));
     }
 
     Ok(Some(second.indent))
 }
 
-fn parse_entries(
-    lines: &[Line],
-    section_indent: usize,
-) -> Result<Vec<RawEntry>, RoleHierarchyError> {
+fn parse_entries(lines: &[Line], section_indent: usize) -> Result<Vec<RawEntry>, RoleHierarchyError> {
     let mut entries = Vec::new();
     let mut entry_indent: Option<usize> = None;
     let mut i = 0;
@@ -141,10 +121,7 @@ fn parse_entries(
 
         // 1. Back to a shallower level: another key under `security` or at the top level.
         if line.indent <= section_indent {
-            return Err(invalid(
-                line.number,
-                unsupported(line.text, "only `security.role_hierarchy` is read"),
-            ));
+            return Err(invalid(line.number, unsupported(line.text, "only `security.role_hierarchy` is read")));
         }
 
         let indent = *entry_indent.get_or_insert(line.indent);
@@ -163,11 +140,7 @@ fn parse_entries(
             (parse_inline_value(value, line.number)?, 0)
         };
 
-        entries.push(RawEntry {
-            role,
-            line: line.number,
-            children,
-        });
+        entries.push(RawEntry { role, line: line.number, children });
         i += 1 + consumed;
     }
 
@@ -176,10 +149,7 @@ fn parse_entries(
 
 fn split_entry<'a>(line: &Line<'a>) -> Result<(&'a str, &'a str), RoleHierarchyError> {
     let Some(colon) = line.text.find(':') else {
-        return Err(invalid(
-            line.number,
-            unsupported(line.text, "expected `ROLE_NAME: [ROLE_CHILD, …]`"),
-        ));
+        return Err(invalid(line.number, unsupported(line.text, "expected `ROLE_NAME: [ROLE_CHILD, …]`")));
     };
 
     let (key, rest) = (&line.text[..colon], &line.text[colon + 1..]);
@@ -192,19 +162,13 @@ fn split_entry<'a>(line: &Line<'a>) -> Result<(&'a str, &'a str), RoleHierarchyE
 }
 
 /// `[A, B]`, `[]` or a single role.
-fn parse_inline_value(
-    value: &str,
-    line: usize,
-) -> Result<Vec<(String, usize)>, RoleHierarchyError> {
+fn parse_inline_value(value: &str, line: usize) -> Result<Vec<(String, usize)>, RoleHierarchyError> {
     let Some(inner) = value.strip_prefix('[') else {
         return Ok(vec![(parse_role(value, line)?, line)]);
     };
 
     let Some(inner) = inner.strip_suffix(']') else {
-        return Err(invalid(
-            line,
-            "a list opened with `[` must close with `]` on the same line",
-        ));
+        return Err(invalid(line, "a list opened with `[` must close with `]` on the same line"));
     };
 
     let inner = inner.trim();
@@ -260,10 +224,7 @@ fn parse_block_list(
     }
 
     if children.is_empty() {
-        return Err(invalid(
-            entry_line,
-            "no children: write `[]` for a role that inherits nothing",
-        ));
+        return Err(invalid(entry_line, "no children: write `[]` for a role that inherits nothing"));
     }
 
     let consumed = children.len();
@@ -293,18 +254,12 @@ fn unsupported(text: &str, fallback: &str) -> String {
         Some('{') => Some("flow mappings are not supported"),
         Some('|') | Some('>') => Some("block scalars are not supported"),
         Some('%') => Some("directives are not supported"),
-        _ if text == "---" || text == "..." => {
-            Some("only one YAML document is allowed, without `---`")
-        }
+        _ if text == "---" || text == "..." => Some("only one YAML document is allowed, without `---`"),
         _ if text.starts_with("<<") => Some("merge keys are not supported"),
         _ => None,
     };
 
-    format!(
-        "{} (found `{}`)",
-        feature.unwrap_or(fallback),
-        excerpt(text)
-    )
+    format!("{} (found `{}`)", feature.unwrap_or(fallback), excerpt(text))
 }
 
 #[cfg(test)]
@@ -333,10 +288,7 @@ mod tests {
 
         assert_eq!(map.len(), 3);
         assert_eq!(map["ROLE_ADMIN"], roles(&["ROLE_EMPLOYEE", "ROLE_USER"]));
-        assert_eq!(
-            map["ROLE_SUPER_ADMIN"],
-            roles(&["ROLE_USER", "ROLE_ADMIN", "ROLE_ALLOWED_TO_SWITCH"])
-        );
+        assert_eq!(map["ROLE_SUPER_ADMIN"], roles(&["ROLE_USER", "ROLE_ADMIN", "ROLE_ALLOWED_TO_SWITCH"]));
     }
 
     #[test]
@@ -363,10 +315,7 @@ mod tests {
     #[test]
     fn a_file_without_the_section_is_reported_as_such() {
         for source in ["", "# rien\n\n", "security:\n"] {
-            assert!(
-                matches!(parse(source), Err(RoleHierarchyError::MissingSection)),
-                "{source:?}"
-            );
+            assert!(matches!(parse(source), Err(RoleHierarchyError::MissingSection)), "{source:?}");
         }
     }
 
@@ -378,7 +327,12 @@ mod tests {
             refused("security:\n  role_hierarchy:\n    ROLE_A: []\n  firewalls:\n    main: ~\n")
                 .contains("only `security.role_hierarchy`")
         );
-        assert!(refused("security:\n  role_hierarchy:\n    ROLE_A: []\nsecurity:\n  role_hierarchy:\n    ROLE_USER: [ROLE_A]\n").contains("line 4"));
+        assert!(
+            refused(
+                "security:\n  role_hierarchy:\n    ROLE_A: []\nsecurity:\n  role_hierarchy:\n    ROLE_USER: [ROLE_A]\n"
+            )
+            .contains("line 4")
+        );
     }
 
     /// What a general YAML parser would interpret, and this reader refuses.
@@ -409,14 +363,7 @@ mod tests {
     fn role_names_are_validated() {
         let base = "security:\n  role_hierarchy:\n";
 
-        for name in [
-            "role_admin",
-            "ADMIN",
-            "ROLE_",
-            "ROLE_ADMIN;",
-            "ROLE_A-B",
-            "'ROLE_A",
-        ] {
+        for name in ["role_admin", "ADMIN", "ROLE_", "ROLE_ADMIN;", "ROLE_A-B", "'ROLE_A"] {
             let message = refused(&format!("{base}    {name}: []\n"));
             assert!(message.contains("invalid role name"), "{name} → {message}");
         }
@@ -426,20 +373,11 @@ mod tests {
     /// refused, and the offending text is quoted escaped in the message.
     #[test]
     fn injection_attempts_are_refused_and_escaped_in_the_message() {
-        assert!(
-            refused("security:\n  role_hierarchy:\n    ROLE_A: [ROLE_B;rm]\n")
-                .contains("invalid role name")
-        );
-        assert!(
-            refused("security:\n  role_hierarchy:\n    ROLE_A: [$(id)]\n")
-                .contains("invalid role name")
-        );
+        assert!(refused("security:\n  role_hierarchy:\n    ROLE_A: [ROLE_B;rm]\n").contains("invalid role name"));
+        assert!(refused("security:\n  role_hierarchy:\n    ROLE_A: [$(id)]\n").contains("invalid role name"));
 
         let message = refused("security:\n  role_hierarchy:\n    ROLE_A: [ROLE_B\u{1b}[31m]\n");
-        assert!(
-            !message.contains('\u{1b}'),
-            "control characters must be escaped: {message}"
-        );
+        assert!(!message.contains('\u{1b}'), "control characters must be escaped: {message}");
     }
 
     #[test]
@@ -450,14 +388,9 @@ mod tests {
             refused(&format!("{base}    ROLE_A: []\n    ROLE_A: [ROLE_USER]\n"))
                 .contains("line 4: `ROLE_A` is already declared on line 3")
         );
+        assert!(refused(&format!("{base}    ROLE_A: [ROLE_A]\n")).contains("cannot inherit itself"));
         assert!(
-            refused(&format!("{base}    ROLE_A: [ROLE_A]\n")).contains("cannot inherit itself")
-        );
-        assert!(
-            refused(&format!(
-                "{base}    ROLE_USER: [ROLE_ADMIN]\n    ROLE_ADMIN: [ROLE_USER]\n"
-            ))
-            .contains("cycle")
+            refused(&format!("{base}    ROLE_USER: [ROLE_ADMIN]\n    ROLE_ADMIN: [ROLE_USER]\n")).contains("cycle")
         );
         assert!(refused(&format!("# {}\n", "x".repeat(2000))).contains("longer than"));
     }
@@ -467,19 +400,11 @@ mod tests {
         let base = "security:\n  role_hierarchy:\n";
 
         assert!(refused(&format!("{base}    ROLE_A: [ROLE_B\n")).contains("must close"));
-        assert!(
-            refused(&format!("{base}    ROLE_A: [ROLE_B,,ROLE_C]\n")).contains("empty element")
-        );
+        assert!(refused(&format!("{base}    ROLE_A: [ROLE_B,,ROLE_C]\n")).contains("empty element"));
         assert!(refused(&format!("{base}    ROLE_A:\n    ROLE_B: []\n")).contains("no children"));
         assert!(refused(&format!("{base}    ROLE_A:[ROLE_B]\n")).contains("space after"));
-        assert!(
-            refused(&format!("{base}    ROLE_A: []\n      ROLE_B: []\n"))
-                .contains("inconsistent indentation")
-        );
-        assert!(
-            refused(&format!("{base}    ROLE_A:\n      -ROLE_B\n"))
-                .contains("expected `- ROLE_NAME`")
-        );
+        assert!(refused(&format!("{base}    ROLE_A: []\n      ROLE_B: []\n")).contains("inconsistent indentation"));
+        assert!(refused(&format!("{base}    ROLE_A:\n      -ROLE_B\n")).contains("expected `- ROLE_NAME`"));
         assert!(refused(&format!("{base}\tROLE_A: []\n")).contains("tab"));
     }
 }

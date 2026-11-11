@@ -18,10 +18,8 @@ impl Default for Length {
             min: None,
             max: None,
             exact: None,
-            min_message: "This value is too short. It should have {{ limit }} characters or more."
-                .to_string(),
-            max_message: "This value is too long. It should have {{ limit }} characters or less."
-                .to_string(),
+            min_message: "This value is too short. It should have {{ limit }} characters or more.".to_string(),
+            max_message: "This value is too long. It should have {{ limit }} characters or less.".to_string(),
             exact_message: "This value should have exactly {{ limit }} characters.".to_string(),
         }
     }
@@ -85,21 +83,13 @@ impl Constraint for Length {
         if let Some(min) = self.min
             && len < min
         {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                self.format_message(&self.min_message, min),
-                value,
-            ));
+            return Err(ConstraintViolation::new(self.name(), self.format_message(&self.min_message, min), value));
         }
 
         if let Some(max) = self.max
             && len > max
         {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                self.format_message(&self.max_message, max),
-                value,
-            ));
+            return Err(ConstraintViolation::new(self.name(), self.format_message(&self.max_message, max), value));
         }
 
         Ok(())

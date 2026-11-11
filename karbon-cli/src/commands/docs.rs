@@ -24,9 +24,7 @@ fn build(root: &Path) -> Result<(), String> {
 
     let docs_dir = root.join("docs");
     if !docs_dir.exists() {
-        return Err(
-            "No docs/ directory found. Create docs/*.md guides (e.g. docs/index.md).".to_string(),
-        );
+        return Err("No docs/ directory found. Create docs/*.md guides (e.g. docs/index.md).".to_string());
     }
 
     let mut pages = collect_pages(&docs_dir)?;
@@ -44,8 +42,7 @@ fn build(root: &Path) -> Result<(), String> {
     fs::create_dir_all(&out).map_err(|e| format!("Cannot create docs/_site: {e}"))?;
 
     for page in &pages {
-        let md = fs::read_to_string(&page.path)
-            .map_err(|e| format!("Cannot read {}: {e}", page.path.display()))?;
+        let md = fs::read_to_string(&page.path).map_err(|e| format!("Cannot read {}: {e}", page.path.display()))?;
         let body = render_markdown(&md);
         let html = layout(&page.title, &page.slug, &pages, &body);
         let dest = out.join(format!("{}.html", page.slug));
@@ -65,12 +62,7 @@ fn build(root: &Path) -> Result<(), String> {
         println!("  {} docs/_site/index.html (généré)", "✓".green());
     }
 
-    println!(
-        "\n  {} {} page(s) → {}\n",
-        "✓".green().bold(),
-        pages.len(),
-        "docs/_site/".cyan()
-    );
+    println!("\n  {} {} page(s) → {}\n", "✓".green().bold(), pages.len(), "docs/_site/".cyan());
     Ok(())
 }
 
@@ -96,10 +88,7 @@ fn collect_into(base: &Path, dir: &Path, pages: &mut Vec<Page>) -> Result<(), St
             let rel_str = rel.to_string_lossy().replace('\\', "/");
             let slug = slugify(&rel_str.replace('/', "-"));
             let md = fs::read_to_string(&path).unwrap_or_default();
-            let stem = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
+            let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
             let title = first_heading(&md).unwrap_or_else(|| humanize(&stem));
             pages.push(Page { slug, title, path });
         }
@@ -124,11 +113,7 @@ fn layout(title: &str, current: &str, pages: &[Page], body: &str) -> String {
     let nav = pages
         .iter()
         .map(|p| {
-            let active = if p.slug == current {
-                " class=\"active\""
-            } else {
-                ""
-            };
+            let active = if p.slug == current { " class=\"active\"" } else { "" };
             format!("<a href=\"{}.html\"{active}>{}</a>", p.slug, esc(&p.title))
         })
         .collect::<String>();
@@ -188,20 +173,12 @@ fn humanize(stem: &str) -> String {
 
 fn slugify(stem: &str) -> String {
     stem.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
         .collect()
 }
 
 fn esc(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 #[cfg(test)]

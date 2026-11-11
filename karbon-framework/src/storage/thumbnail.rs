@@ -203,12 +203,7 @@ impl ImageProcessor {
 
     /// Crop a specific region from the source image
     pub fn crop(mut self, x: u32, y: u32, width: u32, height: u32) -> Self {
-        self.crop_region = Some(CropRegion {
-            x,
-            y,
-            width,
-            height,
-        });
+        self.crop_region = Some(CropRegion { x, y, width, height });
         self
     }
 
@@ -270,9 +265,7 @@ impl ImageProcessor {
 
     /// Shortcut: output as JPEG with given quality (1-100)
     pub fn jpeg(self, quality: u8) -> Self {
-        self.format(OutputFormat::Jpeg {
-            quality: quality.clamp(1, 100),
-        })
+        self.format(OutputFormat::Jpeg { quality: quality.clamp(1, 100) })
     }
 
     /// Shortcut: output as optimized PNG
@@ -327,10 +320,7 @@ impl ImageProcessor {
     }
 
     /// Decode with dimension limits
-    fn decode_safe<R: std::io::BufRead + std::io::Seek>(
-        &self,
-        reader: ImageReader<R>,
-    ) -> AppResult<DynamicImage> {
+    fn decode_safe<R: std::io::BufRead + std::io::Seek>(&self, reader: ImageReader<R>) -> AppResult<DynamicImage> {
         let mut limited_reader = reader;
 
         // Set decoding limits to prevent decompression bombs
@@ -345,9 +335,7 @@ impl ImageProcessor {
         let mut decoder = limited_reader
             .into_decoder()
             .map_err(|e| AppError::BadRequest(format!("Failed to decode image: {}", e)))?;
-        let orientation = decoder
-            .orientation()
-            .unwrap_or(image::metadata::Orientation::NoTransforms);
+        let orientation = decoder.orientation().unwrap_or(image::metadata::Orientation::NoTransforms);
         let mut img = DynamicImage::from_decoder(decoder)
             .map_err(|e| AppError::BadRequest(format!("Failed to decode image: {}", e)))?;
 
@@ -445,11 +433,7 @@ impl ImageProcessor {
         let wm_ratio = wm_target_w as f64 / wm_img.width() as f64;
         let wm_target_h = (wm_img.height() as f64 * wm_ratio).round() as u32;
 
-        let wm_resized = wm_img.resize_exact(
-            wm_target_w.max(1),
-            wm_target_h.max(1),
-            imageops::FilterType::CatmullRom,
-        );
+        let wm_resized = wm_img.resize_exact(wm_target_w.max(1), wm_target_h.max(1), imageops::FilterType::CatmullRom);
 
         // Apply opacity
         let mut wm_rgba = wm_resized.to_rgba8();
@@ -471,12 +455,7 @@ impl ImageProcessor {
         let y = y + wm.margin;
 
         // Overlay
-        imageops::overlay(
-            &mut base,
-            &DynamicImage::ImageRgba8(wm_rgba),
-            x as i64,
-            y as i64,
-        );
+        imageops::overlay(&mut base, &DynamicImage::ImageRgba8(wm_rgba), x as i64, y as i64);
 
         Ok(base)
     }
@@ -499,9 +478,7 @@ impl ImageProcessor {
 
         let result = match self.resize_mode {
             ResizeMode::Fit => img.resize(target_w, target_h, imageops::FilterType::CatmullRom),
-            ResizeMode::Stretch => {
-                img.resize_exact(target_w, target_h, imageops::FilterType::CatmullRom)
-            }
+            ResizeMode::Stretch => img.resize_exact(target_w, target_h, imageops::FilterType::CatmullRom),
             ResizeMode::Width => {
                 let ratio = target_w as f64 / src_w as f64;
                 let new_h = (src_h as f64 * ratio).round() as u32;
@@ -519,12 +496,7 @@ impl ImageProcessor {
     }
 
     /// Cover resize: scale to cover area then crop to exact size
-    fn apply_cover_resize(
-        &self,
-        img: DynamicImage,
-        target_w: u32,
-        target_h: u32,
-    ) -> AppResult<DynamicImage> {
+    fn apply_cover_resize(&self, img: DynamicImage, target_w: u32, target_h: u32) -> AppResult<DynamicImage> {
         let (src_w, src_h) = (img.width(), img.height());
         let scale_w = target_w as f64 / src_w as f64;
         let scale_h = target_h as f64 / src_h as f64;
@@ -533,36 +505,17 @@ impl ImageProcessor {
         let scaled_w = (src_w as f64 * scale).ceil() as u32;
         let scaled_h = (src_h as f64 * scale).ceil() as u32;
 
-        let resized = img.resize_exact(
-            scaled_w.max(1),
-            scaled_h.max(1),
-            imageops::FilterType::CatmullRom,
-        );
+        let resized = img.resize_exact(scaled_w.max(1), scaled_h.max(1), imageops::FilterType::CatmullRom);
 
         // Calculate crop position based on anchor
-        let (crop_x, crop_y) = self.compute_crop_offset(
-            scaled_w,
-            scaled_h,
-            target_w.min(scaled_w),
-            target_h.min(scaled_h),
-        );
+        let (crop_x, crop_y) =
+            self.compute_crop_offset(scaled_w, scaled_h, target_w.min(scaled_w), target_h.min(scaled_h));
 
-        Ok(resized.crop_imm(
-            crop_x,
-            crop_y,
-            target_w.min(scaled_w),
-            target_h.min(scaled_h),
-        ))
+        Ok(resized.crop_imm(crop_x, crop_y, target_w.min(scaled_w), target_h.min(scaled_h)))
     }
 
     /// Compute crop offset based on anchor
-    fn compute_crop_offset(
-        &self,
-        src_w: u32,
-        src_h: u32,
-        target_w: u32,
-        target_h: u32,
-    ) -> (u32, u32) {
+    fn compute_crop_offset(&self, src_w: u32, src_h: u32, target_w: u32, target_h: u32) -> (u32, u32) {
         let max_x = src_w.saturating_sub(target_w);
         let max_y = src_h.saturating_sub(target_h);
 
@@ -603,8 +556,7 @@ impl ImageProcessor {
             }
             OutputFormat::WebP if self.webp_quality.is_some() => {
                 let data = encode_webp_lossy(img, self.webp_quality.unwrap_or(85))?;
-                std::fs::write(dest, data)
-                    .map_err(|e| AppError::Internal(format!("Failed to write WebP: {}", e)))?;
+                std::fs::write(dest, data).map_err(|e| AppError::Internal(format!("Failed to write WebP: {}", e)))?;
             }
             OutputFormat::WebP | OutputFormat::Auto => {
                 let format = match &self.output_format {
@@ -699,11 +651,7 @@ mod tests {
 
     fn photo_like(w: u32, h: u32) -> DynamicImage {
         DynamicImage::ImageRgb8(image::RgbImage::from_fn(w, h, |x, y| {
-            image::Rgb([
-                (x * 7 % 256) as u8,
-                (y * 13 % 256) as u8,
-                ((x ^ y) % 256) as u8,
-            ])
+            image::Rgb([(x * 7 % 256) as u8, (y * 13 % 256) as u8, ((x ^ y) % 256) as u8])
         }))
     }
 
@@ -712,9 +660,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("karbon-thumb-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let src = dir.join("disguised.jpg");
-        photo_like(64, 32)
-            .save_with_format(&src, ImageFormat::Png)
-            .unwrap();
+        photo_like(64, 32).save_with_format(&src, ImageFormat::Png).unwrap();
         let dest = dir.join("out.webp");
         ImageProcessor::new()
             .resize(32, 16)
@@ -729,17 +675,9 @@ mod tests {
     #[test]
     fn test_lossy_webp_is_smaller_than_lossless() {
         let img = photo_like(400, 300);
-        let lossy = ImageProcessor::new()
-            .webp_quality(75)
-            .encode(&img, "webp")
-            .unwrap();
+        let lossy = ImageProcessor::new().webp_quality(75).encode(&img, "webp").unwrap();
         let lossless = ImageProcessor::new().webp().encode(&img, "webp").unwrap();
-        assert!(
-            lossy.len() < lossless.len(),
-            "{} >= {}",
-            lossy.len(),
-            lossless.len()
-        );
+        assert!(lossy.len() < lossless.len(), "{} >= {}", lossy.len(), lossless.len());
         assert_eq!(image::guess_format(&lossy).unwrap(), ImageFormat::WebP);
     }
 
@@ -815,10 +753,7 @@ mod tests {
     #[test]
     fn test_jpeg_quality_clamped() {
         let processor = ImageProcessor::new().jpeg(150);
-        assert!(matches!(
-            processor.output_format,
-            OutputFormat::Jpeg { quality: 100 }
-        ));
+        assert!(matches!(processor.output_format, OutputFormat::Jpeg { quality: 100 }));
     }
 
     #[test]

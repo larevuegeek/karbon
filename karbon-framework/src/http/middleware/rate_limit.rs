@@ -91,14 +91,9 @@ where
 {
     type Response = Response;
     type Error = S::Error;
-    type Future = std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
-    >;
+    type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
-    fn poll_ready(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
@@ -118,8 +113,7 @@ where
                 .get::<axum::extract::ConnectInfo<SocketAddr>>()
                 .map(|ci| ci.0.ip())
                 .unwrap_or_else(|| "127.0.0.1".parse().unwrap());
-            let ip: IpAddr =
-                crate::util::HttpHelper::client_ip_trusted(request.headers(), peer, &trusted);
+            let ip: IpAddr = crate::util::HttpHelper::client_ip_trusted(request.headers(), peer, &trusted);
 
             let mut map = store.lock().await;
             let now = Instant::now();

@@ -30,10 +30,7 @@ use tower::ServiceExt;
 /// `router` once, and write the response to stdout in CGI format.
 pub async fn serve_cgi(router: Router) -> std::io::Result<()> {
     let request = build_request();
-    let response = router
-        .oneshot(request)
-        .await
-        .unwrap_or_else(|_| Response::new(Body::empty()));
+    let response = router.oneshot(request).await.unwrap_or_else(|_| Response::new(Body::empty()));
     write_response(response).await
 }
 
@@ -58,9 +55,7 @@ fn build_request() -> Request<Body> {
     };
 
     // Read the body (CONTENT_LENGTH bytes) from stdin.
-    let len: usize = env("CONTENT_LENGTH")
-        .and_then(|l| l.parse().ok())
-        .unwrap_or(0);
+    let len: usize = env("CONTENT_LENGTH").and_then(|l| l.parse().ok()).unwrap_or(0);
     let mut body = vec![0u8; len];
     if len > 0 {
         let _ = std::io::stdin().read_exact(&mut body);
@@ -75,27 +70,20 @@ fn build_request() -> Request<Body> {
     for (k, v) in std::env::vars() {
         if let Some(name) = k.strip_prefix("HTTP_") {
             let header = name.to_lowercase().replace('_', "-");
-            if let (Ok(n), Ok(val)) = (
-                HeaderName::from_bytes(header.as_bytes()),
-                HeaderValue::from_str(&v),
-            ) {
+            if let (Ok(n), Ok(val)) = (HeaderName::from_bytes(header.as_bytes()), HeaderValue::from_str(&v)) {
                 builder = builder.header(n, val);
             }
         }
     }
 
-    builder.body(Body::from(body)).unwrap_or_else(|_| {
-        Request::builder()
-            .body(Body::empty())
-            .expect("empty request")
-    })
+    builder
+        .body(Body::from(body))
+        .unwrap_or_else(|_| Request::builder().body(Body::empty()).expect("empty request"))
 }
 
 async fn write_response(response: Response<Body>) -> std::io::Result<()> {
     let (parts, body) = response.into_parts();
-    let bytes = axum::body::to_bytes(body, usize::MAX)
-        .await
-        .unwrap_or_default();
+    let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap_or_default();
 
     let status = parts.status;
     let reason = status.canonical_reason().unwrap_or("");

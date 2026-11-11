@@ -11,10 +11,7 @@ pub struct Date {
 
 impl Default for Date {
     fn default() -> Self {
-        Self {
-            message: "This value is not a valid date.".to_string(),
-            format: "%Y-%m-%d".to_string(),
-        }
+        Self { message: "This value is not a valid date.".to_string(), format: "%Y-%m-%d".to_string() }
     }
 }
 

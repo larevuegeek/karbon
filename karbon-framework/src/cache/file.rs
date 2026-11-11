@@ -41,10 +41,7 @@ fn key_hash(key: &str) -> String {
 }
 
 fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 impl CacheStore for FileStore {
@@ -64,10 +61,7 @@ impl CacheStore for FileStore {
     fn set_raw<'a>(&'a self, key: &'a str, value: String, ttl: Duration) -> StoreFuture<'a, ()> {
         let path = self.path(key);
         Box::pin(async move {
-            let entry = FileEntry {
-                expires_at: now_unix() + ttl.as_secs(),
-                data: value,
-            };
+            let entry = FileEntry { expires_at: now_unix() + ttl.as_secs(), data: value };
             if let Ok(json) = serde_json::to_string(&entry) {
                 let _ = tokio::fs::write(&path, json).await;
             }

@@ -62,6 +62,11 @@ karbon migrate diff [name]  # generate a migration from the entity ↔ DB diff</
 karbon doctor --db   # also probe the DB connection &amp; pending migrations</pre>
 <p>Exits non-zero on a blocking problem — safe for CI.</p>
 
+<h2>secret</h2>
+<pre>karbon secret          # print a random JWT secret (256 bits)
+karbon secret --write  # store it as JWT_SECRET in ./.env</pre>
+<p><code>karbon new</code> already writes one in the project's <code>.env</code>. The placeholder kept in <code>.env.example</code> is public: the application refuses to start with it.</p>
+
 <h2>docs</h2>
 <pre>karbon docs build    # render docs/**.md → static site in docs/_site/</pre>
 <p>The same Markdown sources feed the Docs tab in Studio.</p>

@@ -35,11 +35,7 @@ pub struct MaintenanceConfig {
 
 impl Default for MaintenanceConfig {
     fn default() -> Self {
-        Self {
-            flag_file: None,
-            retry_after_secs: 120,
-            exempt_prefixes: Vec::new(),
-        }
+        Self { flag_file: None, retry_after_secs: 120, exempt_prefixes: Vec::new() }
     }
 }
 
@@ -107,10 +103,7 @@ pub fn is_maintenance() -> bool {
 
 /// True when this path keeps being served during maintenance.
 pub fn is_exempt(path: &str) -> bool {
-    config()
-        .exempt_prefixes
-        .iter()
-        .any(|prefix| path.starts_with(prefix.as_str()))
+    config().exempt_prefixes.iter().any(|prefix| path.starts_with(prefix.as_str()))
 }
 
 #[derive(Serialize)]
@@ -173,10 +166,7 @@ mod tests {
 
     #[test]
     fn exemptions_match_on_prefix() {
-        let c = MaintenanceConfig {
-            exempt_prefixes: vec!["/status".into(), "/health".into()],
-            ..Default::default()
-        };
+        let c = MaintenanceConfig { exempt_prefixes: vec!["/status".into(), "/health".into()], ..Default::default() };
         let matches = |p: &str| c.exempt_prefixes.iter().any(|x| p.starts_with(x.as_str()));
 
         assert!(matches("/status"));

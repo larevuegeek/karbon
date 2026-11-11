@@ -67,11 +67,7 @@ pub mod security;
 pub mod storage;
 #[cfg(feature = "studio")]
 pub mod studio;
-#[cfg(any(
-    feature = "templates",
-    feature = "minijinja",
-    feature = "native-templates"
-))]
+#[cfg(any(feature = "templates", feature = "minijinja", feature = "native-templates"))]
 pub mod template;
 pub mod testing;
 pub mod util;

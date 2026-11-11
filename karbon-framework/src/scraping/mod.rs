@@ -129,9 +129,7 @@ pub struct Document {
 
 impl Document {
     pub fn parse(html: &str) -> Self {
-        Self {
-            html: scraper::Html::parse_document(html),
-        }
+        Self { html: scraper::Html::parse_document(html) }
     }
 
     fn selector(css: &str) -> Option<scraper::Selector> {
@@ -168,9 +166,7 @@ impl Document {
 
     /// Number of elements matching `css`.
     pub fn count(&self, css: &str) -> usize {
-        Self::selector(css)
-            .map(|sel| self.html.select(&sel).count())
-            .unwrap_or(0)
+        Self::selector(css).map(|sel| self.html.select(&sel).count()).unwrap_or(0)
     }
 
     /// All `href`s from `<a>` elements.

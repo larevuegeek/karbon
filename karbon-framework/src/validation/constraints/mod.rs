@@ -17,16 +17,8 @@ pub struct ConstraintViolation {
 }
 
 impl ConstraintViolation {
-    pub fn new(
-        constraint: &'static str,
-        message: impl Into<String>,
-        invalid_value: impl Into<String>,
-    ) -> Self {
-        Self {
-            constraint,
-            message: message.into(),
-            invalid_value: invalid_value.into(),
-        }
+    pub fn new(constraint: &'static str, message: impl Into<String>, invalid_value: impl Into<String>) -> Self {
+        Self { constraint, message: message.into(), invalid_value: invalid_value.into() }
     }
 }
 

@@ -26,12 +26,7 @@ pub fn locate() -> Result<(PathBuf, PathBuf), String> {
 }
 
 /// Entry point — `action` is one of: "up" (default), "status", "rollback", "diff".
-pub fn run(
-    root: &Path,
-    migration_dir: &Path,
-    action: &str,
-    name: Option<&str>,
-) -> Result<(), String> {
+pub fn run(root: &Path, migration_dir: &Path, action: &str, name: Option<&str>) -> Result<(), String> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -39,23 +34,11 @@ pub fn run(
     rt.block_on(run_async(root, migration_dir, action, name))
 }
 
-async fn run_async(
-    root: &Path,
-    migration_dir: &Path,
-    action: &str,
-    name: Option<&str>,
-) -> Result<(), String> {
-    println!(
-        "\n{}  migrate {}\n",
-        "▲ karbon".bold().red(),
-        action.dimmed()
-    );
+async fn run_async(root: &Path, migration_dir: &Path, action: &str, name: Option<&str>) -> Result<(), String> {
+    println!("\n{}  migrate {}\n", "▲ karbon".bold().red(), action.dimmed());
 
     if action != "diff" && !migration_dir.exists() {
-        return Err(format!(
-            "No migration directory found ({})",
-            migration_dir.display()
-        ));
+        return Err(format!("No migration directory found ({})", migration_dir.display()));
     }
 
     let database_url = read_database_url(&root.join(".env"))?;
@@ -74,9 +57,7 @@ async fn run_async(
         "status" => migrate_status(&pool, migration_dir).await,
         "rollback" | "down" => migrate_rollback(&pool, migration_dir).await,
         "diff" => diff::run(&pool, migration_dir, root, &database_url, name).await,
-        other => Err(format!(
-            "Unknown migrate action '{other}'. Available: up, status, rollback, diff"
-        )),
+        other => Err(format!("Unknown migrate action '{other}'. Available: up, status, rollback, diff")),
     }
 }
 
@@ -148,10 +129,7 @@ mod diff {
                                 "ALTER TABLE {q}{}{q} ADD COLUMN {q}{}{q} {}{nn};\n",
                                 t.name, c.name, c.sql_type
                             ));
-                            down.push_str(&format!(
-                                "ALTER TABLE {q}{}{q} DROP COLUMN {q}{}{q};\n",
-                                t.name, c.name
-                            ));
+                            down.push_str(&format!("ALTER TABLE {q}{}{q} DROP COLUMN {q}{}{q};\n", t.name, c.name));
                             changes += 1;
                             println!("  {} {}.{}", "+".green(), t.name, c.name.bold());
                         }
@@ -161,10 +139,7 @@ mod diff {
         }
 
         if changes == 0 {
-            println!(
-                "\n  {} Schéma à jour — aucune migration générée\n",
-                "✓".green()
-            );
+            println!("\n  {} Schéma à jour — aucune migration générée\n", "✓".green());
             return Ok(());
         }
 
@@ -172,19 +147,10 @@ mod diff {
         let next = next_number(migration_dir);
         let fname = format!("{next:04}_{}.sql", slugify(name.unwrap_or("diff")));
         let content = format!("-- migrate:up\n{up}\n-- migrate:down\n{down}");
-        fs::write(migration_dir.join(&fname), content)
-            .map_err(|e| format!("écriture {fname}: {e}"))?;
+        fs::write(migration_dir.join(&fname), content).map_err(|e| format!("écriture {fname}: {e}"))?;
 
-        println!(
-            "\n  {} {changes} changement(s) → {}",
-            "✓".green().bold(),
-            format!("migration/{fname}").cyan()
-        );
-        println!(
-            "  {} relis le fichier puis applique avec {}\n",
-            "→".blue(),
-            "karbon migrate".bold()
-        );
+        println!("\n  {} {changes} changement(s) → {}", "✓".green().bold(), format!("migration/{fname}").cyan());
+        println!("  {} relis le fichier puis applique avec {}\n", "→".blue(), "karbon migrate".bold());
         Ok(())
     }
 
@@ -221,19 +187,10 @@ mod diff {
         let name = table_name(content, &entity_name);
         let columns = fields
             .iter()
-            .filter(|(n, _)| {
-                !matches!(
-                    n.as_str(),
-                    "id" | "created" | "updated" | "created_at" | "updated_at"
-                )
-            })
+            .filter(|(n, _)| !matches!(n.as_str(), "id" | "created" | "updated" | "created_at" | "updated_at"))
             .map(|(n, ty)| {
                 let (sql_type, nullable) = rust_to_sql(ty, driver);
-                Column {
-                    name: n.clone(),
-                    sql_type,
-                    nullable,
-                }
+                Column { name: n.clone(), sql_type, nullable }
             })
             .collect();
         Some(TableDef { name, columns })
@@ -252,10 +209,7 @@ mod diff {
                     if let Some(f) = lines[j].trim().strip_prefix("pub ")
                         && let Some((n, t)) = f.split_once(':')
                     {
-                        fields.push((
-                            n.trim().to_string(),
-                            t.trim().trim_end_matches(',').to_string(),
-                        ));
+                        fields.push((n.trim().to_string(), t.trim().trim_end_matches(',').to_string()));
                     }
                     j += 1;
                 }
@@ -282,10 +236,7 @@ mod diff {
 
     fn rust_to_sql(rust_ty: &str, driver: Drv) -> (String, bool) {
         let nullable = rust_ty.starts_with("Option<");
-        let inner = rust_ty
-            .trim_start_matches("Option<")
-            .trim_end_matches('>')
-            .trim();
+        let inner = rust_ty.trim_start_matches("Option<").trim_end_matches('>').trim();
         let sql = match inner {
             "String" => {
                 if driver == Drv::Sqlite {
@@ -350,38 +301,20 @@ mod diff {
             let uniq = if c.name == "slug" { " UNIQUE" } else { "" };
             lines.push(format!("    {q}{}{q} {}{nn}{uniq}", c.name, c.sql_type));
         }
-        let ts = if driver == Drv::Postgres {
-            "TIMESTAMP"
-        } else {
-            "DATETIME"
-        };
-        lines.push(format!(
-            "    {q}created{q} {ts} NOT NULL DEFAULT CURRENT_TIMESTAMP"
-        ));
+        let ts = if driver == Drv::Postgres { "TIMESTAMP" } else { "DATETIME" };
+        lines.push(format!("    {q}created{q} {ts} NOT NULL DEFAULT CURRENT_TIMESTAMP"));
         if driver == Drv::Mysql {
             lines.push(format!(
                 "    {q}updated{q} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
             ));
         } else {
-            lines.push(format!(
-                "    {q}updated{q} {ts} NOT NULL DEFAULT CURRENT_TIMESTAMP"
-            ));
+            lines.push(format!("    {q}updated{q} {ts} NOT NULL DEFAULT CURRENT_TIMESTAMP"));
         }
-        let suffix = if driver == Drv::Mysql {
-            " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-        } else {
-            ""
-        };
-        format!(
-            "CREATE TABLE IF NOT EXISTS {q}{table}{q} (\n{}\n){suffix};\n",
-            lines.join(",\n")
-        )
+        let suffix = if driver == Drv::Mysql { " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4" } else { "" };
+        format!("CREATE TABLE IF NOT EXISTS {q}{table}{q} (\n{}\n){suffix};\n", lines.join(",\n"))
     }
 
-    async fn introspect(
-        pool: &AnyPool,
-        driver: Drv,
-    ) -> Result<HashMap<String, HashSet<String>>, String> {
+    async fn introspect(pool: &AnyPool, driver: Drv) -> Result<HashMap<String, HashSet<String>>, String> {
         let mut map: HashMap<String, HashSet<String>> = HashMap::new();
         match driver {
             Drv::Mysql | Drv::Postgres => {
@@ -395,18 +328,15 @@ mod diff {
                     .await
                     .map_err(|e| format!("introspection : {e}"))?;
                 for (t, c) in rows {
-                    map.entry(t.to_lowercase())
-                        .or_default()
-                        .insert(c.to_lowercase());
+                    map.entry(t.to_lowercase()).or_default().insert(c.to_lowercase());
                 }
             }
             Drv::Sqlite => {
-                let tables: Vec<(String,)> = sqlx::query_as(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-                )
-                .fetch_all(pool)
-                .await
-                .map_err(|e| format!("introspection : {e}"))?;
+                let tables: Vec<(String,)> =
+                    sqlx::query_as("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+                        .fetch_all(pool)
+                        .await
+                        .map_err(|e| format!("introspection : {e}"))?;
                 for (t,) in tables {
                     if !t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                         continue;
@@ -432,14 +362,7 @@ mod diff {
                 es.filter_map(|e| e.ok())
                     .map(|e| e.path())
                     .filter(|p| p.extension().is_some_and(|x| x == "sql"))
-                    .filter_map(|p| {
-                        p.file_name()?
-                            .to_string_lossy()
-                            .split('_')
-                            .next()?
-                            .parse::<usize>()
-                            .ok()
-                    })
+                    .filter_map(|p| p.file_name()?.to_string_lossy().split('_').next()?.parse::<usize>().ok())
                     .max()
                     .unwrap_or(0)
             })
@@ -450,19 +373,9 @@ mod diff {
     fn slugify(s: &str) -> String {
         let out: String = s
             .chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() {
-                    c.to_ascii_lowercase()
-                } else {
-                    '_'
-                }
-            })
+            .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
             .collect();
-        if out.is_empty() {
-            "diff".to_string()
-        } else {
-            out
-        }
+        if out.is_empty() { "diff".to_string() } else { out }
     }
 
     fn snake(name: &str) -> String {
@@ -479,8 +392,7 @@ mod diff {
     fn plural(s: &str) -> String {
         if s.ends_with('s') || s.ends_with('x') || s.ends_with('z') {
             format!("{s}es")
-        } else if s.ends_with('y') && !s.ends_with("ey") && !s.ends_with("ay") && !s.ends_with("oy")
-        {
+        } else if s.ends_with('y') && !s.ends_with("ey") && !s.ends_with("ay") && !s.ends_with("oy") {
             format!("{}ies", &s[..s.len() - 1])
         } else {
             format!("{s}s")
@@ -496,15 +408,10 @@ async fn migrate_up(pool: &AnyPool, dir: &Path) -> Result<(), String> {
     let files = list_migrations(dir)?;
     let applied = applied_versions(pool).await?;
 
-    let pending: Vec<&(String, PathBuf)> =
-        files.iter().filter(|(v, _)| !applied.contains(v)).collect();
+    let pending: Vec<&(String, PathBuf)> = files.iter().filter(|(v, _)| !applied.contains(v)).collect();
 
     if pending.is_empty() {
-        println!(
-            "  {} Database is up to date ({} applied)\n",
-            "✓".green(),
-            applied.len()
-        );
+        println!("  {} Database is up to date ({} applied)\n", "✓".green(), applied.len());
         return Ok(());
     }
 
@@ -550,12 +457,7 @@ async fn migrate_status(pool: &AnyPool, dir: &Path) -> Result<(), String> {
         }
     }
 
-    println!(
-        "\n  {} {} applied, {} pending\n",
-        "→".blue(),
-        applied.len(),
-        pending
-    );
+    println!("\n  {} {} applied, {} pending\n", "→".blue(), applied.len(), pending);
     Ok(())
 }
 
@@ -575,9 +477,7 @@ async fn migrate_rollback(pool: &AnyPool, dir: &Path) -> Result<(), String> {
     let (_up, down) = parse_migration(&sql);
 
     let Some(down) = down else {
-        return Err(format!(
-            "Migration {version} has no `-- migrate:down` section — cannot roll back"
-        ));
+        return Err(format!("Migration {version} has no `-- migrate:down` section — cannot roll back"));
     };
 
     println!("  {} Rolling back {}\n", "→".blue(), version.bold());
@@ -611,12 +511,10 @@ async fn ensure_migrations_table(pool: &AnyPool) -> Result<(), String> {
 }
 
 async fn applied_versions(pool: &AnyPool) -> Result<std::collections::HashSet<String>, String> {
-    let rows = sqlx::query(AssertSqlSafe(format!(
-        "SELECT version FROM {MIGRATIONS_TABLE}"
-    )))
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("Cannot read applied migrations: {e}"))?;
+    let rows = sqlx::query(AssertSqlSafe(format!("SELECT version FROM {MIGRATIONS_TABLE}")))
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Cannot read applied migrations: {e}"))?;
     Ok(rows.iter().map(|r| r.get::<String, _>("version")).collect())
 }
 
@@ -624,23 +522,19 @@ async fn record_migration(pool: &AnyPool, version: &str) -> Result<(), String> {
     validate_version(version)?;
     // `version` is validated to a safe charset, so inlining is injection-safe and
     // avoids placeholder-syntax differences across the Any driver.
-    sqlx::raw_sql(AssertSqlSafe(format!(
-        "INSERT INTO {MIGRATIONS_TABLE} (version) VALUES ('{version}')"
-    )))
-    .execute(pool)
-    .await
-    .map_err(|e| format!("Cannot record migration {version}: {e}"))?;
+    sqlx::raw_sql(AssertSqlSafe(format!("INSERT INTO {MIGRATIONS_TABLE} (version) VALUES ('{version}')")))
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Cannot record migration {version}: {e}"))?;
     Ok(())
 }
 
 async fn forget_migration(pool: &AnyPool, version: &str) -> Result<(), String> {
     validate_version(version)?;
-    sqlx::raw_sql(AssertSqlSafe(format!(
-        "DELETE FROM {MIGRATIONS_TABLE} WHERE version = '{version}'"
-    )))
-    .execute(pool)
-    .await
-    .map_err(|e| format!("Cannot remove migration {version}: {e}"))?;
+    sqlx::raw_sql(AssertSqlSafe(format!("DELETE FROM {MIGRATIONS_TABLE} WHERE version = '{version}'")))
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Cannot remove migration {version}: {e}"))?;
     Ok(())
 }
 
@@ -673,9 +567,7 @@ async fn execute_script(pool: &AnyPool, sql: &str) -> Result<(), sqlx::Error> {
     }
 
     for statement in split_statements(sql) {
-        sqlx::raw_sql(AssertSqlSafe(statement))
-            .execute(pool)
-            .await?;
+        sqlx::raw_sql(AssertSqlSafe(statement)).execute(pool).await?;
     }
 
     Ok(())
@@ -766,10 +658,7 @@ fn parse_env_vars(content: &str) -> std::collections::HashMap<String, String> {
             continue;
         }
         if let Some((key, val)) = line.split_once('=') {
-            vars.insert(
-                key.trim().to_string(),
-                val.trim().trim_matches('"').trim_matches('\'').to_string(),
-            );
+            vars.insert(key.trim().to_string(), val.trim().trim_matches('"').trim_matches('\'').to_string());
         }
     }
     vars
@@ -801,8 +690,8 @@ pub(crate) fn encode_userinfo(value: &str) -> String {
     for byte in value.bytes() {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => out.push(byte as char),
-            b'-' | b'.' | b'_' | b'~' | b'%' | b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*'
-            | b'+' | b',' | b';' | b'=' => out.push(byte as char),
+            b'-' | b'.' | b'_' | b'~' | b'%' | b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';'
+            | b'=' => out.push(byte as char),
             _ => out.push_str(&format!("%{byte:02X}")),
         }
     }

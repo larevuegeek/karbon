@@ -26,10 +26,7 @@ impl RedisStore {
     pub async fn connect_with_prefix(url: &str, prefix: &str) -> anyhow::Result<Self> {
         let client = redis::Client::open(url)?;
         let conn = ConnectionManager::new(client).await?;
-        Ok(Self {
-            conn,
-            prefix: prefix.to_string(),
-        })
+        Ok(Self { conn, prefix: prefix.to_string() })
     }
 
     fn k(&self, key: &str) -> String {
@@ -41,10 +38,7 @@ impl CacheStore for RedisStore {
     fn get_raw<'a>(&'a self, key: &'a str) -> StoreFuture<'a, Option<String>> {
         Box::pin(async move {
             let mut conn = self.conn.clone();
-            conn.get::<_, Option<String>>(self.k(key))
-                .await
-                .ok()
-                .flatten()
+            conn.get::<_, Option<String>>(self.k(key)).await.ok().flatten()
         })
     }
 

@@ -11,9 +11,7 @@ pub struct Unique {
 
 impl Default for Unique {
     fn default() -> Self {
-        Self {
-            message: "This collection should contain only unique elements.".to_string(),
-        }
+        Self { message: "This collection should contain only unique elements.".to_string() }
     }
 }
 
@@ -31,11 +29,7 @@ impl Unique {
         let mut seen = HashSet::new();
         for item in value {
             if !seen.insert(item) {
-                return Err(ConstraintViolation::new(
-                    "Unique",
-                    &self.message,
-                    format!("count: {}", value.len()),
-                ));
+                return Err(ConstraintViolation::new("Unique", &self.message, format!("count: {}", value.len())));
             }
         }
         Ok(())

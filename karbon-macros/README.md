@@ -49,4 +49,5 @@ This crate is not meant to be used standalone. It is part of the [Karbon framewo
 
 ## License
 
-AGPL-3.0-or-later — see [LICENSE](https://github.com/larevuegeek/karbon/blob/main/LICENSE)
+Licensed under either of [Apache License, Version 2.0](https://github.com/larevuegeek/karbon/blob/main/LICENSE-APACHE)
+or [MIT license](https://github.com/larevuegeek/karbon/blob/main/LICENSE-MIT), at your option.

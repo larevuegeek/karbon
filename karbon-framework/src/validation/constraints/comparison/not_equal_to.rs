@@ -10,10 +10,7 @@ pub struct NotEqualTo {
 
 impl NotEqualTo {
     pub fn new(value: impl Into<String>) -> Self {
-        Self {
-            value: value.into(),
-            message: "This value should not be equal to {{ compared_value }}.".to_string(),
-        }
+        Self { value: value.into(), message: "This value should not be equal to {{ compared_value }}.".to_string() }
     }
 
     pub fn with_message(mut self, message: impl Into<String>) -> Self {

@@ -12,6 +12,7 @@ Référence rapide du framework, rendue en direct dans Studio. Elle évolue avec
 | `karbon generate <kind> <Name>` | Génère `entity` / `controller` / `crud` / `admin` (`--dry-run`, `--force`) |
 | `karbon migrate [status\|rollback\|diff]` | Migrations versionnées ; `diff` = entités ↔ base |
 | `karbon doctor` | Diagnostic des pièges courants (offline) |
+| `karbon secret [--write]` | Génère un `JWT_SECRET` aléatoire (affiché, ou écrit dans `.env`) |
 | `karbon docs build` | Rend `docs/*.md` → site statique `docs/_site/` |
 | `karbon deploy <docker\|paas\|fly\|railway\|publish>` | Déploiement |
 
@@ -68,7 +69,7 @@ sanitization SVG), CORS, compression, request-id, graceful shutdown.
 - **Forms** (`form::Form`/`Field`) : binding, validation, rendu HTML, CSRF.
 - **Validator** composable : agrège toutes les violations, imbriqué, groupes.
 - **Message bus** (`MessageBus`) : sync + async, retry/backoff, dead-letter.
-- **Events** (`EventBus`), **Jobs** (`JobQueue`, `PersistentQueue`).
+- **Messages** (`MessageBus` : événements et travail en arrière-plan), **Jobs persistants** (`PersistentQueue`). `EventBus` et `JobQueue` sont dépréciés.
 - **Cache** : mémoire / fichier / Redis, tags, cache HTTP (ETag).
 - **Templates** : Tera, MiniJinja, ou moteur maison (`native-templates`).
 - **i18n**, **mail** (lettre), **scraping**, **images** (`ImageProcessor`).

@@ -10,11 +10,7 @@ use commands::new::{Frontend, Skeleton};
 use config::KarbonConfig;
 
 #[derive(Parser)]
-#[command(
-    name = "karbon",
-    about = "Karbon — unified CLI for Rust full-stack projects (SvelteKit or Next.js)",
-    version
-)]
+#[command(name = "karbon", about = "Karbon — unified CLI for Rust full-stack projects (SvelteKit or Next.js)", version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -98,6 +94,12 @@ enum Commands {
         /// For `diff`: optional name for the generated migration file
         name: Option<String>,
     },
+    /// Generate a random JWT secret (printed; `--write` stores it in .env)
+    Secret {
+        /// Write the secret as JWT_SECRET in the .env of the current directory
+        #[arg(long)]
+        write: bool,
+    },
     /// Deploy the project
     /// Targets: publish, publish:build, docker, paas (config files), fly, railway
     Deploy {
@@ -111,14 +113,7 @@ fn main() {
     let cli = Cli::parse();
 
     // Commands that don't need karbon.toml
-    if let Commands::New {
-        name,
-        frontend,
-        skeleton,
-        template,
-        local,
-    } = &cli.command
-    {
+    if let Commands::New { name, frontend, skeleton, template, local } = &cli.command {
         let fe = match Frontend::from_str(frontend) {
             Ok(f) => f,
             Err(e) => {
@@ -144,6 +139,16 @@ fn main() {
     if let Commands::Docs { action } = &cli.command {
         let root = std::env::current_dir().unwrap_or_default();
         if let Err(e) = commands::docs::run(&root, action) {
+            eprintln!("\n{} {e}\n", "error:".red().bold());
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // `secret` only needs the `.env` of the current directory, if that.
+    if let Commands::Secret { write } = &cli.command {
+        let root = std::env::current_dir().unwrap_or_default();
+        if let Err(e) = commands::secret::run(&root, *write) {
             eprintln!("\n{} {e}\n", "error:".red().bold());
             std::process::exit(1);
         }
@@ -176,27 +181,18 @@ fn main() {
         Commands::Build => commands::build::run(&config, &root),
         Commands::Serve => commands::serve::run(&config, &root),
         Commands::Doctor { db } => commands::doctor::run(&config, &root, db),
-        Commands::Generate {
-            ref kind,
-            ref name,
-            ref fields,
-            dry_run,
-            force,
-            interactive,
-        } => commands::generate::run(
+        Commands::Generate { ref kind, ref name, ref fields, dry_run, force, interactive } => commands::generate::run(
             kind,
             name,
             fields,
             &root,
-            commands::generate::GenOptions {
-                dry_run,
-                force,
-                interactive,
-            },
+            commands::generate::GenOptions { dry_run, force, interactive },
         ),
         Commands::Maintenance { ref action } => commands::maintenance::run(&root, action),
         Commands::Deploy { ref target } => commands::deploy::run(&config, &root, target),
-        Commands::New { .. } | Commands::Docs { .. } | Commands::Migrate { .. } => unreachable!(),
+        Commands::New { .. } | Commands::Docs { .. } | Commands::Migrate { .. } | Commands::Secret { .. } => {
+            unreachable!()
+        }
     };
 
     if let Err(e) = result {

@@ -11,19 +11,14 @@ pub struct GreaterThan {
 
 impl GreaterThan {
     pub fn new(value: f64) -> Self {
-        Self {
-            value,
-            message: "This value should be greater than {{ compared_value }}.".to_string(),
-            or_equal: false,
-        }
+        Self { value, message: "This value should be greater than {{ compared_value }}.".to_string(), or_equal: false }
     }
 
     /// GreaterThanOrEqual variant
     pub fn or_equal(value: f64) -> Self {
         Self {
             value,
-            message: "This value should be greater than or equal to {{ compared_value }}."
-                .to_string(),
+            message: "This value should be greater than or equal to {{ compared_value }}.".to_string(),
             or_equal: true,
         }
     }
@@ -36,17 +31,12 @@ impl GreaterThan {
 
 impl NumericConstraint for GreaterThan {
     fn validate_f64(&self, value: f64) -> ConstraintResult {
-        let valid = if self.or_equal {
-            value >= self.value
-        } else {
-            value > self.value
-        };
+        let valid = if self.or_equal { value >= self.value } else { value > self.value };
 
         if !valid {
             return Err(ConstraintViolation::new(
                 self.name(),
-                self.message
-                    .replace("{{ compared_value }}", &self.value.to_string()),
+                self.message.replace("{{ compared_value }}", &self.value.to_string()),
                 value.to_string(),
             ));
         }

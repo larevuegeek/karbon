@@ -27,8 +27,7 @@ mod tests {
 
     #[test]
     fn removes_scripts_keeps_formatting() {
-        let dirty =
-            r#"<p>Hi <b>bold</b><script>alert(1)</script><a href="javascript:evil()">x</a></p>"#;
+        let dirty = r#"<p>Hi <b>bold</b><script>alert(1)</script><a href="javascript:evil()">x</a></p>"#;
         let clean = Html::sanitize(dirty);
         assert!(clean.contains("<b>bold</b>"));
         assert!(!clean.contains("<script>"));

@@ -106,20 +106,17 @@ fn is_slug(s: &str) -> bool {
         && !s.starts_with('-')
         && !s.ends_with('-')
         && !s.contains("--")
-        && s.chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 fn is_uuid(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 36
-        && b.iter().enumerate().all(|(i, &c)| {
-            if matches!(i, 8 | 13 | 18 | 23) {
-                c == b'-'
-            } else {
-                c.is_ascii_hexdigit()
-            }
-        })
+        && b.iter().enumerate().all(
+            |(i, &c)| {
+                if matches!(i, 8 | 13 | 18 | 23) { c == b'-' } else { c.is_ascii_hexdigit() }
+            },
+        )
 }
 
 #[cfg(test)]

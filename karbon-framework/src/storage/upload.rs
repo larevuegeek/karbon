@@ -70,40 +70,25 @@ impl AllowedMimes {
             MimeEntry {
                 mime: "image/jpeg",
                 extensions: &["jpg", "jpeg"],
-                magic_bytes: &[MagicSignature {
-                    offset: 0,
-                    bytes: &[0xFF, 0xD8, 0xFF],
-                }],
+                magic_bytes: &[MagicSignature { offset: 0, bytes: &[0xFF, 0xD8, 0xFF] }],
             },
             MimeEntry {
                 mime: "image/png",
                 extensions: &["png"],
-                magic_bytes: &[MagicSignature {
-                    offset: 0,
-                    bytes: &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
-                }],
+                magic_bytes: &[MagicSignature { offset: 0, bytes: &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] }],
             },
             MimeEntry {
                 mime: "image/webp",
                 extensions: &["webp"],
                 magic_bytes: &[
-                    MagicSignature {
-                        offset: 0,
-                        bytes: b"RIFF",
-                    },
-                    MagicSignature {
-                        offset: 8,
-                        bytes: b"WEBP",
-                    },
+                    MagicSignature { offset: 0, bytes: b"RIFF" },
+                    MagicSignature { offset: 8, bytes: b"WEBP" },
                 ],
             },
             MimeEntry {
                 mime: "image/gif",
                 extensions: &["gif"],
-                magic_bytes: &[MagicSignature {
-                    offset: 0,
-                    bytes: b"GIF8",
-                }],
+                magic_bytes: &[MagicSignature { offset: 0, bytes: b"GIF8" }],
             },
         ])
     }
@@ -123,16 +108,9 @@ impl AllowedMimes {
             MimeEntry {
                 mime: "application/pdf",
                 extensions: &["pdf"],
-                magic_bytes: &[MagicSignature {
-                    offset: 0,
-                    bytes: b"%PDF",
-                }],
+                magic_bytes: &[MagicSignature { offset: 0, bytes: b"%PDF" }],
             },
-            MimeEntry {
-                mime: "text/plain",
-                extensions: &["txt"],
-                magic_bytes: &[],
-            },
+            MimeEntry { mime: "text/plain", extensions: &["txt"], magic_bytes: &[] },
         ])
     }
 
@@ -142,31 +120,19 @@ impl AllowedMimes {
             MimeEntry {
                 mime: "video/mp4",
                 extensions: &["mp4"],
-                magic_bytes: &[MagicSignature {
-                    offset: 4,
-                    bytes: b"ftyp",
-                }],
+                magic_bytes: &[MagicSignature { offset: 4, bytes: b"ftyp" }],
             },
             MimeEntry {
                 mime: "video/webm",
                 extensions: &["webm"],
-                magic_bytes: &[MagicSignature {
-                    offset: 0,
-                    bytes: &[0x1A, 0x45, 0xDF, 0xA3],
-                }],
+                magic_bytes: &[MagicSignature { offset: 0, bytes: &[0x1A, 0x45, 0xDF, 0xA3] }],
             },
             MimeEntry {
                 mime: "audio/mpeg",
                 extensions: &["mp3"],
                 magic_bytes: &[
-                    MagicSignature {
-                        offset: 0,
-                        bytes: &[0xFF, 0xFB],
-                    },
-                    MagicSignature {
-                        offset: 0,
-                        bytes: b"ID3",
-                    },
+                    MagicSignature { offset: 0, bytes: &[0xFF, 0xFB] },
+                    MagicSignature { offset: 0, bytes: b"ID3" },
                 ],
             },
         ]);
@@ -239,10 +205,7 @@ fn decode_char_refs(content: &str) -> String {
             Some(b'x' | b'X') => (16, 1),
             _ => (10, 0),
         };
-        let digits: String = after[digits_from..]
-            .chars()
-            .take_while(|c| c.is_digit(radix))
-            .collect();
+        let digits: String = after[digits_from..].chars().take_while(|c| c.is_digit(radix)).collect();
         let decoded = (!digits.is_empty())
             .then(|| u32::from_str_radix(&digits, radix).ok())
             .flatten()
@@ -277,11 +240,7 @@ fn sanitize_original_name(name: &str) -> String {
         .take(255)
         .collect();
     let trimmed = cleaned.trim();
-    if trimmed.is_empty() {
-        "unknown".to_string()
-    } else {
-        trimmed.to_string()
-    }
+    if trimmed.is_empty() { "unknown".to_string() } else { trimmed.to_string() }
 }
 
 /// Validate that SVG content doesn't contain dangerous constructs.
@@ -297,22 +256,17 @@ fn sanitize_original_name(name: &str) -> String {
 /// schemes even when written with character references (`&#106;avascript:`) or broken by
 /// whitespace, external references, and XML entity / doctype (XXE) declarations.
 fn validate_svg_content(data: &[u8]) -> AppResult<()> {
-    let content = std::str::from_utf8(data)
-        .map_err(|_| AppError::BadRequest("Invalid SVG: not valid UTF-8".to_string()))?;
+    let content =
+        std::str::from_utf8(data).map_err(|_| AppError::BadRequest("Invalid SVG: not valid UTF-8".to_string()))?;
 
     // Character references decoded, so `&#106;avascript:` is seen as `javascript:`.
     let lower = decode_char_refs(content).to_lowercase();
     // Browsers drop ASCII whitespace and control characters inside a URL scheme, so
     // `java\tscript:` is `javascript:` to them: schemes are matched on this form.
-    let compact: String = lower
-        .chars()
-        .filter(|c| !c.is_ascii_whitespace() && !c.is_control())
-        .collect();
+    let compact: String = lower.chars().filter(|c| !c.is_ascii_whitespace() && !c.is_control()).collect();
 
     if svg_event_handler_re().is_match(&lower) {
-        return Err(AppError::BadRequest(
-            "SVG contains a forbidden event handler (on…=)".to_string(),
-        ));
+        return Err(AppError::BadRequest("SVG contains a forbidden event handler (on…=)".to_string()));
     }
 
     // Matched on the local name, prefix or not: `<script>`, `<svg:script>` and
@@ -325,26 +279,13 @@ fn validate_svg_content(data: &[u8]) -> AppResult<()> {
     }
 
     let dangerous = [
-        "javascript:",
-        "vbscript:",
-        "data:text/html",
-        "data:image/svg",
-        "eval(",
-        "expression(",
-        "@import",
-        "url(data:",
-        "url(javascript:",
-        "<!entity",
-        "<!doctype",
-        "<!--#", // server-side include
+        "javascript:", "vbscript:", "data:text/html", "data:image/svg", "eval(", "expression(", "@import", "url(data:",
+        "url(javascript:", "<!entity", "<!doctype", "<!--#", // server-side include
     ];
 
     for pattern in &dangerous {
         if compact.contains(pattern) {
-            return Err(AppError::BadRequest(format!(
-                "SVG contains forbidden content: {}",
-                pattern
-            )));
+            return Err(AppError::BadRequest(format!("SVG contains forbidden content: {}", pattern)));
         }
     }
 
@@ -353,9 +294,7 @@ fn validate_svg_content(data: &[u8]) -> AppResult<()> {
         if let Some(pos) = lower.find(cap) {
             let rest = &lower[pos..];
             if rest.contains("javascript:") || rest.contains("vbscript:") {
-                return Err(AppError::BadRequest(
-                    "SVG references an active-content scheme".to_string(),
-                ));
+                return Err(AppError::BadRequest("SVG references an active-content scheme".to_string()));
             }
         }
     }
@@ -373,26 +312,18 @@ fn safe_resolve(base: &Path, filename: &str) -> AppResult<PathBuf> {
         .unwrap_or_else(|| canonical_base.clone());
 
     if !canonical_resolved.starts_with(&canonical_base) {
-        return Err(AppError::BadRequest(
-            "Invalid file path: path traversal detected".to_string(),
-        ));
+        return Err(AppError::BadRequest("Invalid file path: path traversal detected".to_string()));
     }
 
     Ok(resolved)
 }
 
 /// Handle file upload from multipart form data
-pub async fn handle_upload(
-    multipart: Multipart,
-    config: &UploadConfig,
-) -> AppResult<Vec<UploadedFile>> {
+pub async fn handle_upload(multipart: Multipart, config: &UploadConfig) -> AppResult<Vec<UploadedFile>> {
     handle_upload_inner(multipart, config).await
 }
 
-async fn handle_upload_inner(
-    mut multipart: Multipart,
-    config: &UploadConfig,
-) -> AppResult<Vec<UploadedFile>> {
+async fn handle_upload_inner(mut multipart: Multipart, config: &UploadConfig) -> AppResult<Vec<UploadedFile>> {
     let mut files = Vec::new();
 
     while let Some(field) = multipart
@@ -402,10 +333,7 @@ async fn handle_upload_inner(
     {
         // Limit number of files
         if files.len() >= config.max_files {
-            return Err(AppError::BadRequest(format!(
-                "Too many files. Maximum allowed: {}",
-                config.max_files
-            )));
+            return Err(AppError::BadRequest(format!("Too many files. Maximum allowed: {}", config.max_files)));
         }
 
         let original_name = field
@@ -444,16 +372,9 @@ async fn handle_upload_inner(
         // without magic bytes (like SVG, TXT)
         let actual_mime = if let Some(detected) = detected_mime {
             detected.to_string()
-        } else if config
-            .allowed_mimes
-            .find_entry(&claimed_content_type)
-            .is_some()
-        {
+        } else if config.allowed_mimes.find_entry(&claimed_content_type).is_some() {
             // Only trust claimed type if the entry has no magic bytes to check
-            let entry = config
-                .allowed_mimes
-                .find_entry(&claimed_content_type)
-                .unwrap();
+            let entry = config.allowed_mimes.find_entry(&claimed_content_type).unwrap();
             if entry.magic_bytes.is_empty() {
                 claimed_content_type.clone()
             } else {
@@ -463,19 +384,14 @@ async fn handle_upload_inner(
                 )));
             }
         } else {
-            return Err(AppError::BadRequest(format!(
-                "File type '{}' is not allowed",
-                claimed_content_type
-            )));
+            return Err(AppError::BadRequest(format!("File type '{}' is not allowed", claimed_content_type)));
         };
 
         // Verify the MIME type is in the allowed list
         let mime_entry = config
             .allowed_mimes
             .find_entry(&actual_mime)
-            .ok_or_else(|| {
-                AppError::BadRequest(format!("File type '{}' is not allowed", actual_mime))
-            })?;
+            .ok_or_else(|| AppError::BadRequest(format!("File type '{}' is not allowed", actual_mime)))?;
 
         // Validate extension against whitelist for this MIME type
         let original_ext = Path::new(&original_name)
@@ -539,20 +455,14 @@ mod tests {
     fn test_detect_jpeg() {
         let allowed = AllowedMimes::images();
         let jpeg_header = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
-        assert_eq!(
-            allowed.detect_mime_from_bytes(&jpeg_header),
-            Some("image/jpeg")
-        );
+        assert_eq!(allowed.detect_mime_from_bytes(&jpeg_header), Some("image/jpeg"));
     }
 
     #[test]
     fn test_detect_png() {
         let allowed = AllowedMimes::images();
         let png_header = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-        assert_eq!(
-            allowed.detect_mime_from_bytes(&png_header),
-            Some("image/png")
-        );
+        assert_eq!(allowed.detect_mime_from_bytes(&png_header), Some("image/png"));
     }
 
     #[test]
@@ -605,10 +515,7 @@ mod tests {
             "<svg><a href=\"java\tscript:alert(1)\">x</a></svg>",
             "<svg><a href=\"java&#9;script:alert(1)\">x</a></svg>",
         ] {
-            assert!(
-                validate_svg_content(svg.as_bytes()).is_err(),
-                "accepted: {svg}"
-            );
+            assert!(validate_svg_content(svg.as_bytes()).is_err(), "accepted: {svg}");
         }
     }
 

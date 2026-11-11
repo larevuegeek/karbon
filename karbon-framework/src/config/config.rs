@@ -295,10 +295,7 @@ fn env_or(key: &str, default: &str) -> String {
 
 /// Parse an env var into a type, with a default
 fn env_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
-    env::var(key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
+    env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
 #[cfg(test)]

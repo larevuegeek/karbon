@@ -4,10 +4,8 @@
 
 /// A line starting with `DELIMITER` (any case), as the `mysql` client reads it.
 pub fn has_delimiter_directive(sql: &str) -> bool {
-    sql.lines().any(|line| {
-        line.get(..10)
-            .is_some_and(|start| start.eq_ignore_ascii_case("DELIMITER "))
-    })
+    sql.lines()
+        .any(|line| line.get(..10).is_some_and(|start| start.eq_ignore_ascii_case("DELIMITER ")))
 }
 
 /// Statements of a script, cut on the current terminator only outside strings,
@@ -91,9 +89,7 @@ fn read_token(rest: &str) -> (&str, usize) {
         }
 
         // MySQL opens a comment on `--` followed by whitespace only: `5--3` is arithmetic.
-        b'-' if rest.starts_with("--")
-            && rest[2..].chars().next().is_none_or(char::is_whitespace) =>
-        {
+        b'-' if rest.starts_with("--") && rest[2..].chars().next().is_none_or(char::is_whitespace) => {
             let end = rest.find('\n').map(|i| i + 1).unwrap_or(rest.len());
             ("", end)
         }
@@ -156,13 +152,7 @@ mod tests {
     fn a_semicolon_inside_a_string_does_not_split() {
         let sql = "SET @s := 'ALTER TABLE t ADD c INT COMMENT ''a; b'';';\nSELECT 1;";
 
-        assert_eq!(
-            split_statements(sql),
-            vec![
-                "SET @s := 'ALTER TABLE t ADD c INT COMMENT ''a; b'';'",
-                "SELECT 1"
-            ]
-        );
+        assert_eq!(split_statements(sql), vec!["SET @s := 'ALTER TABLE t ADD c INT COMMENT ''a; b'';'", "SELECT 1"]);
     }
 
     #[test]

@@ -71,9 +71,5 @@ fn base_router() -> Router<AppState> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    App::new()
-        .router(base_router())
-        .module(BlogModule)
-        .serve()
-        .await
+    App::new().router(base_router()).module(BlogModule).serve().await
 }

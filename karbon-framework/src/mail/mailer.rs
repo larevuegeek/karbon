@@ -38,10 +38,7 @@ impl Mailer {
             .port(config.smtp_port)
             .build();
 
-        Ok(Self {
-            transport,
-            from: config.mail_from.clone(),
-        })
+        Ok(Self { transport, from: config.mail_from.clone() })
     }
 
     /// Start building an email with this mailer's transport and from address
@@ -63,22 +60,12 @@ impl Mailer {
 
     /// Send a plain text email (shortcut, backward compatible)
     pub async fn send_text(&self, to: &str, subject: &str, body: &str) -> AppResult<()> {
-        self.compose()
-            .to(to)?
-            .subject(subject)
-            .text(body)
-            .send()
-            .await
+        self.compose().to(to)?.subject(subject).text(body).send().await
     }
 
     /// Send an HTML email (shortcut, backward compatible)
     pub async fn send_html(&self, to: &str, subject: &str, html: &str) -> AppResult<()> {
-        self.compose()
-            .to(to)?
-            .subject(subject)
-            .html(html)
-            .send()
-            .await
+        self.compose().to(to)?.subject(subject).html(html).send().await
     }
 }
 
@@ -100,37 +87,20 @@ pub struct MailAttachment {
 
 impl MailAttachment {
     /// Create an attachment from raw bytes
-    pub fn new(
-        filename: impl Into<String>,
-        content_type: impl Into<String>,
-        data: Vec<u8>,
-    ) -> Self {
-        Self {
-            filename: filename.into(),
-            content_type: content_type.into(),
-            data,
-        }
+    pub fn new(filename: impl Into<String>, content_type: impl Into<String>, data: Vec<u8>) -> Self {
+        Self { filename: filename.into(), content_type: content_type.into(), data }
     }
 
     /// Create an attachment by reading a file from disk
     pub fn from_file(path: &std::path::Path) -> AppResult<Self> {
-        let filename = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("attachment")
-            .to_string();
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("attachment").to_string();
 
-        let data = std::fs::read(path).map_err(|e| {
-            AppError::Internal(format!("Failed to read attachment '{}': {}", filename, e))
-        })?;
+        let data = std::fs::read(path)
+            .map_err(|e| AppError::Internal(format!("Failed to read attachment '{}': {}", filename, e)))?;
 
         let content_type = Self::guess_content_type(&filename);
 
-        Ok(Self {
-            filename,
-            content_type,
-            data,
-        })
+        Ok(Self { filename, content_type, data })
     }
 
     fn guess_content_type(filename: &str) -> String {
@@ -341,8 +311,7 @@ impl MailBuilder {
 
         if has_attachments {
             // Mixed multipart: body + attachments
-            let body_part =
-                Self::make_body_part(&self.text_body, &self.html_body, has_text, has_html);
+            let body_part = Self::make_body_part(&self.text_body, &self.html_body, has_text, has_html);
 
             let mut mixed = MultiPart::mixed().multipart(body_part);
 
@@ -357,8 +326,7 @@ impl MailBuilder {
                 .multipart(mixed)
                 .map_err(|e| AppError::Internal(format!("Email build error: {}", e)))
         } else if has_text && has_html {
-            let alternative =
-                MultiPart::alternative_plain_html(self.text_body.unwrap(), self.html_body.unwrap());
+            let alternative = MultiPart::alternative_plain_html(self.text_body.unwrap(), self.html_body.unwrap());
             builder
                 .multipart(alternative)
                 .map_err(|e| AppError::Internal(format!("Email build error: {}", e)))
@@ -382,10 +350,7 @@ impl MailBuilder {
         has_html: bool,
     ) -> MultiPart {
         if has_text && has_html {
-            MultiPart::alternative_plain_html(
-                text_body.clone().unwrap(),
-                html_body.clone().unwrap(),
-            )
+            MultiPart::alternative_plain_html(text_body.clone().unwrap(), html_body.clone().unwrap())
         } else if has_html {
             MultiPart::alternative().singlepart(SinglePart::html(html_body.clone().unwrap()))
         } else {

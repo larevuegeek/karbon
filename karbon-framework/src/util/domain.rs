@@ -36,24 +36,16 @@ impl DomainHelper {
         }
 
         let is_known = |extension: &str| {
-            known.iter().any(|k| {
-                k.as_ref()
-                    .trim()
-                    .trim_start_matches('.')
-                    .eq_ignore_ascii_case(extension)
-            })
+            known
+                .iter()
+                .any(|k| k.as_ref().trim().trim_start_matches('.').eq_ignore_ascii_case(extension))
         };
 
         // Candidates from the longest: after the first dot, then after the second…
         let mut candidates = domain.match_indices('.').map(|(dot, _)| &domain[dot + 1..]);
         let first_dot = candidates.clone().next()?;
 
-        Some(
-            candidates
-                .find(|c| is_known(c))
-                .unwrap_or(first_dot)
-                .to_string(),
-        )
+        Some(candidates.find(|c| is_known(c)).unwrap_or(first_dot).to_string())
     }
 
     fn has_valid_labels(domain: &str) -> bool {
@@ -83,10 +75,7 @@ mod tests {
     #[test]
     fn split_keeps_everything_after_the_first_dot() {
         assert_eq!(DomainHelper::split("exemple.fr"), pair("exemple", "fr"));
-        assert_eq!(
-            DomainHelper::split("Exemple.CO.UK"),
-            pair("exemple", "co.uk")
-        );
+        assert_eq!(DomainHelper::split("Exemple.CO.UK"), pair("exemple", "co.uk"));
         assert_eq!(DomainHelper::split("exemple.fr."), pair("exemple", "fr"));
     }
 
@@ -107,10 +96,7 @@ mod tests {
     #[test]
     fn an_unknown_extension_falls_back_to_the_first_dot() {
         assert_eq!(extension("exemple.com").as_deref(), Some("com"));
-        assert_eq!(
-            DomainHelper::extension("exemple.gouv.xyz", &[] as &[&str]).as_deref(),
-            Some("gouv.xyz")
-        );
+        assert_eq!(DomainHelper::extension("exemple.gouv.xyz", &[] as &[&str]).as_deref(), Some("gouv.xyz"));
     }
 
     #[test]

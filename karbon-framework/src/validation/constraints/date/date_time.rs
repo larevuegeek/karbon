@@ -11,10 +11,7 @@ pub struct DateTime {
 
 impl Default for DateTime {
     fn default() -> Self {
-        Self {
-            message: "This value is not a valid datetime.".to_string(),
-            format: "%Y-%m-%d %H:%M:%S".to_string(),
-        }
+        Self { message: "This value is not a valid datetime.".to_string(), format: "%Y-%m-%d %H:%M:%S".to_string() }
     }
 }
 
@@ -35,10 +32,7 @@ impl DateTime {
 
     /// Accept ISO 8601 format (e.g., 2024-01-01T12:00:00)
     pub fn iso8601() -> Self {
-        Self {
-            format: "%Y-%m-%dT%H:%M:%S".to_string(),
-            ..Self::default()
-        }
+        Self { format: "%Y-%m-%dT%H:%M:%S".to_string(), ..Self::default() }
     }
 }
 

@@ -35,10 +35,7 @@ impl ValidationErrors {
 
     /// Add a message under a field.
     pub fn add(&mut self, field: impl Into<String>, message: impl Into<String>) {
-        self.fields
-            .entry(field.into())
-            .or_default()
-            .push(message.into());
+        self.fields.entry(field.into()).or_default().push(message.into());
     }
 
     pub fn is_empty(&self) -> bool {
@@ -97,10 +94,7 @@ impl Default for Validator {
 impl Validator {
     /// Validator running the `Default` group.
     pub fn new() -> Self {
-        Self {
-            errors: ValidationErrors::new(),
-            active_groups: HashSet::from([DEFAULT_GROUP.to_string()]),
-        }
+        Self { errors: ValidationErrors::new(), active_groups: HashSet::from([DEFAULT_GROUP.to_string()]) }
     }
 
     /// Validator running only the given groups (ungrouped fields are skipped
@@ -110,10 +104,7 @@ impl Validator {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        Self {
-            errors: ValidationErrors::new(),
-            active_groups: groups.into_iter().map(Into::into).collect(),
-        }
+        Self { errors: ValidationErrors::new(), active_groups: groups.into_iter().map(Into::into).collect() }
     }
 
     fn group_active(&self, group: &str) -> bool {
@@ -126,13 +117,7 @@ impl Validator {
     }
 
     /// Validate a string field in a specific group.
-    pub fn field_in(
-        &mut self,
-        group: &str,
-        name: &str,
-        value: &str,
-        constraints: &[&dyn Constraint],
-    ) -> &mut Self {
+    pub fn field_in(&mut self, group: &str, name: &str, value: &str, constraints: &[&dyn Constraint]) -> &mut Self {
         if self.group_active(group) {
             for c in constraints {
                 if let Err(v) = c.validate(value) {
@@ -144,12 +129,7 @@ impl Validator {
     }
 
     /// Validate a numeric field against numeric constraints (group `Default`).
-    pub fn field_num(
-        &mut self,
-        name: &str,
-        value: f64,
-        constraints: &[&dyn NumericConstraint],
-    ) -> &mut Self {
+    pub fn field_num(&mut self, name: &str, value: f64, constraints: &[&dyn NumericConstraint]) -> &mut Self {
         if self.group_active(DEFAULT_GROUP) {
             for c in constraints {
                 if let Err(v) = c.validate_f64(value) {
@@ -224,11 +204,7 @@ mod tests {
     #[test]
     fn valid_input_is_ok() {
         let mut v = Validator::new();
-        v.field(
-            "name",
-            "David",
-            &[&NotBlank::new(), &Length::new().min(2).max(50)],
-        );
+        v.field("name", "David", &[&NotBlank::new(), &Length::new().min(2).max(50)]);
         assert!(v.is_valid());
         assert!(v.into_result().is_ok());
     }

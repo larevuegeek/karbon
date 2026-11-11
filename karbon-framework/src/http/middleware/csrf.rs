@@ -29,10 +29,7 @@ pub struct CsrfConfig {
 
 impl CsrfConfig {
     pub fn new(allowed_origins: Vec<String>, trusted_proxies: Vec<String>) -> Self {
-        Self {
-            allowed_origins: Arc::new(allowed_origins),
-            trusted_proxies: Arc::new(trusted_proxies),
-        }
+        Self { allowed_origins: Arc::new(allowed_origins), trusted_proxies: Arc::new(trusted_proxies) }
     }
 }
 
@@ -69,10 +66,7 @@ pub async fn csrf_protection_with(config: CsrfConfig, request: Request, next: Ne
             // HttpOnly intentionally NOT set: JS must read the token to send it in X-CSRF-Token header.
             // SameSite=Strict prevents cross-site request forgery.
             let secure = if is_https { "; Secure" } else { "" };
-            let cookie = format!(
-                "{}={}; Path=/; SameSite=Strict; Max-Age=86400{}",
-                CSRF_COOKIE, token, secure
-            );
+            let cookie = format!("{}={}; Path=/; SameSite=Strict; Max-Age=86400{}", CSRF_COOKIE, token, secure);
             if let Ok(val) = HeaderValue::from_str(&cookie) {
                 response.headers_mut().append("set-cookie", val);
             }
@@ -103,9 +97,7 @@ pub async fn csrf_protection_with(config: CsrfConfig, request: Request, next: Ne
 
     match cookie_token {
         Some(cookie_val) => match header_token {
-            Some(header_val) if constant_time_eq(&header_val, &cookie_val) => {
-                next.run(request).await
-            }
+            Some(header_val) if constant_time_eq(&header_val, &cookie_val) => next.run(request).await,
             _ => (StatusCode::FORBIDDEN, "CSRF token mismatch").into_response(),
         },
         // No cookie yet and an accepted origin (or no Origin header): allow. The Origin
@@ -145,11 +137,7 @@ fn origin_is_accepted(request: &Request, config: &CsrfConfig) -> Option<bool> {
     // Naming an origin in CORS_ORIGINS states that it may talk to this application;
     // refusing every unsafe method from it would make that setting a lie. The
     // double-submit token below still applies — this only relaxes the Origin check.
-    if config
-        .allowed_origins
-        .iter()
-        .any(|entry| allowlist_covers(entry, source))
-    {
+    if config.allowed_origins.iter().any(|entry| allowlist_covers(entry, source)) {
         return Some(true);
     }
 
@@ -207,9 +195,7 @@ fn allowlist_covers(entry: &str, source: &str) -> bool {
     }
 
     match (entry_scheme, source_scheme) {
-        (Some(entry_scheme), Some(source_scheme)) => {
-            entry_scheme.eq_ignore_ascii_case(source_scheme)
-        }
+        (Some(entry_scheme), Some(source_scheme)) => entry_scheme.eq_ignore_ascii_case(source_scheme),
         // An entry written without a scheme ("example.com") matches either scheme.
         (None, _) => true,
         // A schemeless Origin is malformed; don't let it satisfy a scheme-qualified entry.
@@ -252,10 +238,7 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
     }
-    a.bytes()
-        .zip(b.bytes())
-        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-        == 0
+    a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 #[cfg(test)]
@@ -295,13 +278,8 @@ mod tests {
         if let Some(cookie) = cookie {
             builder = builder.header("cookie", cookie);
         }
-        let res = app
-            .oneshot(builder.body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        res.headers()
-            .get("set-cookie")
-            .map(|v| v.to_str().unwrap().to_string())
+        let res = app.oneshot(builder.body(Body::empty()).unwrap()).await.unwrap();
+        res.headers().get("set-cookie").map(|v| v.to_str().unwrap().to_string())
     }
 
     #[tokio::test]
@@ -325,38 +303,20 @@ mod tests {
 
     #[test]
     fn same_origin_is_accepted() {
-        let req = request(
-            &[("host", "example.com"), ("origin", "https://example.com")],
-            None,
-        );
+        let req = request(&[("host", "example.com"), ("origin", "https://example.com")], None);
         assert_eq!(origin_is_accepted(&req, &CsrfConfig::default()), Some(true));
     }
 
     #[test]
     fn cross_origin_is_rejected() {
-        let req = request(
-            &[("host", "example.com"), ("origin", "https://evil.test")],
-            None,
-        );
-        assert_eq!(
-            origin_is_accepted(&req, &CsrfConfig::default()),
-            Some(false)
-        );
+        let req = request(&[("host", "example.com"), ("origin", "https://evil.test")], None);
+        assert_eq!(origin_is_accepted(&req, &CsrfConfig::default()), Some(false));
     }
 
     #[test]
     fn a_differing_port_is_still_cross_site() {
-        let req = request(
-            &[
-                ("host", "localhost:3005"),
-                ("origin", "http://localhost:3004"),
-            ],
-            None,
-        );
-        assert_eq!(
-            origin_is_accepted(&req, &CsrfConfig::default()),
-            Some(false)
-        );
+        let req = request(&[("host", "localhost:3005"), ("origin", "http://localhost:3004")], None);
+        assert_eq!(origin_is_accepted(&req, &CsrfConfig::default()), Some(false));
     }
 
     #[test]
@@ -367,13 +327,7 @@ mod tests {
 
     #[test]
     fn referer_stands_in_for_a_missing_origin() {
-        let req = request(
-            &[
-                ("host", "example.com"),
-                ("referer", "https://example.com/login?next=/"),
-            ],
-            None,
-        );
+        let req = request(&[("host", "example.com"), ("referer", "https://example.com/login?next=/")], None);
         assert_eq!(origin_is_accepted(&req, &CsrfConfig::default()), Some(true));
     }
 
@@ -382,46 +336,28 @@ mod tests {
     #[test]
     fn a_declared_origin_may_post_cross_site() {
         // The dev setup: SvelteKit on :3004 proxying to the backend on :3005.
-        let req = request(
-            &[
-                ("host", "localhost:3005"),
-                ("origin", "http://localhost:3004"),
-            ],
-            None,
-        );
+        let req = request(&[("host", "localhost:3005"), ("origin", "http://localhost:3004")], None);
         let config = config(&["http://localhost:3004", "http://localhost:3005"], &[]);
         assert_eq!(origin_is_accepted(&req, &config), Some(true));
     }
 
     #[test]
     fn an_undeclared_origin_is_still_rejected() {
-        let req = request(
-            &[("host", "localhost:3005"), ("origin", "http://evil.test")],
-            None,
-        );
+        let req = request(&[("host", "localhost:3005"), ("origin", "http://evil.test")], None);
         let config = config(&["http://localhost:3004"], &[]);
         assert_eq!(origin_is_accepted(&req, &config), Some(false));
     }
 
     #[test]
     fn the_allowlist_is_scheme_sensitive() {
-        let req = request(
-            &[
-                ("host", "example.com"),
-                ("origin", "http://app.example.com"),
-            ],
-            None,
-        );
+        let req = request(&[("host", "example.com"), ("origin", "http://app.example.com")], None);
         let config = config(&["https://app.example.com"], &[]);
         assert_eq!(origin_is_accepted(&req, &config), Some(false));
     }
 
     #[test]
     fn a_wildcard_grants_nothing_to_csrf() {
-        let req = request(
-            &[("host", "example.com"), ("origin", "https://evil.test")],
-            None,
-        );
+        let req = request(&[("host", "example.com"), ("origin", "https://evil.test")], None);
         let config = config(&["*"], &[]);
         assert_eq!(origin_is_accepted(&req, &config), Some(false));
     }
@@ -432,11 +368,7 @@ mod tests {
     fn a_trusted_proxy_supplies_the_public_host() {
         // nginx default: `Host` becomes the upstream, the public host moves to XFH.
         let req = request(
-            &[
-                ("host", "127.0.0.1:3005"),
-                ("x-forwarded-host", "codissio.com"),
-                ("origin", "https://codissio.com"),
-            ],
+            &[("host", "127.0.0.1:3005"), ("x-forwarded-host", "codissio.com"), ("origin", "https://codissio.com")],
             Some("10.0.0.1:51000"),
         );
         let config = config(&[], &["10.0.0.1"]);
@@ -446,11 +378,7 @@ mod tests {
     #[test]
     fn an_untrusted_peer_cannot_forge_the_public_host() {
         let req = request(
-            &[
-                ("host", "codissio.com"),
-                ("x-forwarded-host", "evil.test"),
-                ("origin", "https://evil.test"),
-            ],
+            &[("host", "codissio.com"), ("x-forwarded-host", "evil.test"), ("origin", "https://evil.test")],
             Some("203.0.113.9:51000"),
         );
         let config = config(&[], &["10.0.0.1"]);
@@ -474,11 +402,7 @@ mod tests {
     #[test]
     fn a_wildcard_trusted_proxy_is_honored() {
         let req = request(
-            &[
-                ("host", "127.0.0.1:3005"),
-                ("x-forwarded-host", "codissio.com"),
-                ("origin", "https://codissio.com"),
-            ],
+            &[("host", "127.0.0.1:3005"), ("x-forwarded-host", "codissio.com"), ("origin", "https://codissio.com")],
             Some("10.0.0.1:51000"),
         );
         let config = config(&[], &["*"]);
@@ -489,10 +413,7 @@ mod tests {
 
     #[test]
     fn split_origin_keeps_the_port_and_drops_the_path() {
-        assert_eq!(
-            split_origin("https://example.com:8443/a?b"),
-            (Some("https"), "example.com:8443")
-        );
+        assert_eq!(split_origin("https://example.com:8443/a?b"), (Some("https"), "example.com:8443"));
         assert_eq!(split_origin("example.com"), (None, "example.com"));
         assert_eq!(split_origin("null"), (None, "null"));
     }

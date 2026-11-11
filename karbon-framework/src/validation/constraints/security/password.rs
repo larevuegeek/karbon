@@ -26,8 +26,7 @@ impl Default for Password {
     fn default() -> Self {
         Self {
             min_strength: PasswordStrength::Medium,
-            message: "The password strength is too low. Please use a stronger password."
-                .to_string(),
+            message: "The password strength is too low. Please use a stronger password.".to_string(),
             min_length: 8,
         }
     }
@@ -62,8 +61,8 @@ impl Password {
         let has_special = value.chars().any(|c| !c.is_alphanumeric());
 
         let common_patterns = [
-            "password", "123456", "qwerty", "abc123", "letmein", "admin", "welcome", "monkey",
-            "dragon", "master", "azerty",
+            "password", "123456", "qwerty", "abc123", "letmein", "admin", "welcome", "monkey", "dragon", "master",
+            "azerty",
         ];
         let lower = value.to_lowercase();
         let has_common = common_patterns.iter().any(|p| lower.contains(p));
@@ -85,21 +84,14 @@ impl Constraint for Password {
         if value.len() < self.min_length {
             return Err(ConstraintViolation::new(
                 self.name(),
-                format!(
-                    "The password must be at least {} characters long.",
-                    self.min_length
-                ),
+                format!("The password must be at least {} characters long.", self.min_length),
                 "[REDACTED]",
             ));
         }
 
         let actual_strength = Self::evaluate_strength(value);
         if actual_strength < self.min_strength {
-            return Err(ConstraintViolation::new(
-                self.name(),
-                &self.message,
-                "[REDACTED]",
-            ));
+            return Err(ConstraintViolation::new(self.name(), &self.message, "[REDACTED]"));
         }
 
         Ok(())

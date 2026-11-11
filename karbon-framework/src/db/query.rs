@@ -106,11 +106,7 @@ impl QueryBuilder {
             format!(" WHERE {}", where_parts.join(" AND "))
         };
 
-        let group = self
-            .group_by
-            .as_ref()
-            .map(|g| format!(" GROUP BY {}", g))
-            .unwrap_or_default();
+        let group = self.group_by.as_ref().map(|g| format!(" GROUP BY {}", g)).unwrap_or_default();
 
         let sort = params.sort_column(&[], "id");
         let order = params.order_direction();
@@ -128,10 +124,7 @@ impl QueryBuilder {
             params.offset()
         );
 
-        let count_query = format!(
-            "SELECT COUNT(*) as count FROM {} {}{}{}",
-            from, joins, where_clause, group
-        );
+        let count_query = format!("SELECT COUNT(*) as count FROM {} {}{}{}", from, joins, where_clause, group);
 
         (data_query, count_query)
     }

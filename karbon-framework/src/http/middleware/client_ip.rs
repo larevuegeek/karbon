@@ -54,15 +54,8 @@ impl TrustedProxies {
     }
 }
 
-pub async fn normalize_client_ip(
-    State(trusted): State<TrustedProxies>,
-    mut req: Request,
-    next: Next,
-) -> Response {
-    let peer = req
-        .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .map(|ci| ci.0.ip());
+pub async fn normalize_client_ip(State(trusted): State<TrustedProxies>, mut req: Request, next: Next) -> Response {
+    let peer = req.extensions().get::<ConnectInfo<SocketAddr>>().map(|ci| ci.0.ip());
 
     match peer {
         Some(peer) => {
@@ -105,18 +98,11 @@ mod tests {
                 "/",
                 get(|headers: axum::http::HeaderMap| async move {
                     let forwarded_left = headers.contains_key(FORWARDED_FOR);
-                    let real = headers
-                        .get(REAL_IP)
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or("")
-                        .to_string();
+                    let real = headers.get(REAL_IP).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
                     format!("{real}|{forwarded_left}")
                 }),
             )
-            .layer(axum::middleware::from_fn_with_state(
-                trusted,
-                normalize_client_ip,
-            ));
+            .layer(axum::middleware::from_fn_with_state(trusted, normalize_client_ip));
 
         let mut req = axum::http::Request::builder().uri("/");
         if let Some(value) = forwarded {
@@ -127,34 +113,23 @@ mod tests {
         req.extensions_mut().insert(ConnectInfo(peer));
 
         let response = app.oneshot(req).await.unwrap();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
 
         String::from_utf8(bytes.to_vec()).unwrap()
     }
 
     #[tokio::test]
     async fn behind_a_trusted_proxy_the_appended_address_wins() {
-        assert_eq!(
-            seen_ip(&["127.0.0.1"], "127.0.0.1", Some("1.2.3.4, 203.0.113.5")).await,
-            "203.0.113.5|false"
-        );
+        assert_eq!(seen_ip(&["127.0.0.1"], "127.0.0.1", Some("1.2.3.4, 203.0.113.5")).await, "203.0.113.5|false");
     }
 
     #[tokio::test]
     async fn an_untrusted_peer_cannot_choose_its_address() {
-        assert_eq!(
-            seen_ip(&["127.0.0.1"], "198.51.100.7", Some("1.2.3.4")).await,
-            "198.51.100.7|false"
-        );
+        assert_eq!(seen_ip(&["127.0.0.1"], "198.51.100.7", Some("1.2.3.4")).await, "198.51.100.7|false");
     }
 
     #[tokio::test]
     async fn without_headers_the_peer_is_the_client() {
-        assert_eq!(
-            seen_ip(&[], "198.51.100.7", None).await,
-            "198.51.100.7|false"
-        );
+        assert_eq!(seen_ip(&[], "198.51.100.7", None).await, "198.51.100.7|false");
     }
 }

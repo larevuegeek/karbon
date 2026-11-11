@@ -11,6 +11,110 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.5.0] - 2026-11-11
+
+> Security and licensing release, with breaking changes — hence the minor bump.
+> - **Security**: the ten findings the 0.4.11 audit had left open, the one rated HIGH
+>   included.
+> - **License**: Karbon moves from AGPL-3.0 to **MIT OR Apache-2.0**: an application built
+>   with it is free to choose its own license.
+> - **Scope**: `EventBus` and `JobQueue` are deprecated in favour of `MessageBus`; Tera is
+>   the supported template engine.
+>
+> **Upgrading from 0.4.x**
+> - The application no longer starts with a placeholder `JWT_SECRET`
+>   (`change-me-to-a-random-secret`, …): run `karbon secret --write`. Users log in again.
+> - A secret shorter than 32 bytes is refused outside `development` / `test`.
+> - Studio in a debug build asks for its token from anything but a browser on the same
+>   machine at `http://localhost` — a phone on the LAN or a custom local hostname uses the
+>   link printed at startup.
+> - `EventBus` / `JobQueue` still work and emit a deprecation warning.
+
+### Security
+- **Studio was open to the whole network in debug builds** (audit F1, F6). A debug build
+  runs every request in debug mode, and Studio's guard took that for an authorization:
+  with `karbon dev` listening on `0.0.0.0`, any machine on the same Wi-Fi could read the
+  recorded traffic and the schema, and run `migrate rollback` through the terminal. The
+  guard now accepts a valid token, a signed debug session (`KARBON_DEBUG_KEY` from an
+  allowed IP), or — debug builds only — a browser on the same machine. Being in debug mode
+  is no longer on the list. New `dev_mode::session()` tells the two apart.
+- **A loopback peer is not enough to skip the token** (F11, F16). After DNS rebinding, or
+  from a WebSocket opened by any page the developer visits, a request arrives from
+  `127.0.0.1` without coming from the developer. The local bypass now also requires a
+  loopback `Host` (`localhost`, `127.0.0.1`, `[::1]`) and, when there is an `Origin`, a
+  loopback one — the Vite dev server on another port still qualifies.
+- **The debug toolbar no longer hands out the Studio token.** In a debug build it is shown
+  to every peer; its links now carry the token only for a caller who could open Studio
+  anyway.
+- **Stored XSS in the Studio dashboard** (F2). `esc()` left `"` alone, so a request path
+  holding a quote escaped its `title="…"` attribute and ran script when the Requests tab
+  was opened. `esc()` now escapes `& < > " '`, and HTTP methods are escaped too.
+- **The scaffolded `JWT_SECRET` was a published key accepted outside production** (F5,
+  F8, F9, F15). `karbon new` copied a fixed placeholder into `.env`, and only
+  `APP_ENV=production` refused it: on staging, or after `docker run --env-file .env`,
+  anyone could sign a super-admin token. `karbon new` now writes a random 256-bit secret
+  in `.env` (the placeholder stays in `.env.example`), and `JwtManager` itself neither
+  signs nor accepts anything with a placeholder — applications that build their own
+  router are covered too.
+- **`karbon generate` wrote wherever its name pointed** (F12). The name was joined onto
+  `app/src/…` unchecked, and Studio's terminal forwards it from an HTTP request:
+  `generate entity ../../x --force` created or overwrote a `.rs` file outside the
+  project. Names and field names must now be identifiers.
+
+### Added
+- **`karbon secret`** prints a random `JWT_SECRET`; `karbon secret --write` stores it in
+  the `.env` of the current directory. Needs no `karbon.toml`.
+- **`karbon doctor`** checks `JWT_SECRET`: a placeholder fails, a short secret warns.
+- **`security::is_placeholder_secret`**, **`http::dev_mode::session()`**.
+
+### Changed
+- **License: `AGPL-3.0-or-later` → `MIT OR Apache-2.0`**, for the three crates. The AGPL's
+  network clause puts obligations on applications built with a framework that few projects
+  can accept; the permissive pair is what the Rust ecosystem expects. Versions up to
+  0.4.12 stay under the AGPL; `LICENSE-MIT` and `LICENSE-APACHE` replace `LICENSE`.
+- **The application refuses to start with a placeholder `JWT_SECRET`, in every
+  environment** — it used to warn outside production. A secret shorter than 32 bytes is
+  refused everywhere except `development` and `test` (it was refused in production only):
+  `staging` or any custom environment is treated as exposed.
+- **`JwtManager` with an empty secret no longer issues tokens** (`generate*` returns an
+  error). It already rejected every token; signing ones that can never verify was noise.
+- **`APP_ENV` is read case-insensitively**: `Production` is production, not a custom
+  environment that every `is_production()` check let through.
+- **`karbon generate`** rejects a name or a field name that is not an identifier
+  (letters, digits, `_`, starting with a letter).
+- The `docker run` hint printed by `karbon deploy docker` adds `-e APP_ENV=production`:
+  `--env-file .env` alone carried the development value into the container.
+
+### Deprecated
+- **`event::EventBus` / `event::Event`** — use `MessageBus`: `handle` replaces `on`,
+  `dispatch` (awaited) or `dispatch_async` (background) replace `emit`. One difference:
+  `emit` ran its handlers concurrently and could not fail, `dispatch` runs them in
+  registration order and returns the first error.
+- **`job::JobQueue` / `job::Job`** — use `MessageBus::dispatch_async`; the retry policy
+  moves from each job to the bus (`RetryPolicy`). `PersistentQueue`, for jobs that must
+  survive a restart, is not deprecated.
+- Both keep working and are not scheduled for removal yet.
+
+### Documentation
+- **Tera (`templates`) is the supported template engine**: it is the one
+  `AppState.templates` holds and the one that sends emails. `minijinja` and
+  `native-templates` are now documented as experimental — they may change or go away in
+  a minor release.
+
+### Dependencies
+- **Majors**: `minijinja` 2 → 3 (feature `minijinja`), `scraper` 0.27 → 0.29 (feature
+  `scraping`), `syn` 2 → 3 (macros, internal). `MinijinjaEngine`, `Scraper` and the macros
+  keep their API; an application that names `minijinja` or `scraper` types itself must
+  follow the same majors.
+- Compatible updates: `tokio` 1.54, `hyper` 1.12, `axum-extra` 0.12.6, `uuid` 1.29,
+  `lettre` 0.11.23, `redis` 1.8, `toml` 1.2, `reqwest` 0.13.5, `bcrypt` 0.19.3,
+  `sha2` 0.11.1, `pulldown-cmark` 0.13.6.
+
+### CI
+- The test suite now runs under PostgreSQL and SQLite. The matrix built the framework
+  for each driver but ran `cargo test --workspace`, i.e. the MySQL tests, every time;
+  SQLite was not in it at all. Studio's tests, compiled only under the feature, run too.
+
 ## [0.4.12] - 2026-10-27
 
 > `UpdateBuilder` catches up with `DeleteBuilder` and fixes a silent binding bug. Existing

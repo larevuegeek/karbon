@@ -21,10 +21,7 @@ impl MoneyHelper {
         if int_part.is_empty() || !int_part.chars().all(|c| c.is_ascii_digit()) {
             return None;
         }
-        if frac_part.is_empty()
-            || frac_part.len() > 2
-            || !frac_part.chars().all(|c| c.is_ascii_digit())
-        {
+        if frac_part.is_empty() || frac_part.len() > 2 || !frac_part.chars().all(|c| c.is_ascii_digit()) {
             return None;
         }
 
@@ -101,16 +98,7 @@ mod tests {
 
     #[test]
     fn rejects_anything_ambiguous() {
-        for input in [
-            "",
-            "abc",
-            "12,50",
-            "1.234",
-            "1e5",
-            "1.",
-            "1 000.00",
-            "99999999999999999999",
-        ] {
+        for input in ["", "abc", "12,50", "1.234", "1e5", "1.", "1 000.00", "99999999999999999999"] {
             assert_eq!(MoneyHelper::parse_cents(input), None, "{input:?}");
         }
     }
@@ -118,10 +106,7 @@ mod tests {
     #[test]
     fn formats_round_trip() {
         for cents in [0i64, 1, 99, 100, 1250, -399, 199_999_999] {
-            assert_eq!(
-                MoneyHelper::parse_cents(&MoneyHelper::format_cents(cents)),
-                Some(cents)
-            );
+            assert_eq!(MoneyHelper::parse_cents(&MoneyHelper::format_cents(cents)), Some(cents));
         }
         assert_eq!(MoneyHelper::format_cents(-399), "-3.99");
     }

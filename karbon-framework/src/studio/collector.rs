@@ -10,22 +10,13 @@ const MAX_JOBS: usize = 200;
 const MAX_MAILS: usize = 100;
 
 /// Sensitive header names that should be masked in the studio
-const SENSITIVE_HEADERS: &[&str] = &[
-    "authorization",
-    "cookie",
-    "set-cookie",
-    "x-api-key",
-    "x-auth-token",
-];
+const SENSITIVE_HEADERS: &[&str] = &["authorization", "cookie", "set-cookie", "x-api-key", "x-auth-token"];
 
 /// Sensitive patterns in header values
 const SENSITIVE_PATTERNS: &[&str] = &["secret", "password", "token", "key"];
 
 fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
 }
 
 fn mask_header_value(name: &str, value: &str) -> String {
@@ -251,12 +242,7 @@ impl StudioCollector {
         data.next_id += 1;
         data.total_events += 1;
 
-        let record = EventRecord {
-            id,
-            timestamp: now_ms(),
-            event_type,
-            handler_count,
-        };
+        let record = EventRecord { id, timestamp: now_ms(), event_type, handler_count };
 
         if data.events.len() >= MAX_EVENTS {
             data.events.pop_front();
@@ -280,15 +266,7 @@ impl StudioCollector {
         data.next_id += 1;
         data.total_jobs += 1;
 
-        let record = JobRecord {
-            id,
-            timestamp: now_ms(),
-            name,
-            status,
-            duration_ms,
-            error,
-            attempt,
-        };
+        let record = JobRecord { id, timestamp: now_ms(), name, status, duration_ms, error, attempt };
 
         if data.jobs.len() >= MAX_JOBS {
             data.jobs.pop_front();
@@ -299,26 +277,13 @@ impl StudioCollector {
         self.broadcast(&StudioMessage::Job(record));
     }
 
-    pub async fn record_mail(
-        &self,
-        to: Vec<String>,
-        subject: String,
-        status: MailStatus,
-        error: Option<String>,
-    ) {
+    pub async fn record_mail(&self, to: Vec<String>, subject: String, status: MailStatus, error: Option<String>) {
         let mut data = self.data.write().await;
         let id = data.next_id;
         data.next_id += 1;
         data.total_mails += 1;
 
-        let record = MailRecord {
-            id,
-            timestamp: now_ms(),
-            to,
-            subject,
-            status,
-            error,
-        };
+        let record = MailRecord { id, timestamp: now_ms(), to, subject, status, error };
 
         if data.mails.len() >= MAX_MAILS {
             data.mails.pop_front();
@@ -355,25 +320,11 @@ impl StudioCollector {
     }
 
     pub async fn get_requests(&self) -> Vec<RequestRecord> {
-        self.data
-            .read()
-            .await
-            .requests
-            .iter()
-            .rev()
-            .cloned()
-            .collect()
+        self.data.read().await.requests.iter().rev().cloned().collect()
     }
 
     pub async fn get_events(&self) -> Vec<EventRecord> {
-        self.data
-            .read()
-            .await
-            .events
-            .iter()
-            .rev()
-            .cloned()
-            .collect()
+        self.data.read().await.events.iter().rev().cloned().collect()
     }
 
     pub async fn get_jobs(&self) -> Vec<JobRecord> {

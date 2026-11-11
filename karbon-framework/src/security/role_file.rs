@@ -44,10 +44,7 @@ pub enum RoleHierarchyError {
     Cycle(String),
 
     #[error("both {first} and {second} exist: keep only one")]
-    Ambiguous {
-        first: &'static str,
-        second: &'static str,
-    },
+    Ambiguous { first: &'static str, second: &'static str },
 }
 
 /// One `ROLE_X: [...]` entry once checked, in file order.
@@ -62,10 +59,7 @@ pub(crate) struct RawEntry {
 
 /// Reads a hierarchy file, refusing oversized and (on Unix) world-writable files.
 pub(crate) fn read_file(path: &Path) -> Result<String, RoleHierarchyError> {
-    let io_error = |source| RoleHierarchyError::Io {
-        path: path.display().to_string(),
-        source,
-    };
+    let io_error = |source| RoleHierarchyError::Io { path: path.display().to_string(), source };
 
     let metadata = std::fs::metadata(path).map_err(io_error)?;
 
@@ -78,9 +72,7 @@ pub(crate) fn read_file(path: &Path) -> Result<String, RoleHierarchyError> {
         use std::os::unix::fs::PermissionsExt;
 
         if metadata.permissions().mode() & 0o002 != 0 {
-            return Err(RoleHierarchyError::WorldWritable {
-                path: path.display().to_string(),
-            });
+            return Err(RoleHierarchyError::WorldWritable { path: path.display().to_string() });
         }
     }
 
@@ -95,10 +87,7 @@ pub(crate) fn check_source(source: &str) -> Result<(), RoleHierarchyError> {
 
     for (index, line) in source.split('\n').enumerate() {
         if line.chars().count() > MAX_LINE_CHARS {
-            return Err(invalid(
-                index + 1,
-                format!("line longer than {MAX_LINE_CHARS} characters"),
-            ));
+            return Err(invalid(index + 1, format!("line longer than {MAX_LINE_CHARS} characters")));
         }
     }
 
@@ -109,15 +98,11 @@ pub(crate) fn is_valid_role(name: &str) -> bool {
     name.len() > "ROLE_".len()
         && name.len() <= MAX_ROLE_LEN
         && name.starts_with("ROLE_")
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+        && name.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
 }
 
 pub(crate) fn invalid_role_rule() -> String {
-    format!(
-        "invalid role name: expected `ROLE_` then A-Z, 0-9 or `_` ({MAX_ROLE_LEN} characters max)"
-    )
+    format!("invalid role name: expected `ROLE_` then A-Z, 0-9 or `_` ({MAX_ROLE_LEN} characters max)")
 }
 
 /// The checks no syntax can make: duplicates, self-inheritance, limits, cycles.
@@ -127,10 +112,7 @@ pub(crate) fn validate(raw: Vec<RawEntry>) -> Result<Vec<Entry>, RoleHierarchyEr
     // 1. Each role once, never its own child, each child once.
     for entry in &raw {
         if let Some(first_line) = declared.insert(&entry.role, entry.line) {
-            return Err(invalid(
-                entry.line,
-                format!("`{}` is already declared on line {first_line}", entry.role),
-            ));
+            return Err(invalid(entry.line, format!("`{}` is already declared on line {first_line}", entry.role)));
         }
 
         let mut seen = HashSet::new();
@@ -141,10 +123,7 @@ pub(crate) fn validate(raw: Vec<RawEntry>) -> Result<Vec<Entry>, RoleHierarchyEr
             }
 
             if !seen.insert(child.as_str()) {
-                return Err(invalid(
-                    *line,
-                    format!("`{child}` is listed twice under `{}`", entry.role),
-                ));
+                return Err(invalid(*line, format!("`{child}` is listed twice under `{}`", entry.role)));
             }
         }
     }
@@ -166,18 +145,11 @@ pub(crate) fn validate(raw: Vec<RawEntry>) -> Result<Vec<Entry>, RoleHierarchyEr
 
 fn check_limits(entries: &[Entry]) -> Result<(), RoleHierarchyError> {
     if entries.len() > MAX_ROLES {
-        return Err(RoleHierarchyError::TooLarge(format!(
-            "more than {MAX_ROLES} roles declared"
-        )));
+        return Err(RoleHierarchyError::TooLarge(format!("more than {MAX_ROLES} roles declared")));
     }
 
-    if let Some((role, _)) = entries
-        .iter()
-        .find(|(_, children)| children.len() > MAX_CHILDREN)
-    {
-        return Err(RoleHierarchyError::TooLarge(format!(
-            "`{role}` lists more than {MAX_CHILDREN} roles"
-        )));
+    if let Some((role, _)) = entries.iter().find(|(_, children)| children.len() > MAX_CHILDREN) {
+        return Err(RoleHierarchyError::TooLarge(format!("`{role}` lists more than {MAX_CHILDREN} roles")));
     }
 
     Ok(())
@@ -231,10 +203,7 @@ fn visit<'a>(
 }
 
 pub(crate) fn invalid(line: usize, message: impl Into<String>) -> RoleHierarchyError {
-    RoleHierarchyError::Invalid {
-        line,
-        message: message.into(),
-    }
+    RoleHierarchyError::Invalid { line, message: message.into() }
 }
 
 fn too_large_file() -> RoleHierarchyError {
@@ -246,11 +215,7 @@ pub(crate) fn excerpt(text: &str) -> String {
     let short: String = text.chars().take(40).collect();
     let escaped = short.escape_debug().to_string();
 
-    if text.chars().count() > 40 {
-        format!("{escaped}…")
-    } else {
-        escaped
-    }
+    if text.chars().count() > 40 { format!("{escaped}…") } else { escaped }
 }
 
 #[cfg(test)]
@@ -258,11 +223,7 @@ mod tests {
     use super::*;
 
     fn raw(role: &str, line: usize, children: &[&str]) -> RawEntry {
-        RawEntry {
-            role: role.to_string(),
-            line,
-            children: children.iter().map(|c| (c.to_string(), line)).collect(),
-        }
+        RawEntry { role: role.to_string(), line, children: children.iter().map(|c| (c.to_string(), line)).collect() }
     }
 
     fn refused(entries: Vec<RawEntry>) -> String {
@@ -272,11 +233,8 @@ mod tests {
     #[test]
     fn duplicates_self_inheritance_and_cycles_are_refused() {
         assert!(
-            refused(vec![
-                raw("ROLE_A", 3, &[]),
-                raw("ROLE_A", 4, &["ROLE_USER"])
-            ])
-            .contains("already declared on line 3")
+            refused(vec![raw("ROLE_A", 3, &[]), raw("ROLE_A", 4, &["ROLE_USER"])])
+                .contains("already declared on line 3")
         );
         assert!(refused(vec![raw("ROLE_A", 3, &["ROLE_B", "ROLE_B"])]).contains("listed twice"));
         assert!(refused(vec![raw("ROLE_A", 3, &["ROLE_A"])]).contains("cannot inherit itself"));
@@ -286,10 +244,7 @@ mod tests {
             raw("ROLE_ADMIN", 4, &["ROLE_EMPLOYEE"]),
             raw("ROLE_EMPLOYEE", 5, &["ROLE_USER"]),
         ]);
-        assert!(
-            message.contains("ROLE_USER → ROLE_ADMIN → ROLE_EMPLOYEE → ROLE_USER"),
-            "{message}"
-        );
+        assert!(message.contains("ROLE_USER → ROLE_ADMIN → ROLE_EMPLOYEE → ROLE_USER"), "{message}");
     }
 
     #[test]
@@ -300,15 +255,7 @@ mod tests {
 
         let too_long = format!("ROLE_{}", "A".repeat(60));
 
-        for name in [
-            "role_admin",
-            "ADMIN",
-            "ROLE_",
-            "ROLE_A-B",
-            "ROLE_É",
-            "ROLE_A B",
-            &too_long,
-        ] {
+        for name in ["role_admin", "ADMIN", "ROLE_", "ROLE_A-B", "ROLE_É", "ROLE_A B", &too_long] {
             assert!(!is_valid_role(name), "{name}");
         }
     }
@@ -341,9 +288,6 @@ mod tests {
 
     #[test]
     fn a_missing_file_is_an_io_error() {
-        assert!(matches!(
-            read_file(Path::new("does/not/exist.yaml")),
-            Err(RoleHierarchyError::Io { .. })
-        ));
+        assert!(matches!(read_file(Path::new("does/not/exist.yaml")), Err(RoleHierarchyError::Io { .. })));
     }
 }

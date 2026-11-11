@@ -15,8 +15,9 @@ DB_USER=root
 DB_PASSWORD=
 
 # Auth — required if you use JWT/AuthGuard. Empty disables auth (all tokens rejected).
-# MUST be a strong random value of at least 32 chars in production (e.g. `openssl rand -base64 48`).
-# The app refuses to start in production with an empty, weak, or placeholder secret.
+# `karbon new` wrote a random secret in your .env. The placeholder below is public: the app
+# refuses to start with it, in every environment. New secret: `karbon secret --write`.
+# Outside development/test, a secret shorter than 32 chars is refused too.
 JWT_SECRET=change-me-to-a-random-secret
 JWT_EXPIRATION=900
 REFRESH_TOKEN_EXPIRATION=2592000

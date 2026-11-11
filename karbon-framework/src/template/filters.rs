@@ -27,39 +27,18 @@ pub fn date_fr(value: &str, _kwargs: Kwargs, _state: &State) -> String {
 
 fn format_date_fr(dt: &chrono::NaiveDateTime) -> String {
     let months = [
-        "",
-        "janvier",
-        "février",
-        "mars",
-        "avril",
-        "mai",
-        "juin",
-        "juillet",
-        "août",
-        "septembre",
-        "octobre",
-        "novembre",
-        "décembre",
+        "", "janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre",
+        "novembre", "décembre",
     ];
     let month = dt.format("%m").to_string().parse::<usize>().unwrap_or(0);
-    format!(
-        "{} {} {}",
-        dt.format("%d"),
-        months.get(month).unwrap_or(&""),
-        dt.format("%Y")
-    )
+    format!("{} {} {}", dt.format("%d"), months.get(month).unwrap_or(&""), dt.format("%Y"))
 }
 
 /// Format datetime to French: "17 mars 2026 à 14h30"
 pub fn datetime_fr(value: &str, _kwargs: Kwargs, _state: &State) -> String {
     for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"] {
         if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(value, fmt) {
-            return format!(
-                "{} à {}h{}",
-                format_date_fr(&dt),
-                dt.format("%H"),
-                dt.format("%M")
-            );
+            return format!("{} à {}h{}", format_date_fr(&dt), dt.format("%H"), dt.format("%M"));
         }
     }
 
@@ -81,11 +60,7 @@ pub fn truncate_text(value: &str, kwargs: Kwargs, _state: &State) -> TeraResult<
 
     // Count characters, not bytes: slicing mid-codepoint panics, and accented text
     // (the whole point of the French filters above) reaches that case immediately.
-    let cut = value
-        .char_indices()
-        .nth(len)
-        .map(|(i, _)| i)
-        .unwrap_or(value.len());
+    let cut = value.char_indices().nth(len).map(|(i, _)| i).unwrap_or(value.len());
     let end = value[..cut].rfind(' ').unwrap_or(cut);
     Ok(format!("{}…", &value[..end]))
 }
@@ -175,10 +150,7 @@ mod tests {
         // The window is backed up to the last space inside it, so a word is never cut
         // in half — at length=16 the window is "un deux trois qu" and "qu" is dropped.
         let c = ctx_with("t", "un deux trois quatre cinq");
-        assert_eq!(
-            render("{{ t | truncate_text(length=16) }}", &c),
-            "un deux trois…"
-        );
+        assert_eq!(render("{{ t | truncate_text(length=16) }}", &c), "un deux trois…");
         // At length=13 the window ends exactly on a space, which is itself the last
         // one, so the whole trailing word goes with it.
         assert_eq!(render("{{ t | truncate_text(length=13) }}", &c), "un deux…");
@@ -216,9 +188,6 @@ mod tests {
         register_all(&mut tera);
         tera.add_raw_template("t.html", "{{ t | nl2br }}").unwrap();
         let out = tera.render("t.html", &ctx_with("t", "a\nb")).unwrap();
-        assert!(
-            out.contains("&lt;br&gt;"),
-            "filter output must stay escaped in .html templates, got: {out}"
-        );
+        assert!(out.contains("&lt;br&gt;"), "filter output must stay escaped in .html templates, got: {out}");
     }
 }

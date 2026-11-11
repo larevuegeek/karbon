@@ -102,18 +102,12 @@ impl Form {
 
     /// Current value of a field.
     pub fn value(&self, name: &str) -> Option<&str> {
-        self.fields
-            .iter()
-            .find(|f| f.name == name)
-            .map(|f| f.value.as_str())
+        self.fields.iter().find(|f| f.name == name).map(|f| f.value.as_str())
     }
 
     /// All field values keyed by name.
     pub fn values(&self) -> HashMap<String, String> {
-        self.fields
-            .iter()
-            .map(|f| (f.name.clone(), f.value.clone()))
-            .collect()
+        self.fields.iter().map(|f| (f.name.clone(), f.value.clone())).collect()
     }
 
     /// Validation errors keyed by field.
@@ -132,11 +126,7 @@ impl Form {
     pub fn render(&self) -> String {
         let mut out = String::new();
         if let Some((name, token)) = &self.csrf {
-            out.push_str(&format!(
-                "<input type=\"hidden\" name=\"{}\" value=\"{}\">",
-                esc(name),
-                esc(token)
-            ));
+            out.push_str(&format!("<input type=\"hidden\" name=\"{}\" value=\"{}\">", esc(name), esc(token)));
         }
         for field in &self.fields {
             out.push_str(&field.render());
@@ -161,20 +151,13 @@ mod tests {
     use crate::validation::constraints::string::Length;
 
     fn data(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect()
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
     }
 
     #[test]
     fn valid_submission() {
         let mut form = Form::new()
-            .add(
-                Field::text("title", "Titre")
-                    .required()
-                    .constraint(Length::new().min(3)),
-            )
+            .add(Field::text("title", "Titre").required().constraint(Length::new().min(3)))
             .add(Field::checkbox("published", "Publié"));
         let ok = form.handle(&data(&[("title", "Hello"), ("published", "1")]));
         assert!(ok);
@@ -185,11 +168,7 @@ mod tests {
 
     #[test]
     fn required_and_constraint_errors() {
-        let mut form = Form::new().add(
-            Field::text("title", "Titre")
-                .required()
-                .constraint(Length::new().min(3)),
-        );
+        let mut form = Form::new().add(Field::text("title", "Titre").required().constraint(Length::new().min(3)));
         let ok = form.handle(&data(&[("title", "x")]));
         assert!(!ok);
         assert!(!form.is_valid());
@@ -215,9 +194,8 @@ mod tests {
 
     #[test]
     fn select_marks_selected_option() {
-        let form = Form::new().add(
-            Field::select("role", "Role", vec![("admin", "Admin"), ("user", "User")]).value("user"),
-        );
+        let form =
+            Form::new().add(Field::select("role", "Role", vec![("admin", "Admin"), ("user", "User")]).value("user"));
         let html = form.render();
         assert!(html.contains("<option value=\"user\" selected>User</option>"));
     }

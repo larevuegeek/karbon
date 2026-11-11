@@ -40,11 +40,7 @@ impl DateRange {
     }
 
     pub fn between(min: NaiveDate, max: NaiveDate) -> Self {
-        Self {
-            min: Some(min),
-            max: Some(max),
-            ..Self::default()
-        }
+        Self { min: Some(min), max: Some(max), ..Self::default() }
     }
 
     pub fn with_format(mut self, format: impl Into<String>) -> Self {

@@ -16,10 +16,7 @@ pub struct Ip {
 
 impl Default for Ip {
     fn default() -> Self {
-        Self {
-            message: "This value is not a valid IP address.".to_string(),
-            version: IpVersion::All,
-        }
+        Self { message: "This value is not a valid IP address.".to_string(), version: IpVersion::All }
     }
 }
 
@@ -29,17 +26,11 @@ impl Ip {
     }
 
     pub fn v4() -> Self {
-        Self {
-            version: IpVersion::V4,
-            ..Self::default()
-        }
+        Self { version: IpVersion::V4, ..Self::default() }
     }
 
     pub fn v6() -> Self {
-        Self {
-            version: IpVersion::V6,
-            ..Self::default()
-        }
+        Self { version: IpVersion::V6, ..Self::default() }
     }
 
     pub fn with_message(mut self, message: impl Into<String>) -> Self {
@@ -158,11 +149,7 @@ mod tests {
     fn test_valid_ipv6() {
         let constraint = Ip::v6();
         assert!(constraint.validate("::1").is_ok());
-        assert!(
-            constraint
-                .validate("2001:0db8:85a3:0000:0000:8a2e:0370:7334")
-                .is_ok()
-        );
+        assert!(constraint.validate("2001:0db8:85a3:0000:0000:8a2e:0370:7334").is_ok());
         assert!(constraint.validate("fe80::1").is_ok());
         assert!(constraint.validate("::").is_ok());
     }

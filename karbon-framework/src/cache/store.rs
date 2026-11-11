@@ -48,10 +48,7 @@ pub struct Cache {
 impl Cache {
     /// In-memory cache with the given default TTL.
     pub fn new(default_ttl: Duration) -> Self {
-        Self {
-            store: Arc::new(MemoryStore::new()),
-            default_ttl,
-        }
+        Self { store: Arc::new(MemoryStore::new()), default_ttl }
     }
 
     /// In-memory cache with a 5-minute default TTL.
@@ -61,10 +58,7 @@ impl Cache {
 
     /// Filesystem-backed cache rooted at `dir`.
     pub fn file(dir: impl Into<PathBuf>, default_ttl: Duration) -> Self {
-        Self {
-            store: Arc::new(FileStore::new(dir)),
-            default_ttl,
-        }
+        Self { store: Arc::new(FileStore::new(dir)), default_ttl }
     }
 
     /// Cache over a custom [`CacheStore`] backend.
@@ -76,10 +70,7 @@ impl Cache {
     #[cfg(feature = "redis")]
     pub async fn redis(url: &str, default_ttl: Duration) -> anyhow::Result<Self> {
         let store = super::RedisStore::connect(url).await?;
-        Ok(Self {
-            store: Arc::new(store),
-            default_ttl,
-        })
+        Ok(Self { store: Arc::new(store), default_ttl })
     }
 
     /// Get and deserialize a value.
@@ -134,13 +125,7 @@ impl Cache {
     /// Store a value associated with one or more **tags**, so it can later be
     /// invalidated as a group with [`Cache::invalidate_tag`]. Tag indexes are
     /// kept in the same backend, so this works with any [`CacheStore`].
-    pub async fn set_tagged<T: Serialize>(
-        &self,
-        key: &str,
-        value: &T,
-        ttl: Duration,
-        tags: &[&str],
-    ) {
+    pub async fn set_tagged<T: Serialize>(&self, key: &str, value: &T, ttl: Duration, tags: &[&str]) {
         self.set_with_ttl(key, value, ttl).await;
         for tag in tags {
             let index_key = tag_index_key(tag);

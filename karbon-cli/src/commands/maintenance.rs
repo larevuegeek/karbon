@@ -54,10 +54,7 @@ fn enable(flag: &Path) -> Result<(), String> {
         return Ok(());
     }
 
-    if let Some(parent) = flag
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty() && !p.exists())
-    {
+    if let Some(parent) = flag.parent().filter(|p| !p.as_os_str().is_empty() && !p.exists()) {
         return Err(format!(
             "Directory {} does not exist.\n       \
              Create it as root, and keep it out of the web tree:\n         \
@@ -69,18 +66,14 @@ fn enable(flag: &Path) -> Result<(), String> {
     // `create_new` is O_CREAT|O_EXCL: it never follows a final symlink, dangling or not,
     // and fails if anything is there. `fs::write` followed one, so a link planted at the
     // flag path made `sudo karbon maintenance on` create the link's target as root.
-    fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(flag)
-        .map_err(|e| {
-            format!(
-                "Cannot create {}: {e}\n       \
+    fs::OpenOptions::new().write(true).create_new(true).open(flag).map_err(|e| {
+        format!(
+            "Cannot create {}: {e}\n       \
                  The flag is meant to be root-owned, so this usually needs sudo. If a \
                  symbolic link sits at that path, remove it: it is never followed.",
-                flag.display()
-            )
-        })?;
+            flag.display()
+        )
+    })?;
 
     println!(
         "\n{} Maintenance mode {}\n  {}\n\n  \
@@ -146,17 +139,13 @@ fn status(flag: &Path) {
 /// Reading the app's own configuration is what keeps the two in agreement — a
 /// hard-coded path here would silently flip a file nobody reads.
 fn resolve_flag_path(root: &Path) -> Result<(PathBuf, FlagSource), String> {
-    if let Some(path) = std::env::var("MAINTENANCE_FLAG_FILE")
-        .ok()
-        .filter(|p| !p.trim().is_empty())
-    {
+    if let Some(path) = std::env::var("MAINTENANCE_FLAG_FILE").ok().filter(|p| !p.trim().is_empty()) {
         return Ok((PathBuf::from(path.trim()), FlagSource::Environment));
     }
 
     let env_path = root.join(".env");
     if env_path.exists() {
-        let content = fs::read_to_string(&env_path)
-            .map_err(|e| format!("Cannot read {}: {e}", env_path.display()))?;
+        let content = fs::read_to_string(&env_path).map_err(|e| format!("Cannot read {}: {e}", env_path.display()))?;
 
         for line in content.lines() {
             let line = line.trim();
@@ -201,10 +190,7 @@ fn refuse_if_unsafe_for_root(flag: &Path, source: &FlagSource) -> Result<(), Str
                 env_path.display()
             ));
         }
-        let parent = flag
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or(Path::new("."));
+        let parent = flag.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
         if !root_controlled(parent, true) {
             return Err(format!(
                 "Refusing to run as root on {}: its directory is not a root-owned directory \
@@ -254,11 +240,7 @@ mod tests {
     fn env_file_wins_over_the_default() {
         let dir = std::env::temp_dir().join("karbon-maint-test-env");
         let _ = fs::create_dir_all(&dir);
-        fs::write(
-            dir.join(".env"),
-            "# comment\nDB_HOST=x\nMAINTENANCE_FLAG_FILE=/etc/app/maintenance.flag\n",
-        )
-        .unwrap();
+        fs::write(dir.join(".env"), "# comment\nDB_HOST=x\nMAINTENANCE_FLAG_FILE=/etc/app/maintenance.flag\n").unwrap();
 
         let (resolved, source) = resolve_flag_path(&dir).unwrap();
         assert_eq!(resolved, PathBuf::from("/etc/app/maintenance.flag"));
@@ -286,10 +268,7 @@ mod tests {
         let _ = fs::create_dir_all(&dir);
         fs::write(dir.join(".env"), "MAINTENANCE_FLAG_FILE=\"/tmp/flag\"\n").unwrap();
 
-        assert_eq!(
-            resolve_flag_path(&dir).unwrap().0,
-            PathBuf::from("/tmp/flag")
-        );
+        assert_eq!(resolve_flag_path(&dir).unwrap().0, PathBuf::from("/tmp/flag"));
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -16,11 +16,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The three drivers are mutually exclusive features: each one compiles different
+        # SQL (placeholders, clock functions, RETURNING), so each one runs the test suite.
+        # `studio` rides along: its guard and toolbar tests only exist under the feature.
         include:
           - driver: mysql
-            features: ""            # mysql is the default feature
+            features: "--features studio"   # mysql is the default feature
           - driver: postgres
-            features: "--no-default-features --features postgres"
+            features: "--no-default-features --features postgres,studio,templates"
+          - driver: sqlite
+            features: "--no-default-features --features sqlite,studio"
     steps:
       - uses: actions/checkout@v4
 
@@ -29,14 +34,15 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.driver }}
 
-      - name: Build framework (${{ matrix.driver }})
-        run: cargo build -p karbon-framework ${{ matrix.features }}
+      - name: Test framework (${{ matrix.driver }})
+        run: cargo test -p karbon-framework ${{ matrix.features }}
 
-      - name: Build CLI & macros
-        run: cargo build -p karbon-cli -p karbon-macros
-
-      - name: Run tests
+      # The CLI, the macros and the example do not depend on the driver: once is enough.
+      - name: Test workspace (CLI, macros, example)
+        if: matrix.driver == 'mysql'
         run: cargo test --workspace
 
   cli-e2e:
@@ -82,3 +88,6 @@ jobs:
 
       - name: clippy (postgres + studio + templates)
         run: cargo clippy -p karbon-framework --no-default-features --features postgres,studio,templates --all-targets -- -D warnings
+
+      - name: clippy (sqlite + studio)
+        run: cargo clippy -p karbon-framework --no-default-features --features sqlite,studio --all-targets -- -D warnings

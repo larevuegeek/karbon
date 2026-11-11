@@ -42,13 +42,10 @@ impl CacheStore for MemoryStore {
 
     fn set_raw<'a>(&'a self, key: &'a str, value: String, ttl: Duration) -> StoreFuture<'a, ()> {
         Box::pin(async move {
-            self.store.write().await.insert(
-                key.to_string(),
-                Entry {
-                    data: value,
-                    expires_at: Instant::now() + ttl,
-                },
-            );
+            self.store
+                .write()
+                .await
+                .insert(key.to_string(), Entry { data: value, expires_at: Instant::now() + ttl });
         })
     }
 

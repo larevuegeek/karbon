@@ -10,9 +10,7 @@ pub struct NotNull {
 
 impl Default for NotNull {
     fn default() -> Self {
-        Self {
-            message: "This value should not be null.".to_string(),
-        }
+        Self { message: "This value should not be null.".to_string() }
     }
 }
 
@@ -44,11 +42,7 @@ impl Constraint for NotNull {
 #[allow(dead_code)]
 pub fn validate_not_null<T>(value: &Option<T>, message: Option<&str>) -> ConstraintResult {
     if value.is_none() {
-        return Err(ConstraintViolation::new(
-            "NotNull",
-            message.unwrap_or("This value should not be null."),
-            "null",
-        ));
+        return Err(ConstraintViolation::new("NotNull", message.unwrap_or("This value should not be null."), "null"));
     }
     Ok(())
 }

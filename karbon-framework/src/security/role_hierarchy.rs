@@ -40,12 +40,7 @@ impl RoleHierarchy {
     pub fn new(entries: &[(&str, &[&str])]) -> Self {
         let map: HashMap<String, Vec<String>> = entries
             .iter()
-            .map(|(role, children)| {
-                (
-                    role.to_string(),
-                    children.iter().map(|c| c.to_string()).collect(),
-                )
-            })
+            .map(|(role, children)| (role.to_string(), children.iter().map(|c| c.to_string()).collect()))
             .collect();
 
         Self { map }
@@ -183,17 +178,11 @@ fn find_security_file() -> Result<Option<&'static str>, RoleHierarchyError> {
     let exists = |path: &'static str| {
         Path::new(path)
             .try_exists()
-            .map_err(|source| RoleHierarchyError::Io {
-                path: path.to_string(),
-                source,
-            })
+            .map_err(|source| RoleHierarchyError::Io { path: path.to_string(), source })
     };
 
     match (exists(SECURITY_FILE)?, exists(SECURITY_TOML_FILE)?) {
-        (true, true) => Err(RoleHierarchyError::Ambiguous {
-            first: SECURITY_FILE,
-            second: SECURITY_TOML_FILE,
-        }),
+        (true, true) => Err(RoleHierarchyError::Ambiguous { first: SECURITY_FILE, second: SECURITY_TOML_FILE }),
         (true, false) => Ok(Some(SECURITY_FILE)),
         (false, true) => Ok(Some(SECURITY_TOML_FILE)),
         (false, false) => Ok(None),
@@ -257,16 +246,8 @@ mod tests {
 
         let toml = dir.join("security.toml");
         let yaml = dir.join("roles.conf");
-        std::fs::write(
-            &toml,
-            "[security.role_hierarchy]\nROLE_A = [\"ROLE_USER\"]\n",
-        )
-        .unwrap();
-        std::fs::write(
-            &yaml,
-            "security:\n  role_hierarchy:\n    ROLE_A: [ROLE_USER]\n",
-        )
-        .unwrap();
+        std::fs::write(&toml, "[security.role_hierarchy]\nROLE_A = [\"ROLE_USER\"]\n").unwrap();
+        std::fs::write(&yaml, "security:\n  role_hierarchy:\n    ROLE_A: [ROLE_USER]\n").unwrap();
 
         for path in [&toml, &yaml] {
             let h = RoleHierarchy::from_file(path).unwrap();

@@ -54,8 +54,7 @@ impl NativeEngine {
 
     /// Register a named template from source.
     pub fn add(&mut self, name: &str, source: &str) -> AppResult<()> {
-        let tmpl =
-            parse(source).map_err(|e| AppError::Internal(format!("template {name}: {e}")))?;
+        let tmpl = parse(source).map_err(|e| AppError::Internal(format!("template {name}: {e}")))?;
         self.templates.insert(name.to_string(), tmpl);
         Ok(())
     }
@@ -94,10 +93,7 @@ impl NativeEngine {
             match node {
                 Node::Text(t) => out.push_str(t),
                 Node::Output(expr) => out.push_str(&render_output(expr, ctx)),
-                Node::If {
-                    branches,
-                    otherwise,
-                } => {
+                Node::If { branches, otherwise } => {
                     let mut matched = false;
                     for (cond, body) in branches {
                         if truthy(&eval(cond, ctx)) {
@@ -139,10 +135,7 @@ fn collect_blocks(nodes: &[Node], out: &mut HashMap<String, Vec<Node>>) {
                 out.entry(name.clone()).or_insert_with(|| body.clone());
                 collect_blocks(body, out);
             }
-            Node::If {
-                branches,
-                otherwise,
-            } => {
+            Node::If { branches, otherwise } => {
                 for (_, body) in branches {
                     collect_blocks(body, out);
                 }
@@ -156,13 +149,8 @@ fn collect_blocks(nodes: &[Node], out: &mut HashMap<String, Vec<Node>>) {
     }
 }
 
-fn load_dir(
-    engine: &mut NativeEngine,
-    base: &std::path::Path,
-    dir: &std::path::Path,
-) -> AppResult<()> {
-    let entries = std::fs::read_dir(dir)
-        .map_err(|e| AppError::Internal(format!("read {}: {e}", dir.display())))?;
+fn load_dir(engine: &mut NativeEngine, base: &std::path::Path, dir: &std::path::Path) -> AppResult<()> {
+    let entries = std::fs::read_dir(dir).map_err(|e| AppError::Internal(format!("read {}: {e}", dir.display())))?;
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -173,13 +161,8 @@ fn load_dir(
             .map(|e| matches!(e, "html" | "txt" | "xml"))
             .unwrap_or(false)
         {
-            let rel = path
-                .strip_prefix(base)
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .replace('\\', "/");
-            let src = std::fs::read_to_string(&path)
-                .map_err(|e| AppError::Internal(format!("read {rel}: {e}")))?;
+            let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+            let src = std::fs::read_to_string(&path).map_err(|e| AppError::Internal(format!("read {rel}: {e}")))?;
             engine.add(&rel, &src)?;
         }
     }
@@ -231,19 +214,9 @@ impl Renderer for NativeEngine {
 enum Node {
     Text(String),
     Output(Expr),
-    If {
-        branches: Vec<(Expr, Vec<Node>)>,
-        otherwise: Option<Vec<Node>>,
-    },
-    For {
-        var: String,
-        iter: Expr,
-        body: Vec<Node>,
-    },
-    Block {
-        name: String,
-        body: Vec<Node>,
-    },
+    If { branches: Vec<(Expr, Vec<Node>)>, otherwise: Option<Vec<Node>> },
+    For { var: String, iter: Expr, body: Vec<Node> },
+    Block { name: String, body: Vec<Node> },
     Include(String),
 }
 
@@ -430,10 +403,7 @@ fn parse_if(tokens: &[Token], pos: &mut usize) -> Result<Node, String> {
             _ => return Err("malformed if".to_string()),
         }
     }
-    Ok(Node::If {
-        branches,
-        otherwise,
-    })
+    Ok(Node::If { branches, otherwise })
 }
 
 fn parse_for(tokens: &[Token], pos: &mut usize) -> Result<Node, String> {
@@ -442,9 +412,7 @@ fn parse_for(tokens: &[Token], pos: &mut usize) -> Result<Node, String> {
         _ => return Err("expected for".to_string()),
     };
     let rest = tag.strip_prefix("for").unwrap_or("").trim();
-    let (var, iter_src) = rest
-        .split_once(" in ")
-        .ok_or("malformed for (expected `for x in items`)")?;
+    let (var, iter_src) = rest.split_once(" in ").ok_or("malformed for (expected `for x in items`)")?;
     let var = var.trim().to_string();
     let iter = parse_expr(iter_src.trim())?;
     *pos += 1;
@@ -484,10 +452,7 @@ fn expect_tag(tokens: &[Token], pos: &mut usize, keyword: &str) -> Result<(), St
 // ─────────────────────────────────────────────────────────────────
 
 fn parse_expr(src: &str) -> Result<Expr, String> {
-    let mut p = ExprParser {
-        chars: src.chars().collect(),
-        pos: 0,
-    };
+    let mut p = ExprParser { chars: src.chars().collect(), pos: 0 };
     let expr = p.parse_comparison()?;
     p.skip_ws();
     if p.pos != p.chars.len() {
@@ -608,9 +573,7 @@ impl ExprParser {
         if self.peek() == Some('-') {
             self.pos += 1;
         }
-        while self.pos < self.chars.len()
-            && (self.chars[self.pos].is_ascii_digit() || self.chars[self.pos] == '.')
-        {
+        while self.pos < self.chars.len() && (self.chars[self.pos].is_ascii_digit() || self.chars[self.pos] == '.') {
             self.pos += 1;
         }
         let s: String = self.chars[start..self.pos].iter().collect();
@@ -625,9 +588,7 @@ impl ExprParser {
     fn parse_ident(&mut self) -> Result<String, String> {
         self.skip_ws();
         let start = self.pos;
-        while self.pos < self.chars.len()
-            && (self.chars[self.pos].is_alphanumeric() || self.chars[self.pos] == '_')
-        {
+        while self.pos < self.chars.len() && (self.chars[self.pos].is_alphanumeric() || self.chars[self.pos] == '_') {
             self.pos += 1;
         }
         if self.pos == start {
@@ -677,9 +638,7 @@ fn render_output(expr: &Expr, ctx: &Value) -> String {
 
 fn eval_output(expr: &Expr, ctx: &Value) -> (Value, bool) {
     match expr {
-        Expr::Filter(inner, name, _args) if matches!(name.as_str(), "safe" | "raw") => {
-            (eval(inner, ctx), true)
-        }
+        Expr::Filter(inner, name, _args) if matches!(name.as_str(), "safe" | "raw") => (eval(inner, ctx), true),
         Expr::Filter(inner, name, args) => {
             let (v, safe) = eval_output(inner, ctx);
             (apply_filter(name, v, args, ctx), safe)
@@ -746,10 +705,7 @@ fn apply_filter(name: &str, value: Value, args: &[Expr], ctx: &Value) -> Value {
             }
         }
         "join" => {
-            let sep = args
-                .first()
-                .map(|a| value_to_string(&eval(a, ctx)))
-                .unwrap_or_default();
+            let sep = args.first().map(|a| value_to_string(&eval(a, ctx))).unwrap_or_default();
             if let Value::Array(a) = &value {
                 Value::String(a.iter().map(value_to_string).collect::<Vec<_>>().join(&sep))
             } else {
@@ -818,10 +774,7 @@ mod tests {
 
     #[test]
     fn variables_and_paths() {
-        assert_eq!(
-            render("Hi {{ user.name }}", json!({"user": {"name": "Dave"}})),
-            "Hi Dave"
-        );
+        assert_eq!(render("Hi {{ user.name }}", json!({"user": {"name": "Dave"}})), "Hi Dave");
     }
 
     #[test]
@@ -835,14 +788,8 @@ mod tests {
     fn filters() {
         assert_eq!(render("{{ name | upper }}", json!({"name": "bob"})), "BOB");
         assert_eq!(render("{{ missing | default('n/a') }}", json!({})), "n/a");
-        assert_eq!(
-            render("{{ items | length }}", json!({"items": [1, 2, 3]})),
-            "3"
-        );
-        assert_eq!(
-            render("{{ items | join(', ') }}", json!({"items": ["a", "b"]})),
-            "a, b"
-        );
+        assert_eq!(render("{{ items | length }}", json!({"items": [1, 2, 3]})), "3");
+        assert_eq!(render("{{ items | join(', ') }}", json!({"items": ["a", "b"]})), "a, b");
     }
 
     #[test]
@@ -869,20 +816,14 @@ mod tests {
         let mut engine = NativeEngine::new();
         engine.add("greet.html", "Hello {{ name }}").unwrap();
         assert!(engine.has_template("greet.html"));
-        assert_eq!(
-            engine.render("greet.html", &json!({"name": "X"})).unwrap(),
-            "Hello X"
-        );
+        assert_eq!(engine.render("greet.html", &json!({"name": "X"})).unwrap(), "Hello X");
     }
 
     #[test]
     fn inheritance_extends_block() {
         let mut engine = NativeEngine::new();
         engine
-            .add(
-                "base.html",
-                "<h1>{% block title %}Default{% endblock %}</h1>[{% block body %}{% endblock %}]",
-            )
+            .add("base.html", "<h1>{% block title %}Default{% endblock %}</h1>[{% block body %}{% endblock %}]")
             .unwrap();
         engine
             .add(
@@ -897,12 +838,8 @@ mod tests {
     #[test]
     fn block_falls_back_to_parent() {
         let mut engine = NativeEngine::new();
-        engine
-            .add("base.html", "{% block title %}Default{% endblock %}")
-            .unwrap();
-        engine
-            .add("child.html", "{% extends \"base.html\" %}")
-            .unwrap();
+        engine.add("base.html", "{% block title %}Default{% endblock %}").unwrap();
+        engine.add("child.html", "{% extends \"base.html\" %}").unwrap();
         assert_eq!(engine.render("child.html", &json!({})).unwrap(), "Default");
     }
 
@@ -910,12 +847,7 @@ mod tests {
     fn include_partial() {
         let mut engine = NativeEngine::new();
         engine.add("nav.html", "NAV").unwrap();
-        engine
-            .add("page.html", "top {% include \"nav.html\" %} bottom")
-            .unwrap();
-        assert_eq!(
-            engine.render("page.html", &json!({})).unwrap(),
-            "top NAV bottom"
-        );
+        engine.add("page.html", "top {% include \"nav.html\" %} bottom").unwrap();
+        assert_eq!(engine.render("page.html", &json!({})).unwrap(), "top NAV bottom");
     }
 }

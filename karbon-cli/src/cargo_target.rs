@@ -62,10 +62,7 @@ mod tests {
     fn reads_the_target_directory_from_cargo_metadata() {
         let json = br#"{"packages":[],"target_directory":"/srv/app/target","workspace_root":"/srv/app","version":1}"#;
 
-        assert_eq!(
-            parse_target_directory(json),
-            Some(PathBuf::from("/srv/app/target"))
-        );
+        assert_eq!(parse_target_directory(json), Some(PathBuf::from("/srv/app/target")));
         assert_eq!(parse_target_directory(b"not json"), None);
     }
 
@@ -78,10 +75,7 @@ mod tests {
             .map(PathBuf::from)
             .unwrap_or_else(|| crate_dir.parent().unwrap().join("target"));
 
-        assert_eq!(
-            target_dir(crate_dir).canonicalize().unwrap(),
-            expected.canonicalize().unwrap()
-        );
+        assert_eq!(target_dir(crate_dir).canonicalize().unwrap(), expected.canonicalize().unwrap());
     }
 
     #[test]
@@ -101,14 +95,8 @@ mod tests {
 
         let exe = if cfg!(windows) { "app.exe" } else { "app" };
 
-        assert_eq!(
-            binary_path(&dir, "debug", "app", true),
-            dir.join("target/debug").join(exe)
-        );
-        assert_eq!(
-            binary_path(&dir, "release", "app", false),
-            dir.join("target/release/app")
-        );
+        assert_eq!(binary_path(&dir, "debug", "app", true), dir.join("target/debug").join(exe));
+        assert_eq!(binary_path(&dir, "release", "app", false), dir.join("target/release/app"));
 
         std::fs::remove_dir_all(&dir).ok();
     }

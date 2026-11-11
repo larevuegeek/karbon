@@ -55,9 +55,7 @@ pub fn spec(title: &str, version: &str, routes: &[(&str, &str)]) -> Value {
             "responses": { "200": { "description": "OK" } },
         });
 
-        let entry = paths
-            .entry(path.to_string())
-            .or_insert_with(|| Value::Object(Map::new()));
+        let entry = paths.entry(path.to_string()).or_insert_with(|| Value::Object(Map::new()));
         if let Value::Object(methods) = entry {
             methods.insert(method.to_lowercase(), operation);
         }
@@ -104,10 +102,7 @@ fn path_tag(path: &str) -> String {
 
 /// Stable operationId, e.g. `get_api_v1_posts_id`.
 fn operation_id(method: &str, path: &str) -> String {
-    let slug: String = path
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect();
+    let slug: String = path.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
     format!("{}{}", method.to_lowercase(), slug)
         .trim_end_matches('_')
         .replace("__", "_")
@@ -144,11 +139,7 @@ mod tests {
 
     #[test]
     fn builds_paths_and_methods() {
-        let routes = [
-            ("GET", "/posts"),
-            ("POST", "/posts"),
-            ("GET", "/posts/{id}"),
-        ];
+        let routes = [("GET", "/posts"), ("POST", "/posts"), ("GET", "/posts/{id}")];
         let doc = spec("API", "1.0.0", &routes);
         assert_eq!(doc["openapi"], "3.0.0");
         assert_eq!(doc["info"]["title"], "API");

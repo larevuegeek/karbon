@@ -20,8 +20,7 @@ impl Default for Count {
             exact: None,
             min_message: "This collection should contain {{ limit }} elements or more.".to_string(),
             max_message: "This collection should contain {{ limit }} elements or less.".to_string(),
-            exact_message: "This collection should contain exactly {{ limit }} elements."
-                .to_string(),
+            exact_message: "This collection should contain exactly {{ limit }} elements.".to_string(),
         }
     }
 }
@@ -47,11 +46,7 @@ impl Count {
     }
 
     pub fn between(min: usize, max: usize) -> Self {
-        Self {
-            min: Some(min),
-            max: Some(max),
-            ..Self::default()
-        }
+        Self { min: Some(min), max: Some(max), ..Self::default() }
     }
 
     fn format_message(template: &str, limit: usize) -> String {

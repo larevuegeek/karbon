@@ -60,13 +60,7 @@ fn micro_scaffold_structure_and_doctor() {
     let proj = scaffold(&tmp, "demo", "micro");
 
     // Core files exist.
-    for f in [
-        "karbon.toml",
-        "app/Cargo.toml",
-        "app/src/main.rs",
-        "app/src/welcome.html",
-        "docs/index.md",
-    ] {
+    for f in ["karbon.toml", "app/Cargo.toml", "app/src/main.rs", "app/src/welcome.html", "docs/index.md"] {
         assert!(proj.join(f).exists(), "missing {f}");
     }
 
@@ -78,32 +72,35 @@ fn micro_scaffold_structure_and_doctor() {
     );
     // OpenAPI + Swagger UI are wired out of the box.
     assert!(
-        main.contains("/openapi.json")
-            && main.contains("/docs")
-            && main.contains("// karbon:openapi-api"),
+        main.contains("/openapi.json") && main.contains("/docs") && main.contains("// karbon:openapi-api"),
         "OpenAPI / Swagger routes missing from main.rs"
     );
 
     // `--local` rewrote the dependency to a path dep with the studio feature.
     let cargo = std::fs::read_to_string(proj.join("app/Cargo.toml")).unwrap();
     assert!(cargo.contains("path ="), "local path dep not applied");
-    assert!(
-        cargo.contains("studio"),
-        "studio feature not applied by --local"
-    );
+    assert!(cargo.contains("studio"), "studio feature not applied by --local");
+
+    // The live `.env` carries its own random JWT secret; the published placeholder stays
+    // in `.env.example` only (the framework refuses to start with it).
+    let secret_of = |file: &str| {
+        std::fs::read_to_string(proj.join(file))
+            .unwrap()
+            .lines()
+            .find_map(|l| l.strip_prefix("JWT_SECRET=").map(str::to_string))
+            .unwrap_or_else(|| panic!("no JWT_SECRET in {file}"))
+    };
+    let secret = secret_of(".env");
+    assert_eq!(secret.len(), 64, "unexpected secret: {secret}");
+    assert!(secret.chars().all(|c| c.is_ascii_hexdigit()));
+    assert_eq!(secret_of(".env.example"), "change-me-to-a-random-secret");
 
     // `doctor` runs clean (exit 0, no failures, sees the local dep).
     let out = karbon().current_dir(&proj).arg("doctor").output().unwrap();
     assert!(out.status.success(), "doctor exited non-zero");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        !stdout.contains('✗'),
-        "doctor reported a failure:\n{stdout}"
-    );
-    assert!(
-        stdout.contains("path dep locale"),
-        "doctor didn't detect the local dependency:\n{stdout}"
-    );
+    assert!(!stdout.contains('✗'), "doctor reported a failure:\n{stdout}");
+    assert!(stdout.contains("path dep locale"), "doctor didn't detect the local dependency:\n{stdout}");
 }
 
 #[test]
@@ -112,18 +109,12 @@ fn full_svelte_frontend_files_and_proxy() {
     let proj = scaffold(&tmp, "site", "full");
 
     // SvelteKit needs app.html (regression: it used to be missing).
-    assert!(
-        proj.join("frontend/src/app.html").exists(),
-        "frontend/src/app.html missing"
-    );
+    assert!(proj.join("frontend/src/app.html").exists(), "frontend/src/app.html missing");
 
     // The Vite dev proxy must forward every backend route.
     let vite = std::fs::read_to_string(proj.join("frontend/vite.config.ts")).unwrap();
     for route in ["/api", "/_studio", "/health", "/admin"] {
-        assert!(
-            vite.contains(route),
-            "vite proxy is missing `{route}`:\n{vite}"
-        );
+        assert!(vite.contains(route), "vite proxy is missing `{route}`:\n{vite}");
     }
 }
 
@@ -162,10 +153,7 @@ fn generators_entity_fields_and_dry_run() {
 
     // Dry-run writes nothing.
     generate(&["entity", "Tag", "--dry-run"]);
-    assert!(
-        !entities.join("tag.rs").exists(),
-        "dry-run wrote an entity file"
-    );
+    assert!(!entities.join("tag.rs").exists(), "dry-run wrote an entity file");
 
     // Real run creates it.
     generate(&["entity", "Tag"]);
@@ -186,14 +174,7 @@ fn generated_micro_project_compiles() {
     let status = karbon()
         .current_dir(&proj)
         .args([
-            "generate",
-            "crud",
-            "Post",
-            "title:string",
-            "body:text",
-            "views:int",
-            "published:bool",
-            "summary:string?",
+            "generate", "crud", "Post", "title:string", "body:text", "views:int", "published:bool", "summary:string?",
         ])
         .status()
         .unwrap();

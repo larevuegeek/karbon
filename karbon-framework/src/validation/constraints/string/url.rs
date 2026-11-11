@@ -111,21 +111,9 @@ mod tests {
         assert!(constraint.validate("https://example.com").is_ok());
         assert!(constraint.validate("https://example.com/path").is_ok());
         assert!(constraint.validate("https://example.com:8080").is_ok());
-        assert!(
-            constraint
-                .validate("https://sub.domain.example.com")
-                .is_ok()
-        );
-        assert!(
-            constraint
-                .validate("https://example.com/path?query=1")
-                .is_ok()
-        );
-        assert!(
-            constraint
-                .validate("https://example.com/path#fragment")
-                .is_ok()
-        );
+        assert!(constraint.validate("https://sub.domain.example.com").is_ok());
+        assert!(constraint.validate("https://example.com/path?query=1").is_ok());
+        assert!(constraint.validate("https://example.com/path#fragment").is_ok());
     }
 
     #[test]

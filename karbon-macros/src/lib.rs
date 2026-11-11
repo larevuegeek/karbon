@@ -32,10 +32,7 @@ impl Parse for ControllerArgs {
                 "role" => role = Some(lit.value()),
                 "state" => state = Some(lit.value()),
                 _ => {
-                    return Err(syn::Error::new(
-                        ident.span(),
-                        "expected `prefix`, `role`, or `state`",
-                    ));
+                    return Err(syn::Error::new(ident.span(), "expected `prefix`, `role`, or `state`"));
                 }
             }
 
@@ -43,11 +40,7 @@ impl Parse for ControllerArgs {
             let _ = input.parse::<Token![,]>();
         }
 
-        Ok(ControllerArgs {
-            prefix: prefix.unwrap_or_default(),
-            role,
-            state,
-        })
+        Ok(ControllerArgs { prefix: prefix.unwrap_or_default(), role, state })
     }
 }
 
@@ -129,11 +122,7 @@ fn extract_route_info(item: &ImplItem) -> Option<RouteInfo> {
         }
     }
 
-    Some(RouteInfo {
-        method: http_method?,
-        path: path.unwrap_or_else(|| "/".to_string()),
-        fn_name,
-    })
+    Some(RouteInfo { method: http_method?, path: path.unwrap_or_else(|| "/".to_string()), fn_name })
 }
 
 /// # Controller macro
@@ -175,11 +164,7 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
     let prefix = &args.prefix;
 
     // Extract route info BEFORE modifying the impl block
-    let routes: Vec<RouteInfo> = impl_block
-        .items
-        .iter()
-        .filter_map(extract_route_info)
-        .collect();
+    let routes: Vec<RouteInfo> = impl_block.items.iter().filter_map(extract_route_info).collect();
 
     let controller_role = args.role.clone();
 
@@ -189,12 +174,7 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
             // Find require_role value for this method (method-level overrides controller-level)
             let mut role_value = None;
             for attr in &method.attrs {
-                let name = attr
-                    .path()
-                    .segments
-                    .last()
-                    .map(|s| s.ident.to_string())
-                    .unwrap_or_default();
+                let name = attr.path().segments.last().map(|s| s.ident.to_string()).unwrap_or_default();
                 if name == "require_role"
                     && let Ok(lit) = attr.parse_args::<LitStr>()
                 {
@@ -211,12 +191,7 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
 
             // Only real routes (with a method attribute) carry a role — never helper fns.
             let is_route = method.attrs.iter().any(|attr| {
-                let n = attr
-                    .path()
-                    .segments
-                    .last()
-                    .map(|s| s.ident.to_string())
-                    .unwrap_or_default();
+                let n = attr.path().segments.last().map(|s| s.ident.to_string()).unwrap_or_default();
                 matches!(n.as_str(), "get" | "post" | "put" | "delete" | "patch")
             });
 
@@ -240,8 +215,7 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
                              and put `#[require_role(\"…\")]` on the protected routes instead.)",
                             method.sig.ident
                         );
-                        let err =
-                            syn::Error::new_spanned(&method.sig.ident, msg).to_compile_error();
+                        let err = syn::Error::new_spanned(&method.sig.ident, msg).to_compile_error();
                         injected.push(syn::parse_quote!( #err; ));
                     }
                 }
@@ -250,12 +224,7 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
             // `#[karbon::get("/{id}", id = "int:min=1")]` → validate the param,
             // rejecting bad input with 400 before the handler body runs.
             for attr in &method.attrs {
-                let n = attr
-                    .path()
-                    .segments
-                    .last()
-                    .map(|s| s.ident.to_string())
-                    .unwrap_or_default();
+                let n = attr.path().segments.last().map(|s| s.ident.to_string()).unwrap_or_default();
                 if matches!(n.as_str(), "get" | "post" | "put" | "delete" | "patch")
                     && let Ok(ra) = attr.parse_args::<RouteAttr>()
                 {
@@ -278,28 +247,16 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
 
             // Strip custom attributes
             method.attrs.retain(|attr| {
-                let name = attr
-                    .path()
-                    .segments
-                    .last()
-                    .map(|s| s.ident.to_string())
-                    .unwrap_or_default();
-                !matches!(
-                    name.as_str(),
-                    "get" | "post" | "put" | "delete" | "patch" | "require_role"
-                )
+                let name = attr.path().segments.last().map(|s| s.ident.to_string()).unwrap_or_default();
+                !matches!(name.as_str(), "get" | "post" | "put" | "delete" | "patch" | "require_role")
             });
         }
     }
 
     // Build route registrations grouped by path
-    let mut path_groups: std::collections::BTreeMap<String, Vec<&RouteInfo>> =
-        std::collections::BTreeMap::new();
+    let mut path_groups: std::collections::BTreeMap<String, Vec<&RouteInfo>> = std::collections::BTreeMap::new();
     for route in &routes {
-        path_groups
-            .entry(route.path.clone())
-            .or_default()
-            .push(route);
+        path_groups.entry(route.path.clone()).or_default().push(route);
     }
 
     let route_registrations: Vec<proc_macro2::TokenStream> = path_groups
@@ -331,9 +288,7 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
 
     // Use custom state type if provided, otherwise default to karbon::http::AppState
     let state_type: proc_macro2::TokenStream = if let Some(ref state_path) = args.state {
-        state_path
-            .parse()
-            .unwrap_or_else(|_| quote! { karbon::http::AppState })
+        state_path.parse().unwrap_or_else(|_| quote! { karbon::http::AppState })
     } else {
         quote! { karbon::http::AppState }
     };
@@ -343,16 +298,8 @@ pub fn controller(args: TokenStream, input: TokenStream) -> TokenStream {
         .iter()
         .map(|r| {
             let method = r.method.to_uppercase();
-            let full = if r.path == "/" {
-                prefix.to_string()
-            } else {
-                format!("{}{}", prefix, r.path)
-            };
-            let full = if full.is_empty() {
-                "/".to_string()
-            } else {
-                full
-            };
+            let full = if r.path == "/" { prefix.to_string() } else { format!("{}{}", prefix, r.path) };
+            let full = if full.is_empty() { "/".to_string() } else { full };
             quote! { (#method, #full) }
         })
         .collect();
@@ -500,10 +447,7 @@ fn is_option_type(ty: &Type) -> bool {
 /// // → INSERT INTO posts (title, slug, created_at) VALUES (?, ?, ?)
 /// // slug auto-generated from title if empty
 /// ```
-#[proc_macro_derive(
-    Insertable,
-    attributes(table_name, auto_increment, skip_insert, timestamps, slug_from)
-)]
+#[proc_macro_derive(Insertable, attributes(table_name, auto_increment, skip_insert, timestamps, slug_from))]
 pub fn derive_insertable(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -521,12 +465,9 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
         Data::Struct(data) => match &data.fields {
             Fields::Named(f) => &f.named,
             _ => {
-                return syn::Error::new_spanned(
-                    name,
-                    "Insertable only works on structs with named fields",
-                )
-                .to_compile_error()
-                .into();
+                return syn::Error::new_spanned(name, "Insertable only works on structs with named fields")
+                    .to_compile_error()
+                    .into();
             }
         },
         _ => {
@@ -587,14 +528,8 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
 
     // Build the SQL string at compile time
     let columns_str = column_names.join(", ");
-    let placeholders_str: String = (1..=column_names.len())
-        .map(|_| "?".to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let sql_literal = format!(
-        "INSERT INTO {} ({}) VALUES ({})",
-        table, columns_str, placeholders_str
-    );
+    let placeholders_str: String = (1..=column_names.len()).map(|_| "?".to_string()).collect::<Vec<_>>().join(", ");
+    let sql_literal = format!("INSERT INTO {} ({}) VALUES ({})", table, columns_str, placeholders_str);
 
     let expanded = quote! {
         impl #name {
@@ -647,10 +582,7 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
 /// // UpdateUser { id: 42, username: Some("new"), email: None, active: None }.update(pool).await?;
 /// // → UPDATE user SET username=? WHERE id=?  (only Some fields)
 /// ```
-#[proc_macro_derive(
-    Updatable,
-    attributes(table_name, primary_key, skip_update, timestamps)
-)]
+#[proc_macro_derive(Updatable, attributes(table_name, primary_key, skip_update, timestamps))]
 pub fn derive_updatable(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -668,12 +600,9 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
         Data::Struct(data) => match &data.fields {
             Fields::Named(f) => &f.named,
             _ => {
-                return syn::Error::new_spanned(
-                    name,
-                    "Updatable only works on structs with named fields",
-                )
-                .to_compile_error()
-                .into();
+                return syn::Error::new_spanned(name, "Updatable only works on structs with named fields")
+                    .to_compile_error()
+                    .into();
             }
         },
         _ => {
@@ -688,20 +617,14 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
     let pk_field = match pk_field {
         Some(f) => f,
         None => {
-            return syn::Error::new_spanned(
-                name,
-                "Updatable requires exactly one #[primary_key] field",
-            )
-            .to_compile_error()
-            .into();
+            return syn::Error::new_spanned(name, "Updatable requires exactly one #[primary_key] field")
+                .to_compile_error()
+                .into();
         }
     };
     let pk_ident = pk_field.ident.as_ref().unwrap();
     let pk_col_raw = pk_ident.to_string();
-    let pk_col = pk_col_raw
-        .strip_prefix("r#")
-        .unwrap_or(&pk_col_raw)
-        .to_string();
+    let pk_col = pk_col_raw.strip_prefix("r#").unwrap_or(&pk_col_raw).to_string();
 
     let has_timestamps = has_struct_attr(&input.attrs, "timestamps");
 
@@ -718,10 +641,7 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
     for field in &update_fields {
         let ident = field.ident.as_ref().unwrap();
         let col_name_raw = ident.to_string();
-        let col_name = col_name_raw
-            .strip_prefix("r#")
-            .unwrap_or(&col_name_raw)
-            .to_string();
+        let col_name = col_name_raw.strip_prefix("r#").unwrap_or(&col_name_raw).to_string();
 
         if is_option_type(&field.ty) {
             set_pushes.push(quote! {
@@ -879,14 +799,8 @@ pub fn validated(_args: TokenStream, input: TokenStream) -> TokenStream {
 fn derives_validate(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| {
         a.path().is_ident("derive")
-            && a.parse_args_with(
-                syn::punctuated::Punctuated::<syn::Path, Token![,]>::parse_terminated,
-            )
-            .is_ok_and(|paths| {
-                paths
-                    .iter()
-                    .any(|p| p.segments.last().is_some_and(|s| s.ident == "Validate"))
-            })
+            && a.parse_args_with(syn::punctuated::Punctuated::<syn::Path, Token![,]>::parse_terminated)
+                .is_ok_and(|paths| paths.iter().any(|p| p.segments.last().is_some_and(|s| s.ident == "Validate")))
     })
 }
 
@@ -920,9 +834,7 @@ fn rewrite_validate_attr(attr: &syn::Attribute, opt: bool) -> syn::Result<Option
                 syn::Meta::List(list) if list.tokens.is_empty() && opt => {
                     Ok(quote!(required, custom(function = #func)))
                 }
-                syn::Meta::List(list) if list.tokens.is_empty() => {
-                    Ok(quote!(custom(function = #func)))
-                }
+                syn::Meta::List(list) if list.tokens.is_empty() => Ok(quote!(custom(function = #func))),
                 syn::Meta::List(list) if opt => {
                     let args = &list.tokens;
                     Ok(quote!(required(#args), custom(function = #func, #args)))

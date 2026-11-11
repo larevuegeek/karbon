@@ -106,11 +106,9 @@ impl AccessControlBuilder {
 
     /// Allow paths matching `pattern` without authentication (e.g. login, health, assets).
     pub fn public(mut self, pattern: &str) -> Self {
-        self.0.rules.push(Rule {
-            re: compile(pattern),
-            roles: Vec::new(),
-            public: true,
-        });
+        self.0
+            .rules
+            .push(Rule { re: compile(pattern), roles: Vec::new(), public: true });
         self
     }
 
@@ -123,10 +121,7 @@ impl AccessControlBuilder {
 
     /// Freeze the builder into an [`AccessControl`].
     pub fn build(self) -> AccessControl {
-        AccessControl {
-            rules: Arc::new(self.0.rules),
-            default_deny: self.0.default_deny,
-        }
+        AccessControl { rules: Arc::new(self.0.rules), default_deny: self.0.default_deny }
     }
 }
 
@@ -138,18 +133,12 @@ impl From<AccessControlBuilder> for AccessControl {
 }
 
 fn compile(pattern: &str) -> regex::Regex {
-    regex::Regex::new(pattern)
-        .unwrap_or_else(|e| panic!("invalid firewall pattern `{pattern}`: {e}"))
+    regex::Regex::new(pattern).unwrap_or_else(|e| panic!("invalid firewall pattern `{pattern}`: {e}"))
 }
 
 /// Middleware that enforces an [`AccessControl`] against the request path. Wired by
 /// `App::firewall(...)`; not usually called directly.
-pub async fn enforce(
-    ac: Arc<AccessControl>,
-    state: AppState,
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn enforce(ac: Arc<AccessControl>, state: AppState, req: Request, next: Next) -> Response {
     // Rules run on the path as handlers resolve it: on the raw path, `/%70rivate`
     // matched no `^/private` rule while a decoding handler still served `/private`.
     // A path that cannot be decoded safely is refused rather than guessed at.
@@ -208,18 +197,13 @@ mod tests {
 
     #[test]
     fn unmatched_can_default_deny() {
-        let fw = AccessControl::new()
-            .rule("^/admin", ["ROLE_ADMIN"])
-            .default_deny(true)
-            .build();
+        let fw = AccessControl::new().rule("^/admin", ["ROLE_ADMIN"]).default_deny(true).build();
         assert!(matches!(fw.decision("/anything"), Decision::Deny));
     }
 
     #[test]
     fn empty_roles_means_authenticated_only() {
-        let fw = AccessControl::new()
-            .rule("^/members", Vec::<String>::new())
-            .build();
+        let fw = AccessControl::new().rule("^/members", Vec::<String>::new()).build();
         match fw.decision("/members/area") {
             Decision::Require(roles) => assert!(roles.is_empty()),
             _ => panic!("expected Require"),
@@ -231,13 +215,7 @@ mod tests {
     #[test]
     fn encoded_spellings_of_a_protected_prefix_still_hit_the_rule() {
         let fw = ac();
-        for raw in [
-            "/%61dmin/users",
-            "/%61dmin",
-            "//admin",
-            "/./admin",
-            "/admin%2Fx",
-        ] {
+        for raw in ["/%61dmin/users", "/%61dmin", "//admin", "/./admin", "/admin%2Fx"] {
             match crate::util::HttpHelper::canonical_path(raw) {
                 // Refused outright by `enforce` (400): never reaches a handler.
                 None => {}

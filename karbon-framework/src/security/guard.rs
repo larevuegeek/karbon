@@ -36,19 +36,13 @@ impl AuthGuard {
     /// When you have the `AppState`, [`from_claims_with`](Self::from_claims_with) with
     /// `state.role_hierarchy` says explicitly which hierarchy is used.
     pub fn from_claims(claims: Claims) -> Self {
-        Self {
-            claims,
-            role_hierarchy: crate::security::active_hierarchy(),
-        }
+        Self { claims, role_hierarchy: crate::security::active_hierarchy() }
     }
 
     /// Build an AuthGuard from existing Claims with an explicit role hierarchy (matches the
     /// app's configured `state.role_hierarchy`). Prefer this over [`from_claims`](Self::from_claims).
     pub fn from_claims_with(claims: Claims, role_hierarchy: RoleHierarchy) -> Self {
-        Self {
-            claims,
-            role_hierarchy,
-        }
+        Self { claims, role_hierarchy }
     }
 
     /// Check if the user has a specific role (with hierarchy resolution).
@@ -96,10 +90,7 @@ impl AuthGuard {
 impl FromRequestParts<AppState> for AuthGuard {
     type Rejection = AppError;
 
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
         // Extract Bearer token from Authorization header
         let auth_header: &str = parts
             .headers
@@ -112,16 +103,12 @@ impl FromRequestParts<AppState> for AuthGuard {
             .ok_or_else(|| AppError::Unauthorized("Invalid Authorization format".to_string()))?;
 
         // Verify JWT
-        let jwt: super::JwtManager =
-            super::JwtManager::new(&state.config.jwt_secret, state.config.jwt_expiration);
+        let jwt: super::JwtManager = super::JwtManager::new(&state.config.jwt_secret, state.config.jwt_expiration);
         let claims: Claims = jwt
             .verify(token)
             .map_err(|_| AppError::Unauthorized("Invalid or expired token".to_string()))?;
 
-        Ok(AuthGuard {
-            claims,
-            role_hierarchy: state.role_hierarchy.clone(),
-        })
+        Ok(AuthGuard { claims, role_hierarchy: state.role_hierarchy.clone() })
     }
 }
 
@@ -134,12 +121,7 @@ impl FromRequestParts<AppState> for AuthGuard {
 #[allow(clippy::type_complexity)]
 pub fn require_role(
     role: &'static str,
-) -> impl Fn(
-    AuthGuard,
-    Request,
-    Next,
-) -> Pin<Box<dyn Future<Output = Result<Response, AppError>> + Send>>
-+ Clone {
+) -> impl Fn(AuthGuard, Request, Next) -> Pin<Box<dyn Future<Output = Result<Response, AppError>> + Send>> + Clone {
     move |auth: AuthGuard, request: Request, next: Next| {
         Box::pin(async move {
             auth.require_role(role)?;

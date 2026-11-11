@@ -24,9 +24,7 @@ impl Password {
             bcrypt::verify(password, hash).map_err(|_| argon2::password_hash::Error::Algorithm)
         } else {
             let parsed_hash = PasswordHash::new(hash)?;
-            Ok(Argon2::default()
-                .verify_password(password.as_bytes(), &parsed_hash)
-                .is_ok())
+            Ok(Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok())
         }
     }
 
@@ -50,7 +48,8 @@ mod tests {
     /// Produced by argon2 0.5 — the version Karbon hashed with up to 0.3.9. Stored
     /// password hashes must keep verifying across the 0.6 upgrade, or every account
     /// locks out.
-    const ARGON2_0_5_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$a2FyYm9uLXRlc3Qtc2FsdA$zwsjs2lz+YeLe27RdXKnLEOs8eYCUf9Z+eWetM8K9jg";
+    const ARGON2_0_5_HASH: &str =
+        "$argon2id$v=19$m=19456,t=2,p=1$a2FyYm9uLXRlc3Qtc2FsdA$zwsjs2lz+YeLe27RdXKnLEOs8eYCUf9Z+eWetM8K9jg";
     const ARGON2_0_5_PASSWORD: &str = "correct horse battery staple";
 
     #[test]

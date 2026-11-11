@@ -14,10 +14,7 @@ impl Frontend {
         match s.to_lowercase().as_str() {
             "svelte" | "sveltekit" => Ok(Self::Svelte),
             "next" | "nextjs" | "next.js" | "react" => Ok(Self::Nextjs),
-            _ => Err(format!(
-                "Unknown frontend '{}'. Available: svelte, nextjs",
-                s
-            )),
+            _ => Err(format!("Unknown frontend '{}'. Available: svelte, nextjs", s)),
         }
     }
 
@@ -47,23 +44,12 @@ impl Skeleton {
     }
 }
 
-pub fn run(
-    name: &str,
-    frontend: Frontend,
-    skeleton: Skeleton,
-    template: &str,
-    local: &str,
-) -> Result<(), String> {
+pub fn run(name: &str, frontend: Frontend, skeleton: Skeleton, template: &str, local: &str) -> Result<(), String> {
     let kind_label = match skeleton {
         Skeleton::Full => frontend.label().to_string(),
         Skeleton::Micro => "backend-only / micro".to_string(),
     };
-    println!(
-        "\n{}  Creating project {} ({})\n",
-        "▲ karbon".bold().red(),
-        name.bold().cyan(),
-        kind_label.bold()
-    );
+    println!("\n{}  Creating project {} ({})\n", "▲ karbon".bold().red(), name.bold().cyan(), kind_label.bold());
 
     let root = Path::new(name);
 
@@ -148,25 +134,16 @@ pub fn run(
             Frontend::Svelte => {
                 files.extend([
                     ("frontend/package.json", templates::svelte::PACKAGE_JSON),
-                    (
-                        "frontend/svelte.config.js",
-                        templates::svelte::SVELTE_CONFIG,
-                    ),
+                    ("frontend/svelte.config.js", templates::svelte::SVELTE_CONFIG),
                     ("frontend/vite.config.ts", templates::svelte::VITE_CONFIG),
                     ("frontend/tsconfig.json", templates::svelte::TSCONFIG),
                     ("frontend/src/app.css", templates::svelte::APP_CSS),
                     ("frontend/src/app.html", templates::svelte::APP_HTML),
                     ("frontend/src/app.d.ts", templates::svelte::APP_D_TS),
-                    (
-                        "frontend/src/routes/+layout.svelte",
-                        templates::svelte::LAYOUT,
-                    ),
+                    ("frontend/src/routes/+layout.svelte", templates::svelte::LAYOUT),
                     ("frontend/src/routes/+page.svelte", templates::svelte::PAGE),
                     ("frontend/src/lib/api.ts", templates::svelte::API_TS),
-                    (
-                        "frontend/src/hooks.server.ts",
-                        templates::svelte::HOOKS_SERVER,
-                    ),
+                    ("frontend/src/hooks.server.ts", templates::svelte::HOOKS_SERVER),
                 ]);
             }
             Frontend::Nextjs => {
@@ -174,10 +151,7 @@ pub fn run(
                     ("frontend/package.json", templates::nextjs::PACKAGE_JSON),
                     ("frontend/next.config.ts", templates::nextjs::NEXT_CONFIG),
                     ("frontend/tsconfig.json", templates::nextjs::TSCONFIG),
-                    (
-                        "frontend/src/app/globals.css",
-                        templates::nextjs::GLOBALS_CSS,
-                    ),
+                    ("frontend/src/app/globals.css", templates::nextjs::GLOBALS_CSS),
                     ("frontend/src/app/layout.tsx", templates::nextjs::LAYOUT),
                     ("frontend/src/app/page.tsx", templates::nextjs::PAGE),
                     ("frontend/src/lib/api.ts", templates::nextjs::API_TS),
@@ -188,10 +162,9 @@ pub fn run(
 
     // Adapt karbon.toml for Next.js (full skeleton only)
     let karbon_toml_override = match (skeleton, frontend) {
-        (Skeleton::Full, Frontend::Nextjs) => Some((
-            "karbon.toml",
-            templates::KARBON_TOML.replace("node build/index.js", "npm run start"),
-        )),
+        (Skeleton::Full, Frontend::Nextjs) => {
+            Some(("karbon.toml", templates::KARBON_TOML.replace("node build/index.js", "npm run start")))
+        }
         _ => None,
     };
 
@@ -202,24 +175,25 @@ pub fn run(
         }
 
         // Use overridden content if available
-        let actual_content =
-            if let Some((override_path, ref override_content)) = karbon_toml_override {
-                if *path == override_path {
-                    override_content.as_str()
-                } else {
-                    content
-                }
-            } else {
-                content
-            };
+        let actual_content = if let Some((override_path, ref override_content)) = karbon_toml_override {
+            if *path == override_path { override_content.as_str() } else { content }
+        } else {
+            content
+        };
 
         let rendered = actual_content
             .replace("{{PROJECT_NAME}}", name)
             .replace("{{PROJECT_NAME_SNAKE}}", &snake)
             .replace("{{PROJECT_NAME_TITLE}}", &title)
             .replace("{{KARBON_VERSION}}", env!("CARGO_PKG_VERSION"));
-        fs::write(&full_path, rendered)
-            .map_err(|e| format!("Cannot write {}: {e}", full_path.display()))?;
+        // The live `.env` gets its own random secret. `.env.example` keeps the placeholder,
+        // which is published with this CLI and which the framework refuses to start with.
+        let rendered = if *path == ".env" {
+            super::secret::set_in_env(&rendered, &super::secret::generate())
+        } else {
+            rendered
+        };
+        fs::write(&full_path, rendered).map_err(|e| format!("Cannot write {}: {e}", full_path.display()))?;
         print_created(path, false);
     }
 
@@ -250,33 +224,20 @@ pub fn run(
     // Starter template: scaffold a Post CRUD + admin on top of the skeleton.
     let is_blog = template.eq_ignore_ascii_case("blog");
     if is_blog {
-        println!(
-            "\n  {} Scaffolding blog starter (Post CRUD + admin)...\n",
-            "▲".red()
-        );
+        println!("\n  {} Scaffolding blog starter (Post CRUD + admin)...\n", "▲".red());
         let gen_opts = crate::commands::generate::GenOptions::default();
         let post_fields = ["title:string".to_string(), "slug:string".to_string()];
         crate::commands::generate::run("crud", "Post", &post_fields, root, gen_opts)?;
         crate::commands::generate::run("admin", "Post", &[], root, gen_opts)?;
     } else if !template.eq_ignore_ascii_case("none") {
-        return Err(format!(
-            "Unknown template '{template}'. Available: none, blog"
-        ));
+        return Err(format!("Unknown template '{template}'. Available: none, blog"));
     }
 
-    println!(
-        "\n  {} Project {} created! ({})\n",
-        "✓".green().bold(),
-        name.bold().cyan(),
-        kind_label
-    );
+    println!("\n  {} Project {} created! ({})\n", "✓".green().bold(), name.bold().cyan(), kind_label);
     println!("  Next steps:\n");
     println!("    {} {}", "cd".dimmed(), name);
     if is_blog {
-        println!(
-            "    {} (set DB_NAME in .env first) to generate the migration",
-            "karbon migrate diff".bold()
-        );
+        println!("    {} (set DB_NAME in .env first) to generate the migration", "karbon migrate diff".bold());
         println!("    {} to create the table", "karbon migrate".bold());
     }
     println!("    {} to start developing\n", "karbon dev".bold());
@@ -287,21 +248,16 @@ pub fn run(
 /// Rewrite the generated `app/Cargo.toml` so `karbon` is a path dependency on a
 /// local checkout (dev convenience — the framework isn't on crates.io yet).
 fn apply_local_dep(root: &Path, local: &str) -> Result<(), String> {
-    let abs =
-        fs::canonicalize(local).map_err(|e| format!("--local path '{local}' not found: {e}"))?;
+    let abs = fs::canonicalize(local).map_err(|e| format!("--local path '{local}' not found: {e}"))?;
     let fw = abs.join("karbon-framework");
     if !fw.join("Cargo.toml").exists() {
-        return Err(format!(
-            "--local: no `karbon-framework` crate found at {}",
-            fw.display()
-        ));
+        return Err(format!("--local: no `karbon-framework` crate found at {}", fw.display()));
     }
     let fw_str = fw.to_string_lossy().replace('\\', "/");
     let fw_str = fw_str.strip_prefix("//?/").unwrap_or(&fw_str).to_string();
 
     let app_cargo = root.join("app/Cargo.toml");
-    let content =
-        fs::read_to_string(&app_cargo).map_err(|e| format!("read app/Cargo.toml: {e}"))?;
+    let content = fs::read_to_string(&app_cargo).map_err(|e| format!("read app/Cargo.toml: {e}"))?;
     // Replace the whole `karbon = { … }` line (preserves the studio feature).
     let mut replaced = false;
     let mut lines: Vec<String> = content
@@ -309,9 +265,7 @@ fn apply_local_dep(root: &Path, local: &str) -> Result<(), String> {
         .map(|l| {
             if l.trim_start().starts_with("karbon = {") {
                 replaced = true;
-                format!(
-                    "karbon = {{ package = \"karbon-framework\", path = \"{fw_str}\", features = [\"studio\"] }}"
-                )
+                format!("karbon = {{ package = \"karbon-framework\", path = \"{fw_str}\", features = [\"studio\"] }}")
             } else {
                 l.to_string()
             }
@@ -322,11 +276,7 @@ fn apply_local_dep(root: &Path, local: &str) -> Result<(), String> {
     }
     lines.push(String::new());
     fs::write(&app_cargo, lines.join("\n")).map_err(|e| format!("write app/Cargo.toml: {e}"))?;
-    println!(
-        "  {} app/Cargo.toml → karbon = path \"{}\"",
-        "✓".green(),
-        fw_str.dimmed()
-    );
+    println!("  {} app/Cargo.toml → karbon = path \"{}\"", "✓".green(), fw_str.dimmed());
     Ok(())
 }
 

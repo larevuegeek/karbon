@@ -28,9 +28,7 @@ mod tests {
     #[tokio::test]
     async fn memory_ttl_expires() {
         let cache = Cache::new(Duration::from_secs(60));
-        cache
-            .set_with_ttl("k", &"v", Duration::from_millis(10))
-            .await;
+        cache.set_with_ttl("k", &"v", Duration::from_millis(10)).await;
         tokio::time::sleep(Duration::from_millis(25)).await;
         assert_eq!(cache.get::<String>("k").await, None);
     }
@@ -57,12 +55,8 @@ mod tests {
     #[tokio::test]
     async fn tagged_invalidation() {
         let cache = Cache::new(Duration::from_secs(60));
-        cache
-            .set_tagged("post:1", &"a", Duration::from_secs(60), &["posts"])
-            .await;
-        cache
-            .set_tagged("post:2", &"b", Duration::from_secs(60), &["posts"])
-            .await;
+        cache.set_tagged("post:1", &"a", Duration::from_secs(60), &["posts"]).await;
+        cache.set_tagged("post:2", &"b", Duration::from_secs(60), &["posts"]).await;
         cache.set("other", &"c").await;
 
         cache.invalidate_tag("posts").await;
@@ -76,10 +70,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("karbon-cache-test-{}", std::process::id()));
         let cache = Cache::file(&dir, Duration::from_secs(60));
         cache.set("hello", &"world").await;
-        assert_eq!(
-            cache.get::<String>("hello").await,
-            Some("world".to_string())
-        );
+        assert_eq!(cache.get::<String>("hello").await, Some("world".to_string()));
         cache.clear().await;
         assert_eq!(cache.get::<String>("hello").await, None);
         let _ = std::fs::remove_dir_all(&dir);

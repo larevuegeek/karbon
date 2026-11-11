@@ -14,12 +14,15 @@ pub enum Environment {
 }
 
 impl Environment {
+    /// Case and surrounding spaces are ignored: `APP_ENV=Production` is production, not a
+    /// custom environment that every `is_production()` check would let through.
     pub fn from_name(name: &str) -> Self {
-        match name {
+        let name = name.trim();
+        match name.to_ascii_lowercase().as_str() {
             "dev" | "development" => Self::Development,
             "prod" | "production" => Self::Production,
             "test" | "testing" => Self::Test,
-            other => Self::Custom(other.to_string()),
+            _ => Self::Custom(name.to_string()),
         }
     }
 

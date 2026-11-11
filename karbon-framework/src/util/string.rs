@@ -67,11 +67,7 @@ impl StringHelper {
 
     /// Title case: capitalize the first letter of each word
     pub fn title_case(value: &str) -> String {
-        value
-            .split_whitespace()
-            .map(Self::capitalize)
-            .collect::<Vec<_>>()
-            .join(" ")
+        value.split_whitespace().map(Self::capitalize).collect::<Vec<_>>().join(" ")
     }
 
     /// Convert to camelCase
@@ -234,10 +230,7 @@ mod tests {
     fn test_truncate() {
         assert_eq!(StringHelper::truncate("Hello World", 5, None), "Hello...");
         assert_eq!(StringHelper::truncate("Hi", 5, None), "Hi");
-        assert_eq!(
-            StringHelper::truncate("Hello World", 5, Some("…")),
-            "Hello…"
-        );
+        assert_eq!(StringHelper::truncate("Hello World", 5, Some("…")), "Hello…");
     }
 
     #[test]
@@ -298,10 +291,7 @@ mod tests {
 
     #[test]
     fn test_mask_email() {
-        assert_eq!(
-            StringHelper::mask_email("user@example.com"),
-            "us***@***.com"
-        );
+        assert_eq!(StringHelper::mask_email("user@example.com"), "us***@***.com");
         assert_eq!(StringHelper::mask_email("a@b.io"), "a***@***.io");
     }
 
@@ -322,11 +312,7 @@ mod tests {
             ("\u{130}\u{130}\u{130}\u{130} foo", "...foo"), // 2 -> 3 bytes
             ("\u{212A}\u{212A}\u{212A} foo bar", "...foo..."), // 3 -> 1 byte: mid-character
         ] {
-            assert_eq!(
-                StringHelper::excerpt(text, "foo", 0, None),
-                expected,
-                "{text:?}"
-            );
+            assert_eq!(StringHelper::excerpt(text, "foo", 0, None), expected, "{text:?}");
         }
         // The match is case-insensitive and the excerpt keeps the original casing.
         assert!(StringHelper::excerpt("Hello FOO world", "foo", 3, None).contains("FOO"));
@@ -348,10 +334,7 @@ mod tests {
 
     #[test]
     fn test_strip_tags() {
-        assert_eq!(
-            StringHelper::strip_tags("<p>Hello <b>World</b></p>"),
-            "Hello World"
-        );
+        assert_eq!(StringHelper::strip_tags("<p>Hello <b>World</b></p>"), "Hello World");
         assert_eq!(StringHelper::strip_tags("No tags here"), "No tags here");
     }
 
@@ -371,10 +354,7 @@ mod tests {
     fn test_trim_non_empty() {
         assert_eq!(StringHelper::trim_non_empty("  a b  "), Some("a b"));
         assert_eq!(StringHelper::trim_non_empty("   "), None);
-        assert_eq!(
-            StringHelper::trim_non_empty_owned(Some(" x ")),
-            Some("x".to_string())
-        );
+        assert_eq!(StringHelper::trim_non_empty_owned(Some(" x ")), Some("x".to_string()));
         assert_eq!(StringHelper::trim_non_empty_owned(None), None);
     }
 }

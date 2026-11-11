@@ -18,7 +18,7 @@
 <p>Projects scaffolded with <code>--local</code> enable it automatically. On startup you'll see:</p>
 <pre>⚡ Studio → http://localhost:3005/_studio?token=…</pre>
 <div class="note">
-<p>In development the token requirement is relaxed — the printed links work without it. Studio binds to localhost only and is disabled in production (the code isn't compiled without the feature).</p>
+<p>From a browser on the same machine (<code>http://localhost</code>), a debug build opens Studio without the token. Anything else needs it: another device on your network, a custom hostname, or a release build — use the link printed at startup. Studio is not mounted in a release build unless you ask for it.</p>
 </div>
 
 <h2>Tabs</h2>

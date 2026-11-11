@@ -5,11 +5,7 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
-    println!(
-        "\n{}  {} — production build\n",
-        "▲ karbon".bold().red(),
-        config.app.name.bold()
-    );
+    println!("\n{}  {} — production build\n", "▲ karbon".bold().red(), config.app.name.bold());
 
     let total: Instant = Instant::now();
 
@@ -22,11 +18,7 @@ pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
     build_backend(config, root)?;
 
     let elapsed: Duration = total.elapsed();
-    println!(
-        "\n  {} Build complete in {:.1}s\n",
-        "✓".green().bold(),
-        elapsed.as_secs_f64()
-    );
+    println!("\n  {} Build complete in {:.1}s\n", "✓".green().bold(), elapsed.as_secs_f64());
 
     Ok(())
 }
@@ -47,11 +39,7 @@ fn build_frontend(config: &KarbonConfig, root: &Path) -> Result<(), String> {
     let parts: Vec<&str> = frontend.build_cmd.split_whitespace().collect();
     run_cmd(parts[0], &parts[1..], &frontend_dir)?;
 
-    println!(
-        "  {} Frontend built in {:.1}s",
-        "✓".green(),
-        start.elapsed().as_secs_f64()
-    );
+    println!("  {} Frontend built in {:.1}s", "✓".green(), start.elapsed().as_secs_f64());
     Ok(())
 }
 
@@ -64,12 +52,7 @@ fn build_backend(config: &KarbonConfig, root: &Path) -> Result<(), String> {
 
         run_cmd("cargo", &["build", "--release", "-p", pkg], root)?;
 
-        println!(
-            "  {} {} built in {:.1}s",
-            "✓".green(),
-            pkg,
-            start.elapsed().as_secs_f64()
-        );
+        println!("  {} {} built in {:.1}s", "✓".green(), pkg, start.elapsed().as_secs_f64());
     }
     Ok(())
 }
@@ -84,11 +67,7 @@ fn run_cmd(cmd: &str, args: &[&str], dir: &Path) -> Result<(), String> {
         .map_err(|e| format!("Failed to run `{cmd}`: {e}"))?;
 
     if !status.success() {
-        return Err(format!(
-            "`{cmd} {}` failed with exit code {:?}",
-            args.join(" "),
-            status.code()
-        ));
+        return Err(format!("`{cmd} {}` failed with exit code {:?}", args.join(" "), status.code()));
     }
     Ok(())
 }

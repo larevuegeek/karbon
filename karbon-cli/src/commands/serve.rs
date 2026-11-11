@@ -6,11 +6,7 @@ use std::path::Path;
 use std::process::Child;
 
 pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
-    println!(
-        "\n{}  {} — production\n",
-        "▲ karbon".bold().red(),
-        config.app.name.bold()
-    );
+    println!("\n{}  {} — production\n", "▲ karbon".bold().red(), config.app.name.bold());
 
     let mut children: Vec<Child> = Vec::new();
 
@@ -29,14 +25,8 @@ pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
     println!(
         "\n  {} Application running → {}  ({})",
         "●".green().bold(),
-        format!("http://localhost:{}", config.backend.port)
-            .cyan()
-            .bold(),
-        if has_frontend {
-            "single port"
-        } else {
-            "API-only"
-        }
+        format!("http://localhost:{}", config.backend.port).cyan().bold(),
+        if has_frontend { "single port" } else { "API-only" }
     );
     if has_frontend {
         println!("    {} /api/*   → Rust (Axum)", "├".dimmed());
@@ -57,10 +47,7 @@ fn start_frontend_ssr(config: &KarbonConfig, root: &Path) -> Result<Child, Strin
     let build_dir = frontend_dir.join("build");
 
     if !build_dir.exists() {
-        return Err(format!(
-            "Frontend build not found at {}. Run `karbon build` first.",
-            build_dir.display()
-        ));
+        return Err(format!("Frontend build not found at {}. Run `karbon build` first.", build_dir.display()));
     }
 
     let parts: Vec<&str> = frontend.serve_cmd.split_whitespace().collect();
@@ -70,11 +57,7 @@ fn start_frontend_ssr(config: &KarbonConfig, root: &Path) -> Result<Child, Strin
     let mut env = HashMap::new();
     env.insert("PORT".to_string(), frontend.port.to_string());
 
-    println!(
-        "  {} Frontend SSR (internal) → :{} ",
-        "→".blue(),
-        frontend.port
-    );
+    println!("  {} Frontend SSR (internal) → :{} ", "→".blue(), frontend.port);
 
     spawn_command_with_env(parts[0], &args, &frontend_dir, "frontend-ssr", &env)
 }
@@ -83,30 +66,20 @@ fn start_backend(config: &KarbonConfig, root: &Path) -> Result<Child, String> {
     let binary = crate::cargo_target::binary_path(root, "release", &config.backend.package, true);
 
     if !binary.exists() {
-        return Err(format!(
-            "Backend binary not found at {}. Run `karbon build` first.",
-            binary.display()
-        ));
+        return Err(format!("Backend binary not found at {}. Run `karbon build` first.", binary.display()));
     }
 
     // Pass frontend URL to the backend so it enables reverse proxy (only if a
     // frontend is configured — backend-only projects serve everything directly).
     let mut env = HashMap::new();
     if let Some(frontend) = &config.frontend {
-        env.insert(
-            "KARBON_FRONTEND_URL".to_string(),
-            format!("http://localhost:{}", frontend.port),
-        );
+        env.insert("KARBON_FRONTEND_URL".to_string(), format!("http://localhost:{}", frontend.port));
     }
 
     println!(
         "  {} Backend{} → :{}",
         "→".blue(),
-        if config.frontend.is_some() {
-            " API + Proxy   "
-        } else {
-            " API           "
-        },
+        if config.frontend.is_some() { " API + Proxy   " } else { " API           " },
         config.backend.port
     );
 

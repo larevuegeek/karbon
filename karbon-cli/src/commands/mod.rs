@@ -7,5 +7,6 @@ pub mod generate;
 pub mod maintenance;
 pub mod migrate;
 pub mod new;
+pub mod secret;
 pub mod serve;
 pub mod sql_script;

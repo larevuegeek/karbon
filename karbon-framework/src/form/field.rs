@@ -93,15 +93,8 @@ impl Field {
     pub fn checkbox(name: &str, label: &str) -> Self {
         Self::base(name, label, FieldKind::Checkbox)
     }
-    pub fn select<K: Into<String>, V: Into<String>>(
-        name: &str,
-        label: &str,
-        options: Vec<(K, V)>,
-    ) -> Self {
-        let opts = options
-            .into_iter()
-            .map(|(k, v)| (k.into(), v.into()))
-            .collect();
+    pub fn select<K: Into<String>, V: Into<String>>(name: &str, label: &str, options: Vec<(K, V)>) -> Self {
+        let opts = options.into_iter().map(|(k, v)| (k.into(), v.into())).collect();
         Self::base(name, label, FieldKind::Select(opts))
     }
 
@@ -162,19 +155,11 @@ impl Field {
     /// Render the field's HTML (label + control + errors).
     pub(crate) fn render(&self) -> String {
         if matches!(self.kind, FieldKind::Hidden) {
-            return format!(
-                "<input type=\"hidden\" name=\"{}\" value=\"{}\">",
-                esc(&self.name),
-                esc(&self.value)
-            );
+            return format!("<input type=\"hidden\" name=\"{}\" value=\"{}\">", esc(&self.name), esc(&self.value));
         }
 
         let mut out = String::new();
-        let invalid = if self.errors.is_empty() {
-            ""
-        } else {
-            " has-error"
-        };
+        let invalid = if self.errors.is_empty() { "" } else { " has-error" };
         out.push_str(&format!("<div class=\"form-field{invalid}\">"));
 
         if !matches!(self.kind, FieldKind::Checkbox) {
@@ -189,11 +174,7 @@ impl Field {
         out.push_str(&self.render_control());
 
         if matches!(self.kind, FieldKind::Checkbox) {
-            out.push_str(&format!(
-                " <label for=\"{}\">{}</label>",
-                esc(&self.name),
-                esc(&self.label)
-            ));
+            out.push_str(&format!(" <label for=\"{}\">{}</label>", esc(&self.name), esc(&self.label)));
         }
 
         if let Some(help) = &self.help {
@@ -225,11 +206,7 @@ impl Field {
                 esc(&self.value)
             ),
             FieldKind::Checkbox => {
-                let checked = if is_truthy(&self.value) {
-                    " checked"
-                } else {
-                    ""
-                };
+                let checked = if is_truthy(&self.value) { " checked" } else { "" };
                 format!(
                     "<input type=\"checkbox\" id=\"{}\" name=\"{}\" value=\"1\"{}>",
                     esc(&self.name),
@@ -238,20 +215,10 @@ impl Field {
                 )
             }
             FieldKind::Select(options) => {
-                let mut s = format!(
-                    "<select id=\"{}\" name=\"{}\"{}>",
-                    esc(&self.name),
-                    esc(&self.name),
-                    req
-                );
+                let mut s = format!("<select id=\"{}\" name=\"{}\"{}>", esc(&self.name), esc(&self.name), req);
                 for (val, label) in options {
                     let selected = if *val == self.value { " selected" } else { "" };
-                    s.push_str(&format!(
-                        "<option value=\"{}\"{}>{}</option>",
-                        esc(val),
-                        selected,
-                        esc(label)
-                    ));
+                    s.push_str(&format!("<option value=\"{}\"{}>{}</option>", esc(val), selected, esc(label)));
                 }
                 s.push_str("</select>");
                 s

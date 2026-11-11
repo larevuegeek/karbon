@@ -31,9 +31,7 @@ impl TestApp {
     pub async fn spawn(router: axum::Router<AppState>) -> Self {
         crate::config::load_env();
         let config = Config::from_env();
-        let db = Database::connect(&config)
-            .await
-            .expect("Failed to connect to test database");
+        let db = Database::connect(&config).await.expect("Failed to connect to test database");
 
         let pool = db.pool().clone();
 
@@ -48,8 +46,8 @@ impl TestApp {
             config,
             mailer,
             role_hierarchy: {
-                let (hierarchy, _) = crate::security::resolve_app_hierarchy(None)
-                    .expect("invalid config/security.yaml");
+                let (hierarchy, _) =
+                    crate::security::resolve_app_hierarchy(None).expect("invalid config/security.yaml");
                 crate::security::activate_hierarchy(hierarchy.clone());
                 hierarchy
             },
@@ -59,18 +57,11 @@ impl TestApp {
 
         let router = router.with_state(state);
 
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("Failed to bind test listener");
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind test listener");
         let addr = listener.local_addr().unwrap();
 
         tokio::spawn(async move {
-            if let Err(e) = axum::serve(
-                listener,
-                router.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .await
-            {
+            if let Err(e) = axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await {
                 tracing::error!("Test server error: {e}");
             }
         });

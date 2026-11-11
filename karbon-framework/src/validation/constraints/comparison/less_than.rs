@@ -11,11 +11,7 @@ pub struct LessThan {
 
 impl LessThan {
     pub fn new(value: f64) -> Self {
-        Self {
-            value,
-            message: "This value should be less than {{ compared_value }}.".to_string(),
-            or_equal: false,
-        }
+        Self { value, message: "This value should be less than {{ compared_value }}.".to_string(), or_equal: false }
     }
 
     /// LessThanOrEqual variant
@@ -35,17 +31,12 @@ impl LessThan {
 
 impl NumericConstraint for LessThan {
     fn validate_f64(&self, value: f64) -> ConstraintResult {
-        let valid = if self.or_equal {
-            value <= self.value
-        } else {
-            value < self.value
-        };
+        let valid = if self.or_equal { value <= self.value } else { value < self.value };
 
         if !valid {
             return Err(ConstraintViolation::new(
                 self.name(),
-                self.message
-                    .replace("{{ compared_value }}", &self.value.to_string()),
+                self.message.replace("{{ compared_value }}", &self.value.to_string()),
                 value.to_string(),
             ));
         }

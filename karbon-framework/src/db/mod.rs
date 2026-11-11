@@ -100,8 +100,7 @@ pub fn is_valid_identifier(s: &str) -> bool {
     if s.is_empty() || s.len() > 128 {
         return false;
     }
-    s.split('.')
-        .all(|seg| seg == "*" || valid_ident_segment(seg))
+    s.split('.').all(|seg| seg == "*" || valid_ident_segment(seg))
 }
 
 /// Whitelist an ORDER BY direction; returns the canonical uppercase form or `None`.
@@ -137,12 +136,7 @@ pub fn placeholder(_n: usize) -> String {
 pub fn insert_sql(table: &str, columns: &[&str]) -> String {
     let placeholders: Vec<String> = (1..=columns.len()).map(placeholder).collect();
 
-    let base = format!(
-        "INSERT INTO {} ({}) VALUES ({})",
-        table,
-        columns.join(", "),
-        placeholders.join(", ")
-    );
+    let base = format!("INSERT INTO {} ({}) VALUES ({})", table, columns.join(", "), placeholders.join(", "));
 
     #[cfg(any(feature = "mysql", feature = "sqlite"))]
     {

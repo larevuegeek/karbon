@@ -34,27 +34,16 @@ impl TemplateEngine {
         // Tera 2 splits construction from loading: `Tera::new()` takes no argument and
         // `load_from_glob` (feature `glob_fs`) walks the directory.
         let mut tera = Tera::new();
-        tera.load_from_glob(&glob).map_err(|e| {
-            AppError::Internal(format!(
-                "Failed to load templates from '{}': {}",
-                template_dir, e
-            ))
-        })?;
+        tera.load_from_glob(&glob)
+            .map_err(|e| AppError::Internal(format!("Failed to load templates from '{}': {}", template_dir, e)))?;
 
         // Register custom filters
         filters::register_all(&mut tera);
 
         let names: Vec<_> = tera.get_template_names().collect();
-        tracing::info!(
-            "Template engine loaded {} templates from '{}'",
-            names.len(),
-            template_dir
-        );
+        tracing::info!("Template engine loaded {} templates from '{}'", names.len(), template_dir);
 
-        Ok(Self {
-            tera: Arc::new(tera),
-            template_dir: template_dir.to_string(),
-        })
+        Ok(Self { tera: Arc::new(tera), template_dir: template_dir.to_string() })
     }
 
     /// Create an empty template engine (no templates loaded).
@@ -62,10 +51,7 @@ impl TemplateEngine {
     pub fn empty() -> Self {
         let mut tera = Tera::new();
         filters::register_all(&mut tera);
-        Self {
-            tera: Arc::new(tera),
-            template_dir: String::new(),
-        }
+        Self { tera: Arc::new(tera), template_dir: String::new() }
     }
 
     /// Create a new Tera context with common variables pre-set.
@@ -87,9 +73,9 @@ impl TemplateEngine {
 
     /// Render a template to a string.
     pub fn render(&self, template_name: &str, context: &Context) -> AppResult<String> {
-        self.tera.render(template_name, context).map_err(|e| {
-            AppError::Internal(format!("Template render error '{}': {}", template_name, e))
-        })
+        self.tera
+            .render(template_name, context)
+            .map_err(|e| AppError::Internal(format!("Template render error '{}': {}", template_name, e)))
     }
 
     /// Render a template from a raw string (not from file).
@@ -182,10 +168,7 @@ impl TemplateEngine {
 
     /// List all loaded template names.
     pub fn template_names(&self) -> Vec<String> {
-        self.tera
-            .get_template_names()
-            .map(|s| s.to_string())
-            .collect()
+        self.tera.get_template_names().map(|s| s.to_string()).collect()
     }
 
     /// Get the template directory path.
@@ -215,8 +198,7 @@ impl Renderer for TemplateEngine {
     fn render_str(&self, source: &str, context: &Value) -> AppResult<String> {
         let ctx = Context::from_serialize(context)
             .map_err(|e| AppError::Internal(format!("Invalid template context: {e}")))?;
-        Tera::one_off(source, &ctx, false)
-            .map_err(|e| AppError::Internal(format!("Template string render error: {e}")))
+        Tera::one_off(source, &ctx, false).map_err(|e| AppError::Internal(format!("Template string render error: {e}")))
     }
 
     fn has_template(&self, name: &str) -> bool {

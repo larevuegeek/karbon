@@ -101,31 +101,18 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
 
     /// Retourne le filtre soft delete si activé
     fn soft_filter() -> &'static str {
-        if Self::SOFT_DELETE {
-            " AND deleted_at IS NULL"
-        } else {
-            ""
-        }
+        if Self::SOFT_DELETE { " AND deleted_at IS NULL" } else { "" }
     }
 
     fn soft_where() -> &'static str {
-        if Self::SOFT_DELETE {
-            " WHERE deleted_at IS NULL"
-        } else {
-            ""
-        }
+        if Self::SOFT_DELETE { " WHERE deleted_at IS NULL" } else { "" }
     }
 
     // ─── Par ID ───
 
     fn find_by_id(pool: &DbPool, id: i64) -> impl Future<Output = AppResult<Option<Self>>> + Send {
         async move {
-            let query = format!(
-                "SELECT * FROM {} WHERE id = {}{}",
-                Self::TABLE,
-                placeholder(1),
-                Self::soft_filter()
-            );
+            let query = format!("SELECT * FROM {} WHERE id = {}{}", Self::TABLE, placeholder(1), Self::soft_filter());
             let result = sqlx::query_as::<Db, Self>(AssertSqlSafe(query))
                 .bind(id)
                 .fetch_optional(pool)
@@ -136,10 +123,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
 
     // ─── Par slug ───
 
-    fn find_by_slug(
-        pool: &DbPool,
-        slug: &str,
-    ) -> impl Future<Output = AppResult<Option<Self>>> + Send {
+    fn find_by_slug(pool: &DbPool, slug: &str) -> impl Future<Output = AppResult<Option<Self>>> + Send {
         async move {
             if !Self::HAS_SLUG {
                 return Err(crate::error::AppError::Internal(format!(
@@ -147,12 +131,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
                     Self::TABLE
                 )));
             }
-            let query = format!(
-                "SELECT * FROM {} WHERE slug = {}{}",
-                Self::TABLE,
-                placeholder(1),
-                Self::soft_filter()
-            );
+            let query = format!("SELECT * FROM {} WHERE slug = {}{}", Self::TABLE, placeholder(1), Self::soft_filter());
             let result = sqlx::query_as::<Db, Self>(AssertSqlSafe(query))
                 .bind(slug)
                 .fetch_optional(pool)
@@ -173,16 +152,9 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
 
     fn exists(pool: &DbPool, id: i64) -> impl Future<Output = AppResult<bool>> + Send {
         async move {
-            let query = format!(
-                "SELECT COUNT(*) FROM {} WHERE id = {}{}",
-                Self::TABLE,
-                placeholder(1),
-                Self::soft_filter()
-            );
-            let (count,): (i64,) = sqlx::query_as(AssertSqlSafe(query))
-                .bind(id)
-                .fetch_one(pool)
-                .await?;
+            let query =
+                format!("SELECT COUNT(*) FROM {} WHERE id = {}{}", Self::TABLE, placeholder(1), Self::soft_filter());
+            let (count,): (i64,) = sqlx::query_as(AssertSqlSafe(query)).bind(id).fetch_one(pool).await?;
             Ok(count > 0)
         }
     }
@@ -199,22 +171,14 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
                     .execute(pool)
                     .await
             } else {
-                DeleteBuilder::from(Self::TABLE)
-                    .where_eq("id", id)
-                    .execute(pool)
-                    .await
+                DeleteBuilder::from(Self::TABLE).where_eq("id", id).execute(pool).await
             }
         }
     }
 
     /// Suppression définitive (ignore SOFT_DELETE).
     fn force_delete(pool: &DbPool, id: i64) -> impl Future<Output = AppResult<u64>> + Send {
-        async move {
-            DeleteBuilder::from(Self::TABLE)
-                .where_eq("id", id)
-                .execute(pool)
-                .await
-        }
+        async move { DeleteBuilder::from(Self::TABLE).where_eq("id", id).execute(pool).await }
     }
 
     /// Restaure une entité soft-deleted.
@@ -240,17 +204,12 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
     /// let users = User::find_all(pool, None).await?;
     /// let categories = Category::find_all(pool, Some(("name", "ASC"))).await?;
     /// ```
-    fn find_all(
-        pool: &DbPool,
-        order: Option<(&str, &str)>,
-    ) -> impl Future<Output = AppResult<Vec<Self>>> + Send {
+    fn find_all(pool: &DbPool, order: Option<(&str, &str)>) -> impl Future<Output = AppResult<Vec<Self>>> + Send {
         let base = format!("SELECT * FROM {}{}", Self::TABLE, Self::soft_where());
         let clause = order_clause(order);
         async move {
             let query = format!("{}{}", base, clause?);
-            let items = sqlx::query_as::<Db, Self>(AssertSqlSafe(query))
-                .fetch_all(pool)
-                .await?;
+            let items = sqlx::query_as::<Db, Self>(AssertSqlSafe(query)).fetch_all(pool).await?;
             Ok(items)
         }
     }
@@ -264,9 +223,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         let clause = order_clause(order);
         async move {
             let query = format!("{}{}", base, clause?);
-            let items = sqlx::query_as::<Db, Self>(AssertSqlSafe(query))
-                .fetch_all(pool)
-                .await?;
+            let items = sqlx::query_as::<Db, Self>(AssertSqlSafe(query)).fetch_all(pool).await?;
             Ok(items)
         }
     }
@@ -319,11 +276,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
     /// let comments = Comment::has_many(pool, "post_id", post.id).await?;
     /// ```
     /// (Le côté **belongs-to** est simplement `Parent::find_by_id(pool, child.parent_id)`.)
-    fn has_many(
-        pool: &DbPool,
-        foreign_key: &str,
-        owner_id: i64,
-    ) -> impl Future<Output = AppResult<Vec<Self>>> + Send {
+    fn has_many(pool: &DbPool, foreign_key: &str, owner_id: i64) -> impl Future<Output = AppResult<Vec<Self>>> + Send {
         async move { Self::find_all_where(pool, &[(foreign_key, owner_id.into())], None).await }
     }
 
@@ -388,13 +341,10 @@ fn order_clause(order: Option<(&str, &str)>) -> AppResult<String> {
         None => Ok(String::new()),
         Some((col, dir)) => {
             if !crate::db::is_valid_identifier(col) {
-                return Err(crate::error::AppError::BadRequest(format!(
-                    "Invalid order column: {col}"
-                )));
+                return Err(crate::error::AppError::BadRequest(format!("Invalid order column: {col}")));
             }
-            let dir = crate::db::normalize_direction(dir).ok_or_else(|| {
-                crate::error::AppError::BadRequest(format!("Invalid order direction: {dir}"))
-            })?;
+            let dir = crate::db::normalize_direction(dir)
+                .ok_or_else(|| crate::error::AppError::BadRequest(format!("Invalid order direction: {dir}")))?;
             Ok(format!(" ORDER BY {} {}", col, dir))
         }
     }
@@ -409,9 +359,7 @@ fn build_where_query(
     // Validate every column identifier before it reaches the SQL string.
     for (col, _) in conditions {
         if !crate::db::is_valid_identifier(col) {
-            return Err(crate::error::AppError::BadRequest(format!(
-                "Invalid column identifier: {col}"
-            )));
+            return Err(crate::error::AppError::BadRequest(format!("Invalid column identifier: {col}")));
         }
     }
     let mut clauses: Vec<String> = conditions

@@ -1,15 +1,15 @@
 //! # Template engines
 //!
-//! Server-side rendering behind a backend-agnostic [`Renderer`] trait, with two
-//! interchangeable backends selected by feature flag:
+//! Server-side rendering behind a backend-agnostic [`Renderer`] trait.
 //!
-//! - **`templates`** → [`TemplateEngine`] (Tera), with custom filters and
-//!   integrated email sending.
-//! - **`minijinja`** → [`MinijinjaEngine`] (minijinja).
+//! - **`templates`** → [`TemplateEngine`] (Tera). **The supported engine**: custom
+//!   filters, email sending, and the one `AppState.templates` holds. Pick this one.
+//! - **`minijinja`** → [`MinijinjaEngine`] and **`native-templates`** → [`NativeEngine`]
+//!   (in-house, dependency-free) are **experimental**: they implement [`Renderer`], but
+//!   their feature set and API may change or go away in a minor release.
 //!
-//! Both use Jinja2/Twig syntax. Application code can depend on `Arc<dyn Renderer>`
-//! to stay backend-independent; a future in-house engine will implement the same
-//! trait.
+//! All use Jinja2/Twig syntax. Application code can depend on `Arc<dyn Renderer>` to stay
+//! backend-independent.
 //!
 //! ```ignore
 //! {% extends "layouts/base.html" %}

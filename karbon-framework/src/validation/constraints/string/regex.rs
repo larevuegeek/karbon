@@ -73,11 +73,7 @@ mod tests {
     fn test_not_matching() {
         let constraint = Regex::new(r"<script").should_match(false);
         assert!(constraint.validate("hello world").is_ok());
-        assert!(
-            constraint
-                .validate("<script>alert('xss')</script>")
-                .is_err()
-        );
+        assert!(constraint.validate("<script>alert('xss')</script>").is_err());
     }
 
     #[test]

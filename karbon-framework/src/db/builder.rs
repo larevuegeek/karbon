@@ -5,12 +5,7 @@ use crate::error::{AppError, AppResult};
 
 /// `column IN (?, …)` en liant chaque valeur ; une liste vide donne `1 = 0` (ne correspond à
 /// rien) plutôt qu'un `IN ()` invalide.
-fn in_clause<T>(
-    column: &str,
-    values: &[T],
-    args: &mut DbArguments,
-    param_count: &mut usize,
-) -> String
+fn in_clause<T>(column: &str, values: &[T], args: &mut DbArguments, param_count: &mut usize) -> String
 where
     T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + Clone + 'static,
 {
@@ -51,11 +46,7 @@ pub struct InsertBuilder {
 
 impl InsertBuilder {
     pub fn into(table: &str) -> Self {
-        Self {
-            table: table.to_string(),
-            columns: Vec::new(),
-            args: DbArguments::default(),
-        }
+        Self { table: table.to_string(), columns: Vec::new(), args: DbArguments::default() }
     }
 
     /// Add a column with a bound value
@@ -86,12 +77,8 @@ impl InsertBuilder {
         let placeholders: Vec<String> = (1..=self.columns.len()).map(placeholder).collect();
 
         #[cfg(any(feature = "mysql", feature = "sqlite"))]
-        let sql = format!(
-            "INSERT INTO {} ({}) VALUES ({})",
-            self.table,
-            self.columns.join(", "),
-            placeholders.join(", ")
-        );
+        let sql =
+            format!("INSERT INTO {} ({}) VALUES ({})", self.table, self.columns.join(", "), placeholders.join(", "));
 
         #[cfg(feature = "postgres")]
         let sql = format!(
@@ -103,26 +90,20 @@ impl InsertBuilder {
 
         #[cfg(feature = "mysql")]
         {
-            let result = sqlx::query_with(AssertSqlSafe(sql), self.args)
-                .execute(executor)
-                .await?;
+            let result = sqlx::query_with(AssertSqlSafe(sql), self.args).execute(executor).await?;
             Ok(result.last_insert_id())
         }
 
         #[cfg(feature = "sqlite")]
         {
-            let result = sqlx::query_with(AssertSqlSafe(sql), self.args)
-                .execute(executor)
-                .await?;
+            let result = sqlx::query_with(AssertSqlSafe(sql), self.args).execute(executor).await?;
             Ok(result.last_insert_rowid() as u64)
         }
 
         #[cfg(feature = "postgres")]
         {
             use sqlx::Row;
-            let row = sqlx::query_with(AssertSqlSafe(sql), self.args)
-                .fetch_one(executor)
-                .await?;
+            let row = sqlx::query_with(AssertSqlSafe(sql), self.args).fetch_one(executor).await?;
             let id: i64 = row.get(0);
             Ok(id as u64)
         }
@@ -162,20 +143,14 @@ const BIND: char = '\u{0}';
 
 impl Clause {
     fn raw(sql: String) -> Self {
-        Self {
-            sql,
-            binders: Vec::new(),
-        }
+        Self { sql, binders: Vec::new() }
     }
 
     fn bound<T>(sql: String, value: T) -> Self
     where
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
-        Self {
-            sql,
-            binders: vec![binder(value)],
-        }
+        Self { sql, binders: vec![binder(value)] }
     }
 }
 
@@ -208,15 +183,13 @@ impl UpdateBuilder {
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
         self.param_count += 1;
-        self.set_clauses
-            .push(Clause::bound(format!("{column} = {BIND}"), value));
+        self.set_clauses.push(Clause::bound(format!("{column} = {BIND}"), value));
         self
     }
 
     /// SET column = <raw SQL expression> (e.g. NULL, column + 1)
     pub fn set_raw(mut self, column: &str, expr: &str) -> Self {
-        self.set_clauses
-            .push(Clause::raw(format!("{column} = {expr}")));
+        self.set_clauses.push(Clause::raw(format!("{column} = {expr}")));
         self
     }
 
@@ -328,10 +301,8 @@ impl UpdateBuilder {
     /// WHERE column < now − `age`, by the database clock. The age is bound, in seconds.
     pub fn where_older_than(mut self, column: &str, age: std::time::Duration) -> Self {
         self.param_count += 1;
-        self.where_clauses.push(Clause::bound(
-            format!("{column} < {}", older_than_sql(&BIND.to_string())),
-            age_seconds(age),
-        ));
+        self.where_clauses
+            .push(Clause::bound(format!("{column} < {}", older_than_sql(&BIND.to_string())), age_seconds(age)));
         self
     }
 
@@ -415,10 +386,7 @@ impl UpdateBuilder {
         E: sqlx::Executor<'e, Database = Db>,
     {
         if let Some(error) = self.error {
-            return Err(AppError::Internal(format!(
-                "UPDATE {}: {error}",
-                self.table
-            )));
+            return Err(AppError::Internal(format!("UPDATE {}: {error}", self.table)));
         }
         if self.set_clauses.is_empty() {
             return Ok(0);
@@ -439,9 +407,7 @@ impl UpdateBuilder {
             }
         }
 
-        let result = sqlx::query_with(AssertSqlSafe(sql), args)
-            .execute(executor)
-            .await?;
+        let result = sqlx::query_with(AssertSqlSafe(sql), args).execute(executor).await?;
 
         Ok(result.rows_affected())
     }
@@ -451,8 +417,7 @@ impl UpdateBuilder {
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
         self.param_count += 1;
-        self.where_clauses
-            .push(Clause::bound(format!("{column} {op} {BIND}"), value));
+        self.where_clauses.push(Clause::bound(format!("{column} {op} {BIND}"), value));
         self
     }
 }
@@ -595,11 +560,7 @@ impl DeleteBuilder {
     /// Requête SQL générée (sans les valeurs).
     pub fn to_sql(&self) -> String {
         #[allow(unused_mut)]
-        let mut sql = format!(
-            "DELETE FROM {}{}",
-            self.table,
-            where_sql(&self.where_clauses)
-        );
+        let mut sql = format!("DELETE FROM {}{}", self.table, where_sql(&self.where_clauses));
 
         #[cfg(feature = "mysql")]
         if let Some(limit) = self.limit {
@@ -623,9 +584,7 @@ impl DeleteBuilder {
 
         let sql = self.to_sql();
 
-        let result = sqlx::query_with(AssertSqlSafe(sql), self.args)
-            .execute(executor)
-            .await?;
+        let result = sqlx::query_with(AssertSqlSafe(sql), self.args).execute(executor).await?;
 
         Ok(result.rows_affected())
     }
@@ -635,12 +594,8 @@ impl DeleteBuilder {
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + 'static,
     {
         self.param_count += 1;
-        self.where_clauses.push(format!(
-            "{} {} {}",
-            column,
-            op,
-            placeholder(self.param_count)
-        ));
+        self.where_clauses
+            .push(format!("{} {} {}", column, op, placeholder(self.param_count)));
         self.args.add(value).unwrap();
         self
     }
@@ -693,12 +648,7 @@ pub struct CountBuilder {
 
 impl CountBuilder {
     pub fn from(table: &str) -> Self {
-        Self {
-            table: table.to_string(),
-            where_clauses: Vec::new(),
-            args: DbArguments::default(),
-            param_count: 0,
-        }
+        Self { table: table.to_string(), where_clauses: Vec::new(), args: DbArguments::default(), param_count: 0 }
     }
 
     /// WHERE column = ?
@@ -743,11 +693,7 @@ impl CountBuilder {
 
     /// Requête SQL générée (sans les valeurs).
     pub fn to_sql(&self) -> String {
-        format!(
-            "SELECT COUNT(*) FROM {}{}",
-            self.table,
-            where_sql(&self.where_clauses)
-        )
+        format!("SELECT COUNT(*) FROM {}{}", self.table, where_sql(&self.where_clauses))
     }
 
     /// Execute the COUNT and return the result
@@ -757,9 +703,7 @@ impl CountBuilder {
     {
         let sql = self.to_sql();
 
-        let (count,): (i64,) = sqlx::query_as_with(AssertSqlSafe(sql), self.args)
-            .fetch_one(executor)
-            .await?;
+        let (count,): (i64,) = sqlx::query_as_with(AssertSqlSafe(sql), self.args).fetch_one(executor).await?;
 
         Ok(count)
     }
@@ -843,10 +787,7 @@ mod delete_tests {
             .where_older_than("seen_at", Duration::from_secs(86_400));
         assert_eq!(
             b.to_sql(),
-            format!(
-                "DELETE FROM tokens WHERE exp < {NOW_SQL} AND seen_at < {}",
-                older_than_sql(&placeholder(1))
-            )
+            format!("DELETE FROM tokens WHERE exp < {NOW_SQL} AND seen_at < {}", older_than_sql(&placeholder(1)))
         );
         assert_eq!(b.param_count, 1);
     }
@@ -857,10 +798,7 @@ mod delete_tests {
         let b = DeleteBuilder::from("sessions")
             .where_older_than("expires_at", Duration::from_secs(60))
             .limit(20_000);
-        assert_eq!(
-            b.to_sql(),
-            "DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL ? SECOND LIMIT 20000"
-        );
+        assert_eq!(b.to_sql(), "DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL ? SECOND LIMIT 20000");
     }
 
     #[test]
@@ -943,10 +881,7 @@ mod update_tests {
     #[test]
     fn without_condition_only_all_is_explicit() {
         assert!(!UpdateBuilder::table("t").set("a", 1_i64).all_rows);
-        assert_eq!(
-            UpdateBuilder::table("t").set_raw("a", "1").all().to_sql(),
-            "UPDATE t SET a = 1"
-        );
+        assert_eq!(UpdateBuilder::table("t").set_raw("a", "1").all().to_sql(), "UPDATE t SET a = 1");
     }
 
     /// The binding order checked against a real database: `where_eq` before `set` used to
@@ -955,12 +890,10 @@ mod update_tests {
     #[tokio::test]
     async fn a_where_called_first_still_binds_after_the_set() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        sqlx::raw_sql(
-            "CREATE TABLE t (id INTEGER, name TEXT); INSERT INTO t VALUES (1, 'a'), (2, 'b');",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::raw_sql("CREATE TABLE t (id INTEGER, name TEXT); INSERT INTO t VALUES (1, 'a'), (2, 'b');")
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let changed = UpdateBuilder::table("t")
             .where_eq("id", 2_i64)
@@ -980,10 +913,7 @@ mod update_tests {
     #[cfg(feature = "mysql")]
     #[test]
     fn mysql_limit_closes_the_statement() {
-        let b = UpdateBuilder::table("r")
-            .set_raw("restart", "1")
-            .all()
-            .limit(1);
+        let b = UpdateBuilder::table("r").set_raw("restart", "1").all().limit(1);
         assert_eq!(b.to_sql(), "UPDATE r SET restart = 1 LIMIT 1");
     }
 }

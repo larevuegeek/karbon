@@ -9,11 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
 pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
-    println!(
-        "\n{}  {} — dev mode\n",
-        "▲ karbon".bold().red(),
-        config.app.name.bold()
-    );
+    println!("\n{}  {} — dev mode\n", "▲ karbon".bold().red(), config.app.name.bold());
 
     // ── Build backend first ──
     println!("  {} Compiling backend...", "⟳".yellow());
@@ -40,23 +36,11 @@ pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
         None
     };
 
-    println!(
-        "\n  {} Backend   → {}",
-        "●".green(),
-        format!("http://localhost:{}", config.backend.port).cyan()
-    );
+    println!("\n  {} Backend   → {}", "●".green(), format!("http://localhost:{}", config.backend.port).cyan());
     if let Some(frontend) = &config.frontend {
-        println!(
-            "  {} Frontend  → {}",
-            "●".green(),
-            format!("http://localhost:{}", frontend.port).cyan()
-        );
+        println!("  {} Frontend  → {}", "●".green(), format!("http://localhost:{}", frontend.port).cyan());
     }
-    println!(
-        "  {} watching {} — backend recompiles on save",
-        "↻".magenta(),
-        "app/src".dimmed()
-    );
+    println!("  {} watching {} — backend recompiles on save", "↻".magenta(), "app/src".dimmed());
     println!("\n  {} to stop\n", "Ctrl+C".bold().yellow());
 
     supervise(config, root, &mut backend, &mut frontend);
@@ -66,42 +50,24 @@ pub fn run(config: &KarbonConfig, root: &Path) -> Result<(), String> {
 /// Supervisor loop: watches the backend sources and recompiles + restarts the
 /// backend binary on change (the frontend keeps its own HMR). Also forwards
 /// Ctrl+C and exits if a watched process dies on its own.
-fn supervise(
-    config: &KarbonConfig,
-    root: &Path,
-    backend: &mut Option<Child>,
-    frontend: &mut Option<Child>,
-) {
+fn supervise(config: &KarbonConfig, root: &Path, backend: &mut Option<Child>, frontend: &mut Option<Child>) {
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || r.store(false, Ordering::SeqCst)).ok();
 
-    let watch_dir = ["app/src", "api/src"]
-        .iter()
-        .map(|d| root.join(d))
-        .find(|p| p.exists());
-    let mut last = watch_dir
-        .as_ref()
-        .map(|d| latest_mtime(d))
-        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let watch_dir = ["app/src", "api/src"].iter().map(|d| root.join(d)).find(|p| p.exists());
+    let mut last = watch_dir.as_ref().map(|d| latest_mtime(d)).unwrap_or(SystemTime::UNIX_EPOCH);
 
     while running.load(Ordering::SeqCst) {
         // A watched process died on its own (crash / stopped).
-        let backend_died = backend
-            .as_mut()
-            .is_some_and(|c| matches!(c.try_wait(), Ok(Some(_))));
+        let backend_died = backend.as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(Some(_))));
         if backend_died {
             // Likely a runtime crash; keep the dev session alive so a fix + save
             // recompiles instead of killing everything.
             *backend = None;
-            eprintln!(
-                "  {} Backend exited — fix the issue and save to reload",
-                "✗".red()
-            );
+            eprintln!("  {} Backend exited — fix the issue and save to reload", "✗".red());
         }
-        let frontend_died = frontend
-            .as_mut()
-            .is_some_and(|c| matches!(c.try_wait(), Ok(Some(_))));
+        let frontend_died = frontend.as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(Some(_))));
         if frontend_died {
             eprintln!("  {} Frontend exited — stopping", "✗".red());
             break;
@@ -131,10 +97,7 @@ fn supervise(
 
 /// Kill the running backend (so the binary is unlocked), rebuild, and restart it.
 fn reload_backend(config: &KarbonConfig, root: &Path, backend: &mut Option<Child>) {
-    println!(
-        "\n  {} Change detected — recompiling backend...",
-        "↻".magenta()
-    );
+    println!("\n  {} Change detected — recompiling backend...", "↻".magenta());
     if let Some(mut child) = backend.take() {
         kill_child(&mut child);
     }
@@ -149,10 +112,7 @@ fn reload_backend(config: &KarbonConfig, root: &Path, backend: &mut Option<Child
         .unwrap_or(false);
 
     if !ok {
-        eprintln!(
-            "  {} Build failed — fix the error and save again",
-            "✗".red()
-        );
+        eprintln!("  {} Build failed — fix the error and save again", "✗".red());
         return;
     }
 

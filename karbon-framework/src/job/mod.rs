@@ -1,3 +1,16 @@
+//! Background jobs.
+//!
+//! [`PersistentQueue`] — database-backed, survives a restart — is the job queue to use.
+//!
+//! The in-memory [`JobQueue`] and its [`Job`] trait are deprecated since 0.5.0:
+//! [`crate::message::MessageBus::dispatch_async`] does the same work (background workers,
+//! retry with backoff, dead-letter log) with plain message structs and closures. The
+//! retry policy moves from each job (`max_retries`, `retry_delay`) to the bus
+//! ([`crate::message::RetryPolicy`]).
+
+// The module still defines and tests what it deprecates.
+#![allow(deprecated)]
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -23,6 +36,10 @@ pub use persistent::{PersistentJob, PersistentQueue, PersistentQueueBuilder};
 ///     }
 /// }
 /// ```
+#[deprecated(
+    since = "0.5.0",
+    note = "use a `karbon::message::Message` handled by `MessageBus::dispatch_async`, or `PersistentJob` for jobs that must survive a restart"
+)]
 pub trait Job: Send + Sync + 'static {
     fn name(&self) -> &str;
     fn execute(&self) -> Pin<Box<dyn Future<Output = Result<(), anyhow::Error>> + Send + '_>>;
@@ -47,6 +64,10 @@ pub trait Job: Send + Sync + 'static {
 ///
 /// queue.shutdown().await; // wait for all jobs to finish
 /// ```
+#[deprecated(
+    since = "0.5.0",
+    note = "use `karbon::message::MessageBus::dispatch_async` (retry via `RetryPolicy`), or `PersistentQueue` for jobs that must survive a restart"
+)]
 pub struct JobQueue {
     sender: mpsc::Sender<Arc<dyn Job>>,
     shutdown: Option<tokio::task::JoinHandle<()>>,
@@ -109,10 +130,7 @@ impl JobQueue {
             }
         });
 
-        Self {
-            sender,
-            shutdown: Some(handle),
-        }
+        Self { sender, shutdown: Some(handle) }
     }
 
     /// Push a job to the queue for background execution

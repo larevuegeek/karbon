@@ -9,9 +9,7 @@ pub struct NotBlank {
 
 impl Default for NotBlank {
     fn default() -> Self {
-        Self {
-            message: "This value should not be blank.".to_string(),
-        }
+        Self { message: "This value should not be blank.".to_string() }
     }
 }
 

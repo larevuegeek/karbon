@@ -26,8 +26,7 @@ pub fn origin_allowed(headers: &HeaderMap, allowed: &[&str]) -> bool {
 }
 
 fn with_limits(ws: WebSocketUpgrade) -> WebSocketUpgrade {
-    ws.max_message_size(WS_MAX_MESSAGE_SIZE)
-        .max_frame_size(WS_MAX_MESSAGE_SIZE)
+    ws.max_message_size(WS_MAX_MESSAGE_SIZE).max_frame_size(WS_MAX_MESSAGE_SIZE)
 }
 
 /// Like [`websocket_handler`] but rejects the upgrade (403) unless the request `Origin`
@@ -85,11 +84,7 @@ where
 ///         websocket_handler_with_state(ws, state, chat_socket)
 ///     }))
 /// ```
-pub fn websocket_handler_with_state<S, F, Fut>(
-    ws: WebSocketUpgrade,
-    state: S,
-    handler: F,
-) -> Response
+pub fn websocket_handler_with_state<S, F, Fut>(ws: WebSocketUpgrade, state: S, handler: F) -> Response
 where
     S: Send + 'static,
     F: FnOnce(WebSocket, S) -> Fut + Send + 'static,

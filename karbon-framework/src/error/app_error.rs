@@ -144,9 +144,7 @@ impl AppError {
             Self::Validation(_) => "validation_error",
             Self::TooManyRequests(_) => "too_many_requests",
             Self::ServiceUnavailable(_) => "service_unavailable",
-            Self::Internal(_) | Self::Failure(_) | Self::Database(_) | Self::Json(_) => {
-                "internal_error"
-            }
+            Self::Internal(_) | Self::Failure(_) | Self::Database(_) | Self::Json(_) => "internal_error",
         }
     }
 
@@ -196,18 +194,11 @@ impl AppError {
 
         match body {
             ErrorBody::Typed => {
-                let body = TypedBody {
-                    error: self.error_type().to_string(),
-                    message,
-                    details: None,
-                };
+                let body = TypedBody { error: self.error_type().to_string(), message, details: None };
                 (status, axum::Json(body)).into_response()
             }
             ErrorBody::Flat => {
-                let body = FlatBody {
-                    error: message,
-                    status: status.as_u16(),
-                };
+                let body = FlatBody { error: message, status: status.as_u16() };
                 (status, axum::Json(body)).into_response()
             }
         }
@@ -270,9 +261,7 @@ impl IntoResponse for AppError {
 fn is_dev_environment() -> bool {
     crate::http::dev_mode::active()
         || matches!(
-            crate::config::Environment::from_name(
-                std::env::var("APP_ENV").unwrap_or_default().trim()
-            ),
+            crate::config::Environment::from_name(std::env::var("APP_ENV").unwrap_or_default().trim()),
             crate::config::Environment::Development | crate::config::Environment::Test
         )
 }
@@ -284,17 +273,13 @@ mod tests {
     async fn rendered(error: AppError, body: ErrorBody, is_dev: bool) -> (u16, serde_json::Value) {
         let response = error.render(body, is_dev);
         let status = response.status().as_u16();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
 
         (status, serde_json::from_slice(&bytes).unwrap())
     }
 
     fn expired_token() -> AppError {
-        AppError::from(jsonwebtoken::errors::Error::from(
-            jsonwebtoken::errors::ErrorKind::ExpiredSignature,
-        ))
+        AppError::from(jsonwebtoken::errors::Error::from(jsonwebtoken::errors::ErrorKind::ExpiredSignature))
     }
 
     /// The default body is unchanged: `error` is the type, `message` the prefixed text.
@@ -302,44 +287,27 @@ mod tests {
     async fn typed_body_is_the_default_and_unchanged() {
         assert_eq!(error_body(), ErrorBody::Typed);
 
-        let (status, body) = rendered(
-            AppError::NotFound("Contenu #3 introuvable".into()),
-            ErrorBody::Typed,
-            false,
-        )
-        .await;
+        let (status, body) =
+            rendered(AppError::NotFound("Contenu #3 introuvable".into()), ErrorBody::Typed, false).await;
 
         assert_eq!(status, 404);
-        assert_eq!(
-            body,
-            serde_json::json!({"error": "not_found", "message": "Not found: Contenu #3 introuvable"})
-        );
+        assert_eq!(body, serde_json::json!({"error": "not_found", "message": "Not found: Contenu #3 introuvable"}));
     }
 
     #[tokio::test]
     async fn flat_body_carries_the_bare_message_and_the_status() {
-        let (status, body) = rendered(
-            AppError::Conflict("Domaine déjà enregistré".into()),
-            ErrorBody::Flat,
-            false,
-        )
-        .await;
+        let (status, body) =
+            rendered(AppError::Conflict("Domaine déjà enregistré".into()), ErrorBody::Flat, false).await;
 
         assert_eq!(status, 409);
-        assert_eq!(
-            body,
-            serde_json::json!({"error": "Domaine déjà enregistré", "status": 409})
-        );
+        assert_eq!(body, serde_json::json!({"error": "Domaine déjà enregistré", "status": 409}));
     }
 
     #[tokio::test]
     async fn new_statuses_map_to_429_and_503_with_their_message() {
         for (error, status) in [
             (AppError::TooManyRequests("Trop de tentatives".into()), 429),
-            (
-                AppError::ServiceUnavailable("Registrar indisponible".into()),
-                503,
-            ),
+            (AppError::ServiceUnavailable("Registrar indisponible".into()), 503),
         ] {
             let expected = error.bare_message();
             let (got, body) = rendered(error, ErrorBody::Flat, false).await;
@@ -354,47 +322,26 @@ mod tests {
     #[tokio::test]
     async fn internal_is_masked_and_failure_is_shown() {
         for body in [ErrorBody::Typed, ErrorBody::Flat] {
-            let (_, masked) =
-                rendered(AppError::Internal("column `x` unknown".into()), body, false).await;
+            let (_, masked) = rendered(AppError::Internal("column `x` unknown".into()), body, false).await;
             let text = masked.to_string();
-            assert!(
-                text.contains(MASKED_MESSAGE) && !text.contains("column"),
-                "{text}"
-            );
+            assert!(text.contains(MASKED_MESSAGE) && !text.contains("column"), "{text}");
 
-            let (status, shown) = rendered(
-                AppError::internal("pool timeout", "Impossible de créer la commande"),
-                body,
-                false,
-            )
-            .await;
+            let (status, shown) =
+                rendered(AppError::internal("pool timeout", "Impossible de créer la commande"), body, false).await;
             let text = shown.to_string();
             assert_eq!(status, 500);
-            assert!(
-                text.contains("Impossible de créer la commande") && !text.contains("pool timeout"),
-                "{text}"
-            );
+            assert!(text.contains("Impossible de créer la commande") && !text.contains("pool timeout"), "{text}");
         }
     }
 
     #[tokio::test]
     async fn database_errors_never_reach_a_client_outside_development() {
-        let (status, body) = rendered(
-            AppError::from(sqlx::Error::RowNotFound),
-            ErrorBody::Flat,
-            false,
-        )
-        .await;
+        let (status, body) = rendered(AppError::from(sqlx::Error::RowNotFound), ErrorBody::Flat, false).await;
 
         assert_eq!(status, 500);
         assert_eq!(body["error"], MASKED_MESSAGE);
 
-        let (_, dev) = rendered(
-            AppError::from(sqlx::Error::RowNotFound),
-            ErrorBody::Flat,
-            true,
-        )
-        .await;
+        let (_, dev) = rendered(AppError::from(sqlx::Error::RowNotFound), ErrorBody::Flat, true).await;
         assert_ne!(dev["error"], MASKED_MESSAGE);
     }
 
@@ -407,28 +354,19 @@ mod tests {
             let text = rendered.to_string();
 
             assert_eq!(status, 401);
-            assert!(
-                text.contains(INVALID_TOKEN_MESSAGE) && !text.contains("Expired"),
-                "{text}"
-            );
+            assert!(text.contains(INVALID_TOKEN_MESSAGE) && !text.contains("Expired"), "{text}");
         }
     }
 
     /// For errors carried in another payload: same text as the response, never the raw detail.
     #[test]
     fn public_message_is_what_a_client_may_read() {
-        assert_eq!(
-            AppError::NotFound("Article introuvable".into()).public_message(),
-            "Article introuvable"
-        );
+        assert_eq!(AppError::NotFound("Article introuvable".into()).public_message(), "Article introuvable");
         assert_eq!(expired_token().public_message(), INVALID_TOKEN_MESSAGE);
 
         // Outside development (tests run without APP_ENV): raw errors masked.
         if !is_dev_environment() {
-            assert_eq!(
-                AppError::from(sqlx::Error::RowNotFound).public_message(),
-                MASKED_MESSAGE
-            );
+            assert_eq!(AppError::from(sqlx::Error::RowNotFound).public_message(), MASKED_MESSAGE);
         }
     }
 
@@ -444,12 +382,7 @@ mod tests {
             email: String,
         }
 
-        let errors = Form {
-            name: "a".into(),
-            email: "nope".into(),
-        }
-        .validate()
-        .unwrap_err();
+        let errors = Form { name: "a".into(), email: "nope".into() }.validate().unwrap_err();
 
         let AppError::Validation(message) = AppError::from(errors) else {
             panic!("expected a validation error");

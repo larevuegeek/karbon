@@ -23,10 +23,7 @@ use crate::error::AppResult;
 /// ```
 pub trait Seeder: Send + Sync {
     fn name(&self) -> &str;
-    fn seed<'a>(
-        &'a self,
-        pool: &'a DbPool,
-    ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>>;
+    fn seed<'a>(&'a self, pool: &'a DbPool) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>>;
 }
 
 /// Run a list of seeders sequentially

@@ -38,19 +38,22 @@ pub struct Claims {
 /// Minimum accepted length (bytes) for a production JWT secret.
 pub const MIN_JWT_SECRET_LEN: usize = 32;
 
-/// Placeholder secrets shipped in templates/examples — never valid in production.
-pub const PLACEHOLDER_SECRETS: &[&str] = &[
-    "change-me-to-a-secure-random-string",
-    "change-me-to-a-random-secret",
-    "change-me",
-    "secret",
-    "changeme",
-];
+/// Placeholder secrets shipped in templates/examples. They are published with Karbon's
+/// source, so a token signed with one of them proves nothing: never valid, anywhere.
+pub const PLACEHOLDER_SECRETS: &[&str] =
+    &["change-me-to-a-secure-random-string", "change-me-to-a-random-secret", "change-me", "secret", "changeme"];
+
+/// Returns true if the secret is one of the published [`PLACEHOLDER_SECRETS`]. Anyone can
+/// sign a token with it, in any environment — unlike a merely short secret, which is still
+/// private.
+pub fn is_placeholder_secret(secret: &str) -> bool {
+    PLACEHOLDER_SECRETS.contains(&secret.trim())
+}
 
 /// Returns true if the secret is unusable (empty) or obviously weak (too short or a
 /// known placeholder). Used to fail closed instead of silently accepting forgeable tokens.
 pub fn is_weak_secret(secret: &str) -> bool {
-    secret.trim().len() < MIN_JWT_SECRET_LEN || PLACEHOLDER_SECRETS.contains(&secret.trim())
+    secret.trim().len() < MIN_JWT_SECRET_LEN || is_placeholder_secret(secret)
 }
 
 /// JWT token manager
@@ -59,18 +62,22 @@ pub struct JwtManager {
     encoding_key: EncodingKey,
     decoding_key: DecodingKey,
     expiration: i64,
-    /// When the secret is empty, verification always fails closed (auth disabled).
-    secret_empty: bool,
+    /// An empty secret or a published placeholder: no token is issued or accepted.
+    unusable: bool,
 }
 
 impl JwtManager {
-    /// Create a new JWT manager with the given secret and expiration (in seconds)
+    /// Create a new JWT manager with the given secret and expiration (in seconds).
+    ///
+    /// With an empty secret or one of the [`PLACEHOLDER_SECRETS`], the manager is inert:
+    /// it signs nothing and rejects every token. The check lives here and not only in
+    /// `App::serve()` so that an application building its own router is covered too.
     pub fn new(secret: &str, expiration: i64) -> Self {
         Self {
             encoding_key: EncodingKey::from_secret(secret.as_bytes()),
             decoding_key: DecodingKey::from_secret(secret.as_bytes()),
             expiration,
-            secret_empty: secret.is_empty(),
+            unusable: secret.is_empty() || is_placeholder_secret(secret),
         }
     }
 
@@ -113,6 +120,9 @@ impl JwtManager {
         aud: Option<String>,
         impersonator_id: Option<i64>,
     ) -> Result<String, jsonwebtoken::errors::Error> {
+        if self.unusable {
+            return Err(jsonwebtoken::errors::ErrorKind::InvalidKeyFormat.into());
+        }
         let now = Utc::now().timestamp();
         let claims = Claims {
             sub: sub.to_string(),
@@ -131,29 +141,22 @@ impl JwtManager {
 
     /// Validate and decode a JWT token.
     ///
-    /// Fails closed when the secret is empty: an empty HMAC key would otherwise verify
-    /// tokens signed with a publicly-known (empty) key, allowing trivial forgery. So an
-    /// empty secret means "auth disabled" — every token is rejected, never accepted.
+    /// Fails closed when the secret is empty or a published placeholder: either key is
+    /// known to everyone, so a token signed with it could be forged at will. Such a secret
+    /// means "auth disabled" — every token is rejected, never accepted.
     pub fn verify(&self, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
-        if self.secret_empty {
+        if self.unusable {
             return Err(jsonwebtoken::errors::ErrorKind::InvalidKeyFormat.into());
         }
-        let validation = Validation {
-            validate_aud: false,
-            ..Default::default()
-        };
+        let validation = Validation { validate_aud: false, ..Default::default() };
         let token_data = decode::<Claims>(token, &self.decoding_key, &validation)?;
         Ok(token_data.claims)
     }
 
     /// Validate a token and require the given audience (`aud`) claim to match.
     /// Use this for audience-scoped tokens; `verify()` alone does not check `aud`.
-    pub fn verify_with_audience(
-        &self,
-        token: &str,
-        audience: &str,
-    ) -> Result<Claims, jsonwebtoken::errors::Error> {
-        if self.secret_empty {
+    pub fn verify_with_audience(&self, token: &str, audience: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+        if self.unusable {
             return Err(jsonwebtoken::errors::ErrorKind::InvalidKeyFormat.into());
         }
         let mut validation = Validation::default();
@@ -200,14 +203,7 @@ mod tests {
     fn ordinary_tokens_carry_no_impersonator() {
         let jwt = JwtManager::new(SECRET, 60);
         let token = jwt
-            .generate_full(
-                "a@example.com",
-                "a@example.com",
-                vec![],
-                Some(1),
-                None,
-                None,
-            )
+            .generate_full("a@example.com", "a@example.com", vec![], Some(1), None, None)
             .unwrap();
         assert_eq!(jwt.verify(&token).unwrap().impersonator_id, None);
     }
@@ -233,15 +229,57 @@ mod tests {
             exp: now + 60,
             iat: now,
         };
-        let token = encode(
-            &Header::default(),
-            &legacy,
-            &EncodingKey::from_secret(SECRET.as_bytes()),
-        )
-        .unwrap();
+        let token = encode(&Header::default(), &legacy, &EncodingKey::from_secret(SECRET.as_bytes())).unwrap();
 
         let claims = JwtManager::new(SECRET, 60).verify(&token).unwrap();
         assert_eq!(claims.user_id, Some(3));
         assert_eq!(claims.impersonator_id, None);
+    }
+
+    /// The scaffolded `JWT_SECRET` is published with the CLI's source: a super-admin token
+    /// signed with it used to pass `verify` in every environment but production.
+    #[test]
+    fn a_token_signed_with_a_published_placeholder_is_never_accepted() {
+        for placeholder in PLACEHOLDER_SECRETS {
+            let now = Utc::now().timestamp();
+            let forged = encode(
+                &Header::default(),
+                &Claims {
+                    sub: "attacker".into(),
+                    username: "attacker".into(),
+                    roles: vec!["ROLE_SUPER_ADMIN".into()],
+                    user_id: Some(1),
+                    user_uuid: None,
+                    aud: Some("user".into()),
+                    impersonator_id: None,
+                    exp: now + 3600,
+                    iat: now,
+                },
+                &EncodingKey::from_secret(placeholder.as_bytes()),
+            )
+            .unwrap();
+
+            let jwt = JwtManager::new(placeholder, 60);
+            assert!(jwt.verify(&forged).is_err(), "{placeholder}");
+            assert!(jwt.verify_with_audience(&forged, "user").is_err(), "{placeholder}");
+            assert!(jwt.generate("a", "a", vec![]).is_err(), "{placeholder}");
+        }
+    }
+
+    #[test]
+    fn an_empty_secret_issues_and_accepts_nothing() {
+        let jwt = JwtManager::new("", 60);
+        assert!(jwt.generate("a", "a", vec![]).is_err());
+        let token = JwtManager::new(SECRET, 60).generate("a", "a", vec![]).unwrap();
+        assert!(jwt.verify(&token).is_err());
+    }
+
+    #[test]
+    fn a_placeholder_is_weak_but_a_short_secret_is_not_a_placeholder() {
+        assert!(is_placeholder_secret("change-me-to-a-random-secret"));
+        assert!(is_placeholder_secret("  secret  "));
+        assert!(!is_placeholder_secret("short-but-private"));
+        assert!(is_weak_secret("short-but-private"));
+        assert!(!is_weak_secret(SECRET));
     }
 }

@@ -67,7 +67,7 @@ premier échec, la commande s'arrête et dit quelles cibles n'ont pas été publ
 ```bash
 karbon deploy docker          # génère Dockerfile + .dockerignore
 docker build -t my-app .
-docker run -p 3000:3000 --env-file .env my-app
+docker run -p 3000:3000 --env-file .env -e APP_ENV=production my-app
 ```
 
 Le Dockerfile généré est **multi-stage** (build frontend → build backend →

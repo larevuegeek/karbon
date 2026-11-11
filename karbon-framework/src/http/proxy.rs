@@ -11,13 +11,7 @@ use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 /// so only one port needs to be exposed in production.
 /// Hop-by-hop headers (RFC 7230 §6.1) that must never be forwarded by a proxy.
 const HOP_BY_HOP: &[&str] = &[
-    "connection",
-    "keep-alive",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "te",
-    "trailer",
-    "transfer-encoding",
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding",
     "upgrade",
 ];
 
@@ -45,12 +39,7 @@ impl FrontendProxy {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
 
-        Self {
-            target: trimmed,
-            target_host,
-            trusted_proxies: std::sync::Arc::new(Vec::new()),
-            client,
-        }
+        Self { target: trimmed, target_host, trusted_proxies: std::sync::Arc::new(Vec::new()), client }
     }
 
     /// Configure which direct peers are trusted edge proxies (their inbound
@@ -66,11 +55,7 @@ impl FrontendProxy {
             Ok(resp) => resp,
             Err(e) => {
                 tracing::error!("Proxy error: {e}");
-                (
-                    axum::http::StatusCode::BAD_GATEWAY,
-                    "Bad gateway".to_string(),
-                )
-                    .into_response()
+                (axum::http::StatusCode::BAD_GATEWAY, "Bad gateway".to_string()).into_response()
             }
         }
     }
@@ -80,11 +65,7 @@ impl FrontendProxy {
         peer: std::net::IpAddr,
         req: Request,
     ) -> Result<Response, Box<dyn std::error::Error + Send + Sync>> {
-        let path = req
-            .uri()
-            .path_and_query()
-            .map(|pq| pq.as_str())
-            .unwrap_or("/");
+        let path = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
 
         let uri = format!("{}{}", self.target, path).parse::<hyper::Uri>()?;
 
@@ -94,13 +75,7 @@ impl FrontendProxy {
 
         // Capture the public-facing request info BEFORE mutating headers, so the SSR
         // upstream can reconstruct absolute/canonical URLs (host, scheme, client IP).
-        let hdr = |name: &str| {
-            parts
-                .headers
-                .get(name)
-                .and_then(|v| v.to_str().ok())
-                .map(String::from)
-        };
+        let hdr = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok()).map(String::from);
         let orig_host = hdr("host");
         let inbound_xff = hdr("x-forwarded-for");
         let inbound_xfp = hdr("x-forwarded-proto");
@@ -110,11 +85,7 @@ impl FrontendProxy {
         // Collect the extra hop-by-hop header names announced in the request's own
         // `Connection` header before we start mutating the map.
         let mut extra_hop: Vec<String> = Vec::new();
-        if let Some(conn) = parts
-            .headers
-            .get("connection")
-            .and_then(|v| v.to_str().ok())
-        {
+        if let Some(conn) = parts.headers.get("connection").and_then(|v| v.to_str().ok()) {
             for name in conn.split(',') {
                 let n = name.trim().to_ascii_lowercase();
                 if !n.is_empty() {
@@ -145,10 +116,7 @@ impl FrontendProxy {
         }
         // X-Forwarded-Proto: honor a trusted edge's value, else assume https at the edge
         // (Karbon itself is plain HTTP; TLS is terminated upstream in the common setup).
-        let proto = trusted
-            .then_some(inbound_xfp)
-            .flatten()
-            .unwrap_or_else(|| "https".to_string());
+        let proto = trusted.then_some(inbound_xfp).flatten().unwrap_or_else(|| "https".to_string());
         set(&mut parts, "x-forwarded-proto", proto);
         // X-Forwarded-For: extend the trusted chain, else just this peer.
         let xff = match (trusted, inbound_xff) {

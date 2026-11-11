@@ -160,7 +160,7 @@
         '<div><h4>Docs</h4><a href="installation.html">Installation</a><a href="quickstart.html">Quickstart</a><a href="cli.html">CLI reference</a><a href="deployment.html">Deployment</a></div>' +
         '<div><h4>Concepts</h4><a href="routing.html">Routing</a><a href="database.html">Database</a><a href="migrations.html">Migrations</a><a href="security.html">Security</a></div>' +
         '<div><h4>Project</h4><a href="' + GH + '">GitHub</a><a href="https://crates.io/crates/karbon-framework">crates.io</a><a href="https://docs.rs/karbon-framework">docs.rs</a><a href="../index.html">Home</a></div>' +
-      '</div><div class="foot-bottom"><span>© Karbon · AGPL-3.0</span></div></div>';
+      '</div><div class="foot-bottom"><span>© Karbon · MIT or Apache-2.0</span></div></div>';
     return f;
   }
 })();
