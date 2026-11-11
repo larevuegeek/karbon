@@ -7,9 +7,9 @@ use super::{Db, DbPool, DbRow, placeholder};
 use super::{DeleteBuilder, UpdateBuilder};
 use crate::error::AppResult;
 
-/// Valeur dynamique pour les clauses WHERE.
+/// Dynamic value for WHERE clauses.
 ///
-/// Grâce aux implémentations `From`, on peut écrire simplement :
+/// Thanks to the `From` implementations, you can simply write:
 /// ```ignore
 /// User::find_where(pool, &[("email", "foo@bar.com".into())]).await?;
 /// User::find_all_where(pool, &[("active", 1_i64.into())]).await?;
@@ -71,19 +71,18 @@ impl From<DateTime<Utc>> for WhereValue {
     }
 }
 
-/// Trait générique pour les opérations CRUD de base.
+/// Generic trait for the basic CRUD operations.
 ///
-/// Fournit automatiquement `find_by_id`, `count`, `delete`, `exists`,
-/// `find_all` et optionnellement `find_by_slug` à tout type qui l'implémente.
+/// Gives `find_by_id`, `count`, `delete`, `exists`, `find_all` and optionally
+/// `find_by_slug` to any type that implements it.
 ///
-/// Supporte le soft delete via `SOFT_DELETE = true` : les entités ne sont pas
-/// supprimées mais marquées avec `deleted_at`. Les requêtes filtrent
-/// automatiquement les entités supprimées.
+/// Supports soft delete with `SOFT_DELETE = true`: entities are not removed but marked
+/// with `deleted_at`, and every query filters the deleted ones out.
 ///
 /// ```ignore
 /// impl CrudRepository for Post {
 ///     const TABLE: &'static str = "posts";
-///     const ENTITY_NAME: &'static str = "Article";
+///     const ENTITY_NAME: &'static str = "Post";
 ///     const HAS_SLUG: bool = true;
 ///     const SOFT_DELETE: bool = true;
 /// }
@@ -93,13 +92,13 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
     const ENTITY_NAME: &'static str;
     const HAS_SLUG: bool = false;
 
-    /// Active le soft delete. Si `true`, `delete()` fait un UPDATE SET deleted_at = NOW()
-    /// au lieu d'un DELETE, et toutes les requêtes ajoutent `WHERE deleted_at IS NULL`.
+    /// Turns soft delete on. When `true`, `delete()` runs an UPDATE setting `deleted_at` to
+    /// the database clock instead of a DELETE, and every query adds `WHERE deleted_at IS NULL`.
     const SOFT_DELETE: bool = false;
 
-    // ─── Helpers internes ───
+    // ─── Internal helpers ───
 
-    /// Retourne le filtre soft delete si activé
+    /// The soft-delete filter, when enabled
     fn soft_filter() -> &'static str {
         if Self::SOFT_DELETE { " AND deleted_at IS NULL" } else { "" }
     }
@@ -108,7 +107,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         if Self::SOFT_DELETE { " WHERE deleted_at IS NULL" } else { "" }
     }
 
-    // ─── Par ID ───
+    // ─── By ID ───
 
     fn find_by_id(pool: &DbPool, id: i64) -> impl Future<Output = AppResult<Option<Self>>> + Send {
         async move {
@@ -121,7 +120,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         }
     }
 
-    // ─── Par slug ───
+    // ─── By slug ───
 
     fn find_by_slug(pool: &DbPool, slug: &str) -> impl Future<Output = AppResult<Option<Self>>> + Send {
         async move {
@@ -140,7 +139,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         }
     }
 
-    // ─── Comptage ───
+    // ─── Counting ───
 
     fn count(pool: &DbPool) -> impl Future<Output = AppResult<i64>> + Send {
         async move {
@@ -159,9 +158,9 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         }
     }
 
-    // ─── Suppression ───
+    // ─── Deletion ───
 
-    /// Supprime une entité (soft delete si SOFT_DELETE = true, sinon DELETE réel).
+    /// Deletes an entity (soft delete when SOFT_DELETE = true, a real DELETE otherwise).
     fn delete(pool: &DbPool, id: i64) -> impl Future<Output = AppResult<u64>> + Send {
         async move {
             if Self::SOFT_DELETE {
@@ -176,12 +175,12 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         }
     }
 
-    /// Suppression définitive (ignore SOFT_DELETE).
+    /// Permanent deletion (ignores SOFT_DELETE).
     fn force_delete(pool: &DbPool, id: i64) -> impl Future<Output = AppResult<u64>> + Send {
         async move { DeleteBuilder::from(Self::TABLE).where_eq("id", id).execute(pool).await }
     }
 
-    /// Restaure une entité soft-deleted.
+    /// Restores a soft-deleted entity.
     fn restore(pool: &DbPool, id: i64) -> impl Future<Output = AppResult<u64>> + Send {
         async move {
             if !Self::SOFT_DELETE {
@@ -198,7 +197,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         }
     }
 
-    // ─── Listes ───
+    // ─── Lists ───
 
     /// ```ignore
     /// let users = User::find_all(pool, None).await?;
@@ -214,7 +213,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         }
     }
 
-    /// Récupère toutes les entités y compris les soft-deleted.
+    /// Fetches every entity, soft-deleted ones included.
     fn find_all_with_trashed(
         pool: &DbPool,
         order: Option<(&str, &str)>,
@@ -228,7 +227,7 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
         }
     }
 
-    // ─── Recherche dynamique ───
+    // ─── Dynamic lookup ───
 
     /// ```ignore
     /// let user = User::find_where(pool, &[("email", "foo@bar.com".into())]).await?;
@@ -269,20 +268,20 @@ pub trait CrudRepository: Sized + Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow
 
     // ─── Relations ───
 
-    /// **has-many** : charge toutes les entités `Self` dont `foreign_key = owner_id`.
+    /// **has-many**: loads every `Self` entity whose `foreign_key = owner_id`.
     ///
     /// ```ignore
     /// // Post hasMany Comment
     /// let comments = Comment::has_many(pool, "post_id", post.id).await?;
     /// ```
-    /// (Le côté **belongs-to** est simplement `Parent::find_by_id(pool, child.parent_id)`.)
+    /// (The **belongs-to** side is simply `Parent::find_by_id(pool, child.parent_id)`.)
     fn has_many(pool: &DbPool, foreign_key: &str, owner_id: i64) -> impl Future<Output = AppResult<Vec<Self>>> + Send {
         async move { Self::find_all_where(pool, &[(foreign_key, owner_id.into())], None).await }
     }
 
-    /// **has-many batch** (évite le N+1) : charge en une seule requête toutes les
-    /// entités `Self` dont `foreign_key IN (owner_ids)`, groupées par valeur de
-    /// `foreign_key` extraite via `key`.
+    /// **has-many batch** (avoids the N+1): loads in a single query every `Self` entity
+    /// whose `foreign_key IN (owner_ids)`, grouped by the `foreign_key` value that `key`
+    /// extracts.
     ///
     /// ```ignore
     /// let post_ids: Vec<i64> = posts.iter().map(|p| p.id).collect();

@@ -15,6 +15,11 @@ pub const MAIN_RS_MICRO: &str = include_str!("rust/main.micro.rs.tpl");
 pub const CONTROLLER_MOD: &str = include_str!("rust/controller_mod.rs.tpl");
 pub const ENTITY_MOD: &str = include_str!("rust/entity_mod.rs.tpl");
 pub const HEALTH_CONTROLLER: &str = include_str!("rust/health_controller.rs.tpl");
+// `karbon generate auth`
+pub const AUTH_USER_ENTITY: &str = include_str!("rust/auth_user_entity.rs.tpl");
+pub const AUTH_TOKEN_ENTITY: &str = include_str!("rust/auth_token_entity.rs.tpl");
+pub const AUTH_SERVICE: &str = include_str!("rust/auth_service.rs.tpl");
+pub const AUTH_CONTROLLER: &str = include_str!("rust/auth_controller.rs.tpl");
 
 // Frontend — SvelteKit
 pub mod svelte {

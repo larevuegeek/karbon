@@ -20,10 +20,10 @@ fn resolve_fields(fields: &[String], opts: GenOptions) -> Result<Vec<String>, St
 
 /// Interactive field builder (one field at a time: name → type → nullable).
 fn prompt_fields() -> Result<Vec<String>, String> {
-    println!("\n  {} Assistant de champs — entrée vide sur le nom pour terminer\n", "▸".cyan().bold());
+    println!("\n  {} Field assistant — leave the name empty to finish\n", "▸".cyan().bold());
     let mut fields: Vec<String> = Vec::new();
     loop {
-        let name = prompt(&format!("  Champ #{} — nom : ", fields.len() + 1))?;
+        let name = prompt(&format!("  Field #{} — name: ", fields.len() + 1))?;
         let name = name.trim();
         if name.is_empty() {
             break;
@@ -31,24 +31,24 @@ fn prompt_fields() -> Result<Vec<String>, String> {
         let name = snake(name);
 
         let ty = loop {
-            let raw = prompt("    type [string] : ")?;
+            let raw = prompt("    type [string]: ")?;
             let t = raw.trim();
             let t = if t.is_empty() { "string" } else { t };
             if FIELD_TYPES.contains(&t) {
                 break t.to_string();
             }
-            println!("    {} type inconnu. Disponibles : {}", "✗".red(), FIELD_TYPES.join(", ").dimmed());
+            println!("    {} unknown type. Available: {}", "✗".red(), FIELD_TYPES.join(", ").dimmed());
         };
 
         let nullable =
-            matches!(prompt("    nullable ? (o/N) : ")?.trim().to_lowercase().as_str(), "o" | "oui" | "y" | "yes");
+            matches!(prompt("    nullable? (y/N): ")?.trim().to_lowercase().as_str(), "o" | "oui" | "y" | "yes");
 
         let spec = format!("{name}:{ty}{}", if nullable { "?" } else { "" });
         println!("    {} {}\n", "✓".green(), spec.cyan());
         fields.push(spec);
     }
     if fields.is_empty() {
-        println!("  {} aucun champ — valeurs par défaut (title, slug)\n", "ℹ".blue());
+        println!("  {} no field — using the defaults (title, slug)\n", "ℹ".blue());
     }
     Ok(fields)
 }
@@ -57,7 +57,9 @@ fn prompt(label: &str) -> Result<String, String> {
     print!("{label}");
     std::io::stdout().flush().ok();
     let mut s = String::new();
-    std::io::stdin().read_line(&mut s).map_err(|e| format!("lecture stdin : {e}"))?;
+    std::io::stdin()
+        .read_line(&mut s)
+        .map_err(|e| format!("Cannot read stdin: {e}"))?;
     Ok(s)
 }
 
@@ -72,7 +74,17 @@ pub struct GenOptions {
     pub interactive: bool,
 }
 
-pub fn run(kind: &str, name: &str, fields: &[String], root: &Path, opts: GenOptions) -> Result<(), String> {
+pub fn run(kind: &str, name: Option<&str>, fields: &[String], root: &Path, opts: GenOptions) -> Result<(), String> {
+    // `auth` always creates a `User`: it takes no name. Every other generator needs one.
+    let name = match (kind, name) {
+        ("auth", None | Some("User")) => "User",
+        ("auth", Some(other)) => {
+            return Err(format!("`karbon generate auth` takes no name: it creates a `User` entity (got `{other}`)"));
+        }
+        (_, Some(name)) => name,
+        (_, None) => return Err(format!("Missing name — usage: karbon generate {kind} <Name>")),
+    };
+
     // The name becomes a file path and a Rust type, and Studio's terminal forwards it from
     // an HTTP request: `../../x` must never reach a `join`.
     if !is_identifier(name) {
@@ -95,7 +107,8 @@ pub fn run(kind: &str, name: &str, fields: &[String], root: &Path, opts: GenOpti
         "controller" => generate_controller(name, root, opts),
         "crud" => generate_crud(name, &resolve_fields(fields, opts)?, root, opts),
         "admin" => generate_admin(name, root, opts),
-        _ => Err(format!("Unknown generator '{}'. Available: entity, controller, crud, admin", kind)),
+        "auth" => generate_auth(root, opts),
+        _ => Err(format!("Unknown generator '{}'. Available: entity, controller, crud, admin, auth", kind)),
     }
 }
 
@@ -108,23 +121,13 @@ enum Driver {
     Sqlite,
 }
 
-/// Detect the project's DB driver from the `karbon` dependency features in
-/// `app/Cargo.toml` (default: MySQL).
+/// The driver the project compiles with (see [`crate::db_url::compiled_driver`]).
 fn detect_driver(root: &Path) -> Driver {
-    for dir in ["app", "api"] {
-        let cargo = root.join(dir).join("Cargo.toml");
-        if let Ok(content) = fs::read_to_string(&cargo) {
-            let line = content.lines().find(|l| l.trim_start().starts_with("karbon")).unwrap_or("");
-            if line.contains("postgres") {
-                return Driver::Postgres;
-            }
-            if line.contains("sqlite") {
-                return Driver::Sqlite;
-            }
-            return Driver::Mysql;
-        }
+    match crate::db_url::compiled_driver(root) {
+        "postgres" => Driver::Postgres,
+        "sqlite" => Driver::Sqlite,
+        _ => Driver::Mysql,
     }
-    Driver::Mysql
 }
 
 struct Field {
@@ -200,6 +203,9 @@ fn parse_entity_fields(src: &str) -> Vec<(String, String, bool)> {
     body[open + 1..close]
         .lines()
         .filter_map(|line| {
+            // A trailing comment (`// karbon:unique`, `// karbon:text`) is not part of the type.
+            let (line, comment) = line.split_once("//").unwrap_or((line, ""));
+            let long_text = comment.contains("karbon:text");
             let line = line.trim().trim_end_matches(',');
             let rest = line.strip_prefix("pub ")?;
             let (name, ty) = rest.split_once(':')?;
@@ -213,6 +219,7 @@ fn parse_entity_fields(src: &str) -> Vec<(String, String, bool)> {
                 None => (false, ty),
             };
             let kind = match base {
+                "String" if long_text => "text",
                 "String" => "string",
                 "i32" => "int",
                 "i64" => "bigint",
@@ -335,12 +342,12 @@ fn write_file(path: &Path, content: &str, opts: GenOptions) -> Result<(), String
     let shown = path.display().to_string();
 
     if opts.dry_run {
-        let verb = if exists { "écraserait" } else { "créerait" };
+        let verb = if exists { "would overwrite" } else { "would create" };
         println!("  {} {} {}", "○".dimmed(), verb.dimmed(), shown.dimmed());
         return Ok(());
     }
     if exists && !opts.force {
-        println!("  {} {} {}", "⊘".yellow(), shown.dimmed(), "(existe déjà — `--force` pour écraser)".dimmed());
+        println!("  {} {} {}", "⊘".yellow(), shown.dimmed(), "(already exists — `--force` to overwrite)".dimmed());
         return Ok(());
     }
     if let Some(parent) = path.parent() {
@@ -365,7 +372,7 @@ fn ensure_main_module(app_dir: &Path, module: &str, opts: GenOptions) -> Result<
         return Ok(());
     }
     if opts.dry_run {
-        println!("  {} app/src/main.rs (ajouterait `{}`)", "○".dimmed(), line);
+        println!("  {} app/src/main.rs (would add `{}`)", "○".dimmed(), line);
         return Ok(());
     }
     let new_content = if let Some(pos) = content.find("pub mod controller;") {
@@ -402,7 +409,7 @@ fn wire_route(
         return Ok(());
     };
     if opts.dry_run {
-        println!("  {} app/src/main.rs (monterait {})", "○".dimmed(), nest_line.trim());
+        println!("  {} app/src/main.rs (would mount {})", "○".dimmed(), nest_line.trim());
         return Ok(());
     }
     let line_start = content[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
@@ -434,7 +441,7 @@ fn append_at_marker(app_dir: &Path, marker: &str, line: &str, opts: GenOptions) 
     };
     if opts.dry_run {
         println!(
-            "  {} app/src/main.rs (ajouterait OpenAPI pour {})",
+            "  {} app/src/main.rs (would add OpenAPI for {})",
             "○".dimmed(),
             line.split("::").nth(1).unwrap_or("controller")
         );
@@ -459,7 +466,7 @@ fn append_mod(mod_file: &Path, module_name: &str, opts: GenOptions) -> Result<()
         return Ok(());
     }
     if opts.dry_run {
-        println!("  {} {} (ajouterait `{}`)", "○".dimmed(), mod_file.display().to_string().dimmed(), mod_line);
+        println!("  {} {} (would add `{}`)", "○".dimmed(), mod_file.display().to_string().dimmed(), mod_line);
         return Ok(());
     }
     let new_content = if content.trim().is_empty() {
@@ -485,7 +492,12 @@ fn generate_entity(name: &str, field_specs: &[String], root: &Path, opts: GenOpt
     // Entity struct fields.
     let struct_fields = fields
         .iter()
-        .map(|f| format!("    pub {}: {},", f.name, f.rust_ty))
+        .map(|f| {
+            // `text` and `string` are both a Rust `String`: the marker is what tells
+            // `migrate diff` (TEXT column) and `generate admin` (textarea) apart.
+            let marker = if f.kind == "text" { " // karbon:text" } else { "" };
+            format!("    pub {}: {},{marker}", f.name, f.rust_ty)
+        })
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -494,7 +506,8 @@ fn generate_entity(name: &str, field_specs: &[String], root: &Path, opts: GenOpt
         .iter()
         .map(|f| {
             if f.name == "slug" && has_title {
-                format!("    #[slug_from(\"title\")]\n    pub {}: {},", f.name, f.rust_ty)
+                // Optional in a request body: left empty, it derives from the title.
+                format!("    #[serde(default)]\n    #[slug_from(\"title\")]\n    pub {}: {},", f.name, f.rust_ty)
             } else {
                 format!("    pub {}: {},", f.name, f.rust_ty)
             }
@@ -532,6 +545,8 @@ pub struct New{name} {{
 #[derive(Debug, Default, Deserialize, karbon::Updatable)]
 #[table_name("{table}")]
 pub struct Update{name} {{
+    /// Taken from the URL by the API controller, hence optional in a request body.
+    #[serde(default)]
     #[primary_key]
     pub id: i64,
 {update_fields}
@@ -548,13 +563,15 @@ pub struct Update{name} {{
     // `karbon migrate diff` to generate the migration from the entity ↔ DB diff.
     let field_summary = fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(", ");
     println!("\n  {} Entity {} generated [{}] ({:?})", "✓".green().bold(), name.bold(), field_summary.dimmed(), driver);
-    println!("  {} {} pour générer la migration (compare entités ↔ base)\n", "→".blue(), "karbon migrate diff".bold());
+    println!(
+        "  {} {} to generate the migration (compares entities ↔ database)\n",
+        "→".blue(),
+        "karbon migrate diff".bold()
+    );
     Ok(())
 }
 
 fn generate_controller(name: &str, root: &Path, opts: GenOptions) -> Result<(), String> {
-    let app_dir = find_app_dir(root)?;
-    let file_name = snake(name);
     let prefix = format!("/{}", plural(name).replace('_', "-"));
 
     let content = format!(
@@ -600,8 +617,18 @@ impl {name}Controller {{
         plural(name)
     );
 
+    write_controller(name, &content, root, opts)
+}
+
+/// Writes `controller/<name>_controller.rs`, declares the module and mounts the controller
+/// under the API prefix (routes + OpenAPI).
+fn write_controller(name: &str, content: &str, root: &Path, opts: GenOptions) -> Result<(), String> {
+    let app_dir = find_app_dir(root)?;
+    let file_name = snake(name);
+    let prefix = format!("/{}", plural(name).replace('_', "-"));
+
     let controller_path = app_dir.join(format!("controller/{file_name}_controller.rs"));
-    write_file(&controller_path, &content, opts)?;
+    write_file(&controller_path, content, opts)?;
     append_mod(&app_dir.join("controller/mod.rs"), &format!("{file_name}_controller"), opts)?;
     ensure_main_module(&app_dir, "controller", opts)?;
     wire_route(
@@ -713,10 +740,211 @@ impl {name}Repository {{
         fs::write(&entity_mod, updated).ok();
     }
 
-    // 3. Controller
-    generate_controller(name, root, opts)?;
+    // 3. Controller: a working REST API over the repository, not a stub.
+    let prefix = format!("/{}", plural(name).replace('_', "-"));
+    let controller = CRUD_CONTROLLER_TEMPLATE
+        .replace("%NAME%", name)
+        .replace("%FILE%", &file_name)
+        .replace("%PREFIX%", &prefix)
+        .replace("%LABEL%", &humanize_label(&file_name));
+    write_controller(name, &controller, root, opts)?;
 
     println!("\n  {} Full CRUD for {} generated (entity + repo + controller)\n", "✓".green().bold(), name.bold());
+    Ok(())
+}
+
+const CRUD_CONTROLLER_TEMPLATE: &str = r##"use axum::Json;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+
+use karbon::db::{CrudRepository, Paginated, PaginationParams};
+use karbon::error::{AppError, AppResult};
+use karbon::http::AppState;
+use karbon::security::AuthGuard;
+
+use crate::entity::%FILE%::{%NAME%, New%NAME%, Update%NAME%};
+use crate::repository::%FILE%_repository::%NAME%Repository;
+
+pub struct %NAME%Controller;
+
+/// REST API for %NAME%, generated by `karbon generate crud` — this file is yours.
+///
+/// Everything requires `ROLE_ADMIN`, like the controller's `role` says. To make reading
+/// public, remove `role` from the line below and put `#[karbon::require_role("ROLE_ADMIN")]`
+/// on `create`, `update` and `delete` (their `auth: AuthGuard` parameter is what it checks).
+#[karbon::controller(prefix = "%PREFIX%", role = "ROLE_ADMIN")]
+impl %NAME%Controller {
+    /// `GET %PREFIX%?page=1&per_page=20&sort=id&order=desc&search=…`
+    #[karbon::get("/")]
+    async fn list(
+        auth: AuthGuard,
+        State(state): State<AppState>,
+        Query(params): Query<PaginationParams>,
+    ) -> AppResult<impl IntoResponse> {
+        let (items, total) = %NAME%Repository::find_paginated(state.db.pool(), &params).await?;
+        Ok(Json(Paginated::new(items, total, &params)))
+    }
+
+    #[karbon::get("/{id}", id = "int:min=1")]
+    async fn show(auth: AuthGuard, State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<impl IntoResponse> {
+        Ok(Json(find(&state, id).await?))
+    }
+
+    /// `201 Created` with the new %LABEL%.
+    #[karbon::post("/")]
+    async fn create(
+        auth: AuthGuard,
+        State(state): State<AppState>,
+        Json(body): Json<New%NAME%>,
+    ) -> AppResult<impl IntoResponse> {
+        let id = %NAME%Repository::create(state.db.pool(), body).await?;
+        Ok((StatusCode::CREATED, Json(find(&state, id as i64).await?)))
+    }
+
+    /// Partial update: only the fields present in the body change.
+    #[karbon::put("/{id}", id = "int:min=1")]
+    async fn update(
+        auth: AuthGuard,
+        State(state): State<AppState>,
+        Path(id): Path<i64>,
+        Json(mut body): Json<Update%NAME%>,
+    ) -> AppResult<impl IntoResponse> {
+        find(&state, id).await?;
+        body.id = id;
+        %NAME%Repository::update(state.db.pool(), body).await?;
+        Ok(Json(find(&state, id).await?))
+    }
+
+    /// `204 No Content`.
+    #[karbon::delete("/{id}", id = "int:min=1")]
+    async fn delete(auth: AuthGuard, State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<impl IntoResponse> {
+        find(&state, id).await?;
+        %NAME%::delete(state.db.pool(), id).await?;
+        Ok(StatusCode::NO_CONTENT)
+    }
+}
+
+/// The %LABEL% with this id, or a 404.
+async fn find(state: &AppState, id: i64) -> AppResult<%NAME%> {
+    %NAME%::find_by_id(state.db.pool(), id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("%LABEL% #{id} not found")))
+}
+"##;
+
+/// Where `karbon generate auth` serves its login page. Written to `.env` as `LOGIN_PATH`,
+/// which is what makes the framework send a browser without a session there.
+const LOGIN_PATH: &str = "/auth/login";
+
+/// Sign-up / sign-in / sign-out: a `User` entity, browser pages with a session cookie, and
+/// the JSON equivalent under the API prefix. Without it nothing generated behind a role
+/// (`generate admin`, `generate crud`) can be opened: there is no way to become someone.
+fn generate_auth(root: &Path, opts: GenOptions) -> Result<(), String> {
+    let app_dir = find_app_dir(root)?;
+
+    // 1. Entities: the accounts, and the tokens handed to them (refresh, password reset).
+    write_file(&app_dir.join("entity/user.rs"), crate::templates::AUTH_USER_ENTITY, opts)?;
+    append_mod(&app_dir.join("entity/mod.rs"), "user", opts)?;
+    write_file(&app_dir.join("entity/auth_token.rs"), crate::templates::AUTH_TOKEN_ENTITY, opts)?;
+    append_mod(&app_dir.join("entity/mod.rs"), "auth_token", opts)?;
+    ensure_main_module(&app_dir, "entity", opts)?;
+
+    // 2. Service: the logic (accounts, sessions, password reset).
+    write_file(&app_dir.join("service/auth.rs"), crate::templates::AUTH_SERVICE, opts)?;
+    let service_mod = app_dir.join("service/mod.rs");
+    if !service_mod.exists() {
+        write_file(&service_mod, "", opts)?;
+    }
+    append_mod(&service_mod, "auth", opts)?;
+    ensure_main_module(&app_dir, "service", opts)?;
+
+    // 3. Controller: browser pages at the root, JSON under the API prefix.
+    write_file(&app_dir.join("controller/auth_controller.rs"), crate::templates::AUTH_CONTROLLER, opts)?;
+    append_mod(&app_dir.join("controller/mod.rs"), "auth_controller", opts)?;
+
+    const PAGES: &str = "controller::auth_controller::AuthController";
+    const API: &str = "controller::auth_controller::AuthApiController";
+    wire_route(
+        &app_dir,
+        "// karbon:routes",
+        &format!(".nest({PAGES}::prefix(), {PAGES}::router())"),
+        ".nest(AuthController::prefix(), AuthController::router())",
+        opts,
+    )?;
+    append_at_marker(
+        &app_dir,
+        "// karbon:openapi-root",
+        &format!("routes.extend({PAGES}::openapi_paths().into_iter().map(|(m, p)| (m.to_string(), p.to_string())));"),
+        opts,
+    )?;
+    wire_route(
+        &app_dir,
+        "// karbon:api-routes",
+        &format!(".nest({API}::prefix(), {API}::router())"),
+        ".nest(AuthApiController::prefix(), AuthApiController::router())  — in api_routes()",
+        opts,
+    )?;
+    append_at_marker(
+        &app_dir,
+        "// karbon:openapi-api",
+        &format!(
+            "routes.extend({API}::openapi_paths().into_iter().map(|(m, p)| (m.to_string(), format!(\"{{API_PREFIX}}{{p}}\"))));"
+        ),
+        opts,
+    )?;
+
+    // 4. LOGIN_PATH: the framework redirects a browser without a session to it.
+    for env_file in [".env", ".env.example"] {
+        set_env_default(
+            &root.join(env_file),
+            "LOGIN_PATH",
+            LOGIN_PATH,
+            "Login page: a browser that opens a protected page without a session is sent here.",
+            opts,
+        )?;
+    }
+
+    println!(
+        "\n  {} Authentication generated (sign-up, sign-in, session renewal, password reset — pages + JSON API)\n",
+        "✓".green().bold()
+    );
+    println!("  Next steps:\n");
+    println!("    {} then {}  to create the tables", "karbon migrate diff".bold(), "karbon migrate".bold());
+    println!("    {}  for the first administrator", "karbon user create you@example.com --admin".bold());
+    println!("    open {} (sign up at {})", LOGIN_PATH.cyan(), "/auth/register".cyan());
+    println!("    JSON: POST {}", format!("{API_PREFIX}/auth/login").cyan());
+    println!(
+        "    {}",
+        "Password-reset emails need SMTP_HOST; without it, in development, the link is written to the log.".dimmed()
+    );
+    println!();
+    Ok(())
+}
+
+/// Append `KEY=value` (with a comment) to an env file that does not define the key yet.
+/// A missing file is left alone: `.env.example` may have been removed on purpose.
+fn set_env_default(path: &Path, key: &str, value: &str, comment: &str, opts: GenOptions) -> Result<(), String> {
+    let Ok(content) = fs::read_to_string(path) else {
+        return Ok(());
+    };
+    let defined = content.lines().any(|line| {
+        let line = line.trim_start();
+        let line = line.strip_prefix("export ").unwrap_or(line);
+        line.split_once('=').is_some_and(|(k, _)| k.trim() == key)
+    });
+    if defined {
+        return Ok(());
+    }
+    let shown = path.display().to_string();
+    if opts.dry_run {
+        println!("  {} {} (would add `{key}={value}`)", "○".dimmed(), shown.dimmed());
+        return Ok(());
+    }
+    let separator = if content.ends_with('\n') || content.is_empty() { "" } else { "\n" };
+    let updated = format!("{content}{separator}\n# {comment}\n{key}={value}\n");
+    fs::write(path, updated).map_err(|e| format!("Cannot update {shown}: {e}"))?;
+    println!("  {} {} (added `{key}={value}`)", "✓".green(), shown.dimmed());
     Ok(())
 }
 
@@ -760,9 +988,18 @@ fn generate_admin(name: &str, root: &Path, opts: GenOptions) -> Result<(), Strin
         .join("\n");
     let form_fields = fields
         .iter()
-        .map(|(n, _, nl)| {
-            let req = if *nl { "" } else { ".required()" };
-            format!("        .add(Field::text(\"{n}\", \"{}\"){req})", humanize_label(n))
+        .map(|(n, kind, nl)| {
+            // The control follows the type: a boolean is a checkbox, not a text box in which
+            // to type `true`. A checkbox is never required — unchecked is a value (false).
+            let control = match kind.as_str() {
+                "bool" => "checkbox",
+                "text" => "textarea",
+                "int" | "bigint" | "float" => "number",
+                "date" => "date",
+                _ => "text",
+            };
+            let req = if *nl || control == "checkbox" { "" } else { ".required()" };
+            format!("        .add(Field::{control}(\"{n}\", \"{}\"){req})", humanize_label(n))
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -946,12 +1183,12 @@ fn build_form(item: Option<&%NAME%>) -> Form {
 }
 
 fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#39;")
 }
 
 fn layout(title: &str, body: &str) -> String {
     format!(
-        r#"<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{t}</title>
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{t}</title>
 <style>body{{font-family:system-ui,sans-serif;max-width:920px;margin:2rem auto;padding:0 1rem;color:#1a1a1a}}h1{{font-size:1.4rem}}table{{width:100%;border-collapse:collapse;margin-top:1rem}}th,td{{text-align:left;padding:.5rem;border-bottom:1px solid #e5e5e5}}.form-field{{margin:.75rem 0}}label{{display:block;font-weight:600;margin-bottom:.25rem}}input,textarea,select{{width:100%;padding:.5rem;border:1px solid #ccc;border-radius:6px}}.form-error{{color:#c0392b;font-size:.85rem;margin-top:.25rem}}.has-error input{{border-color:#c0392b}}.btn,button{{display:inline-block;padding:.45rem .9rem;background:#111;color:#fff;border:0;border-radius:6px;cursor:pointer;text-decoration:none;font-size:.9rem}}</style>
 </head><body><h1>{t}</h1>{b}
 <script>
@@ -959,14 +1196,32 @@ document.addEventListener('submit', async function(e) {{
   var form = e.target;
   if ((form.getAttribute('method') || '').toLowerCase() !== 'post') return;
   e.preventDefault();
-  var m = document.cookie.match(/csrf_token=([^;]+)/);
-  var res = await fetch(form.getAttribute('action'), {{
-    method: 'POST',
-    headers: {{ 'X-CSRF-Token': m ? m[1] : '', 'Content-Type': 'application/x-www-form-urlencoded' }},
-    body: new URLSearchParams(new FormData(form)),
-    redirect: 'follow'
-  }});
-  if (res.redirected) window.location = res.url; else window.location.reload();
+  function csrf() {{ var m = document.cookie.match(/csrf_token=([^;]+)/); return m ? m[1] : ''; }}
+  function send() {{
+    return fetch(form.getAttribute('action'), {{
+      method: 'POST',
+      headers: {{ 'X-CSRF-Token': csrf(), 'Content-Type': 'application/x-www-form-urlencoded' }},
+      body: new URLSearchParams(new FormData(form)),
+      redirect: 'follow'
+    }});
+  }}
+  var res = await send();
+  // 401: the access token expired while the page was open. With `karbon generate auth`,
+  // the session can be renewed — then the request is sent once more.
+  if (res.status === 401) {{
+    var renewed = await fetch('/auth/refresh', {{ method: 'POST', headers: {{ 'X-CSRF-Token': csrf() }} }});
+    if (renewed.ok) res = await send();
+  }}
+  if (res.redirected) {{ window.location = res.url; return; }}
+  // Not redirected: the form came back with its errors (or an error page). Show it —
+  // reloading would silently drop what the server just said.
+  var html = await res.text();
+  if ((res.headers.get('content-type') || '').indexOf('text/html') === 0) {{
+    document.open(); document.write(html); document.close();
+  }} else {{
+    var message = html; try {{ message = JSON.parse(html).message || html; }} catch (_) {{}}
+    alert(message);
+  }}
 }});
 </script>
 </body></html>"#,
@@ -1002,7 +1257,7 @@ mod tests {
         let opts = GenOptions { force: true, ..GenOptions::default() };
 
         for kind in ["entity", "controller", "crud", "admin"] {
-            let err = run(kind, "../../../escaped", &["title:string".into()], &root, opts)
+            let err = run(kind, Some("../../../escaped"), &["title:string".into()], &root, opts)
                 .expect_err("a traversing name was accepted");
             assert!(err.contains("Invalid name"), "{err}");
         }

@@ -165,3 +165,74 @@ pub fn last_insert_id(_result: &<Db as sqlx::Database>::QueryResult) -> u64 {
 pub fn last_insert_id(result: &<Db as sqlx::Database>::QueryResult) -> u64 {
     result.last_insert_rowid() as u64
 }
+
+/// Runs an INSERT built with [`insert_sql`] and returns the id of the new row.
+///
+/// MySQL and SQLite report the id in the query result. PostgreSQL does not: [`insert_sql`]
+/// ends its statement with `RETURNING id`, and the id is the row that comes back.
+/// `#[derive(Insertable)]` goes through here so the generated code is the same for the
+/// three drivers.
+#[cfg(any(feature = "mysql", feature = "sqlite"))]
+pub async fn insert_returning_id<'q, 'e, E>(
+    query: sqlx::query::Query<'q, Db, DbArguments>,
+    executor: E,
+) -> Result<u64, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = Db>,
+{
+    let result = query.execute(executor).await?;
+    Ok(last_insert_id(&result))
+}
+
+#[cfg(feature = "postgres")]
+pub async fn insert_returning_id<'q, 'e, E>(
+    query: sqlx::query::Query<'q, Db, DbArguments>,
+    executor: E,
+) -> Result<u64, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = Db>,
+{
+    use sqlx::Row;
+
+    let row = query.fetch_one(executor).await?;
+    // `bigserial` is the documented id type; a `serial` (int4) id is read as well.
+    let id = match row.try_get::<i64, _>(0) {
+        Ok(id) => id,
+        Err(_) => i64::from(row.try_get::<i32, _>(0)?),
+    };
+    Ok(id as u64)
+}
+
+#[cfg(test)]
+mod insert_tests {
+    use super::*;
+
+    /// `#[derive(Insertable)]` used to write `VALUES (?, ?)` itself: a syntax error under
+    /// PostgreSQL, whose placeholders are numbered and whose id comes back by `RETURNING`.
+    #[test]
+    fn insert_sql_speaks_the_dialect_of_the_compiled_driver() {
+        let sql = insert_sql("posts", &["title", "slug"]);
+
+        #[cfg(feature = "postgres")]
+        assert_eq!(sql, "INSERT INTO posts (title, slug) VALUES ($1, $2) RETURNING id");
+        #[cfg(not(feature = "postgres"))]
+        assert_eq!(sql, "INSERT INTO posts (title, slug) VALUES (?, ?)");
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[tokio::test]
+    async fn an_insert_returns_the_id_of_the_new_row() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::raw_sql("CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, slug TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        for expected in 1..=3u64 {
+            let query = sqlx::query(sqlx::AssertSqlSafe(insert_sql("posts", &["title", "slug"])))
+                .bind("Hello")
+                .bind(format!("hello-{expected}"));
+            assert_eq!(insert_returning_id(query, &pool).await.unwrap(), expected);
+        }
+    }
+}

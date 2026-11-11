@@ -1,3 +1,4 @@
+pub mod auth_cookie;
 mod crypto;
 pub(crate) mod firewall;
 mod guard;
@@ -10,6 +11,10 @@ mod security_toml;
 mod security_yaml;
 mod timing;
 
+pub use auth_cookie::{
+    AUTH_COOKIE, REFRESH_COOKIE, clear_refresh_cookie, local_redirect, login_cookie, logout_cookie, refresh_cookie,
+    refresh_token_from,
+};
 pub use crypto::Crypto;
 pub use firewall::{AccessControl, AccessControlBuilder};
 pub use guard::{AuthGuard, require_role};

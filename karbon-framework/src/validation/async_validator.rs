@@ -3,28 +3,28 @@ use sqlx::AssertSqlSafe;
 use crate::db::{DbPool, placeholder};
 use crate::error::{AppError, AppResult};
 
-/// Validateur asynchrone pour les règles qui nécessitent la base de données.
+/// Asynchronous validator for the rules that need the database.
 ///
-/// # Exemples
+/// # Examples
 ///
 /// ```ignore
-/// // Création — vérifier l'unicité
+/// // Creation — check uniqueness
 /// AsyncValidator::new(pool)
-///     .unique("users", "username", &input.username, "Ce nom d'utilisateur est déjà pris")
-///     .unique("users", "email", &input.email, "Cette adresse email est déjà utilisée")
+///     .unique("users", "username", &input.username, "This username is already taken")
+///     .unique("users", "email", &input.email, "This email address is already in use")
 ///     .validate()
 ///     .await?;
 ///
-/// // Mise à jour — exclure l'ID courant
+/// // Update — leave the current ID out
 /// AsyncValidator::new(pool)
-///     .unique_except("users", "username", &input.username, user_id, "Ce nom d'utilisateur est déjà pris")
-///     .unique_except("users", "email", &input.email, user_id, "Cette adresse email est déjà utilisée")
+///     .unique_except("users", "username", &input.username, user_id, "This username is already taken")
+///     .unique_except("users", "email", &input.email, user_id, "This email address is already in use")
 ///     .validate()
 ///     .await?;
 ///
-/// // Vérifier qu'une FK existe
+/// // Check that a foreign key exists
 /// AsyncValidator::new(pool)
-///     .exists("category", "id", category_id, "Catégorie introuvable")
+///     .exists("category", "id", category_id, "Category not found")
 ///     .validate()
 ///     .await?;
 /// ```
@@ -43,8 +43,8 @@ impl<'a> AsyncValidator<'a> {
         Self { pool, rules: Vec::new() }
     }
 
-    /// Vérifie qu'une valeur est unique dans une table.
-    /// Retourne `Conflict` si la valeur existe déjà.
+    /// Checks that a value is unique in a table.
+    /// Returns `Conflict` when the value already exists.
     pub fn unique(mut self, table: &str, column: &str, value: &str, message: &str) -> Self {
         self.rules.push(ValidationRule::Unique {
             table: table.to_string(),
@@ -56,8 +56,8 @@ impl<'a> AsyncValidator<'a> {
         self
     }
 
-    /// Vérifie qu'une valeur est unique, en excluant un ID (pour les mises à jour).
-    /// Retourne `Conflict` si un AUTRE enregistrement a déjà cette valeur.
+    /// Checks that a value is unique, leaving one ID out (for updates).
+    /// Returns `Conflict` when ANOTHER record already holds this value.
     pub fn unique_except(mut self, table: &str, column: &str, value: &str, except_id: i64, message: &str) -> Self {
         self.rules.push(ValidationRule::Unique {
             table: table.to_string(),
@@ -69,8 +69,8 @@ impl<'a> AsyncValidator<'a> {
         self
     }
 
-    /// Comme `unique_except`, mais uniquement si la valeur est `Some`.
-    /// Utile pour les mises à jour partielles avec des champs optionnels.
+    /// Like `unique_except`, but only when the value is `Some`.
+    /// Useful for partial updates with optional fields.
     pub fn unique_except_if_some(
         self,
         table: &str,
@@ -85,8 +85,8 @@ impl<'a> AsyncValidator<'a> {
         }
     }
 
-    /// Vérifie qu'un enregistrement existe (ex: FK valide).
-    /// Retourne `NotFound` si l'enregistrement n'existe pas.
+    /// Checks that a record exists (e.g. a valid foreign key).
+    /// Returns `NotFound` when it does not.
     pub fn exists(mut self, table: &str, column: &str, value: i64, message: &str) -> Self {
         self.rules.push(ValidationRule::Exists {
             table: table.to_string(),
@@ -97,7 +97,7 @@ impl<'a> AsyncValidator<'a> {
         self
     }
 
-    /// Exécute toutes les règles. Retourne la première erreur rencontrée.
+    /// Runs every rule. Returns the first error met.
     pub async fn validate(self) -> AppResult<()> {
         for rule in &self.rules {
             match rule {

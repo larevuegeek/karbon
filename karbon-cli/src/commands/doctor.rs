@@ -1,4 +1,3 @@
-use crate::commands::migrate::encode_userinfo;
 use crate::config::KarbonConfig;
 use colored::Colorize;
 use std::fs;
@@ -11,7 +10,7 @@ use std::path::{Path, PathBuf};
 /// `generate admin` without an entity, a `crates.io` dependency in dev instead of
 /// `--local`, an incomplete Vite proxy, duplicate migration numbers, etc.
 pub fn run(config: &KarbonConfig, root: &Path, online: bool) -> Result<(), String> {
-    println!("\n{}  doctor — diagnostic du projet {}\n", "▲ karbon".bold().red(), config.app.name.bold().cyan());
+    println!("\n{}  doctor — diagnosing project {}\n", "▲ karbon".bold().red(), config.app.name.bold().cyan());
 
     let mut r = Report::new();
 
@@ -38,14 +37,25 @@ pub fn run(config: &KarbonConfig, root: &Path, online: bool) -> Result<(), Strin
 fn check_database_online(r: &mut Report, root: &Path, migration_dir: &Path) {
     let env_path = root.join(".env");
     let Ok(content) = fs::read_to_string(&env_path) else {
-        r.info("Base (online)", "pas de .env — rien à tester");
+        r.info("Database (online)", "no .env — nothing to test");
         return;
     };
     let vars = parse_env(&content);
-    let Some(url) = build_db_url(&vars) else {
-        r.info("Base (online)", "DB non configurée — rien à tester");
+    let Some(url) = crate::db_url::from_vars(&vars, crate::db_url::compiled_driver(root)) else {
+        r.info("Database (online)", "no database configured — nothing to test");
         return;
     };
+    // Connecting would create a missing SQLite file: a diagnostic must not do that.
+    if let Some(file) = crate::db_url::sqlite_file(&url)
+        && !root.join(file).exists()
+    {
+        r.info(
+            "Database (online)",
+            &format!("`{file}` not created yet — `karbon migrate` or the first run creates it"),
+        );
+        return;
+    }
+    let _ = std::env::set_current_dir(root);
     let migration_count = fs::read_dir(migration_dir)
         .map(|es| {
             es.filter_map(|e| e.ok())
@@ -66,63 +76,25 @@ fn check_database_online(r: &mut Report, root: &Path, migration_dir: &Path) {
             .await
         {
             Ok(pool) => {
-                r.ok("Base (connexion)", "OK");
+                r.ok("Database (connection)", "OK");
                 let applied: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _karbon_migrations")
                     .fetch_one(&pool)
                     .await
                     .unwrap_or(0);
                 let pending = (migration_count - applied).max(0);
                 if pending > 0 {
-                    r.warn("Migrations (online)", &format!("{pending} en attente"), Some("karbon migrate"));
+                    r.warn("Migrations (online)", &format!("{pending} pending"), Some("karbon migrate"));
                 } else {
-                    r.ok("Migrations (online)", "à jour");
+                    r.ok("Migrations (online)", "up to date");
                 }
             }
             Err(e) => r.fail(
-                "Base (connexion)",
-                &format!("échec : {e}"),
-                Some("vérifie les variables DB_* dans .env et que le serveur tourne"),
+                "Database (connection)",
+                &format!("failed: {e}"),
+                Some("check the DB_* variables in .env and that the server is running"),
             ),
         }
     });
-}
-
-/// Build a connection URL from `.env` (`DATABASE_URL`, or `DB_*` vars).
-fn build_db_url(vars: &std::collections::HashMap<String, String>) -> Option<String> {
-    if let Some(url) = vars.get("DATABASE_URL").filter(|v| !v.is_empty()) {
-        return Some(url.clone());
-    }
-    let name = vars
-        .get("DB_NAME")
-        .or_else(|| vars.get("DB_DATABASE"))
-        .filter(|v| !v.is_empty())?;
-    let driver = vars
-        .get("DB_DRIVER")
-        .or_else(|| vars.get("DB_CONNECTION"))
-        .map(String::as_str)
-        .unwrap_or("mysql");
-    let get = |k: &str, d: &str| vars.get(k).filter(|v| !v.is_empty()).cloned().unwrap_or_else(|| d.to_string());
-    match driver {
-        "sqlite" => Some(format!("sqlite://{name}")),
-        "postgres" | "postgresql" => {
-            let user = vars
-                .get("DB_USER")
-                .or_else(|| vars.get("DB_USERNAME"))
-                .map(String::as_str)
-                .unwrap_or("postgres");
-            let (user, pass) = (encode_userinfo(user), encode_userinfo(&get("DB_PASSWORD", "")));
-            Some(format!("postgres://{user}:{pass}@{}:{}/{name}", get("DB_HOST", "127.0.0.1"), get("DB_PORT", "5432")))
-        }
-        _ => {
-            let user = vars
-                .get("DB_USER")
-                .or_else(|| vars.get("DB_USERNAME"))
-                .map(String::as_str)
-                .unwrap_or("root");
-            let (user, pass) = (encode_userinfo(user), encode_userinfo(&get("DB_PASSWORD", "")));
-            Some(format!("mysql://{user}:{pass}@{}:{}/{name}", get("DB_HOST", "127.0.0.1"), get("DB_PORT", "3306")))
-        }
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -133,14 +105,14 @@ fn build_db_url(vars: &std::collections::HashMap<String, String>) -> Option<Stri
 fn check_dependency(r: &mut Report, root: &Path) {
     let Some(cargo) = app_dir(root).map(|d| d.join("Cargo.toml")) else {
         r.fail(
-            "Crate backend introuvable",
-            "ni app/ ni api/ ne contient de Cargo.toml",
-            Some("lance `karbon doctor` depuis la racine d'un projet Karbon"),
+            "Backend crate not found",
+            "neither app/ nor api/ holds a Cargo.toml",
+            Some("run `karbon doctor` from the root of a Karbon project"),
         );
         return;
     };
     let Ok(content) = fs::read_to_string(&cargo) else {
-        r.fail("Lecture de app/Cargo.toml", "impossible", None);
+        r.fail("app/Cargo.toml", "cannot be read", None);
         return;
     };
     let Some(dep) = content
@@ -148,31 +120,31 @@ fn check_dependency(r: &mut Report, root: &Path) {
         .find(|l| l.trim_start().starts_with("karbon ") || l.trim_start().starts_with("karbon="))
     else {
         r.fail(
-            "Dépendance `karbon`",
-            "absente de app/Cargo.toml",
-            Some("ajoute `karbon = { package = \"karbon-framework\", ... }`"),
+            "`karbon` dependency",
+            "missing from app/Cargo.toml",
+            Some("add `karbon = { package = \"karbon-framework\", ... }`"),
         );
         return;
     };
 
     if dep.contains("path") {
-        r.ok("Dépendance `karbon`", "path dep locale (dev)");
+        r.ok("`karbon` dependency", "local path dep (dev)");
     } else if dep.contains("git") {
-        r.ok("Dépendance `karbon`", "dépendance git");
+        r.ok("`karbon` dependency", "git dependency");
     } else if dep.contains("version") {
         r.warn(
-            "Dépendance `karbon`",
-            "résolue depuis crates.io (version publiée, potentiellement ancienne)",
+            "`karbon` dependency",
+            "resolved from crates.io (published version, possibly older than this checkout)",
             Some(
-                "en dev contre ce dépôt : `karbon new <app> --local <chemin-du-repo-karbon>` (path dep + features à jour)",
+                "to develop against this repository: `karbon new <app> --local <path-to-karbon-repo>` (path dep, current features)",
             ),
         );
     }
 
     if dep.contains("studio") {
-        r.info("Feature `studio`", "activée — dashboard + toolbar dispo en dev");
+        r.info("`studio` feature", "enabled — dashboard and toolbar available in dev");
     } else {
-        r.info("Feature `studio`", "absente — pas de Studio (ajoute `features = [\"studio\"]`)");
+        r.info("`studio` feature", "disabled — no Studio (add `features = [\"studio\"]`)");
     }
 }
 
@@ -181,17 +153,17 @@ fn check_routing(r: &mut Report, root: &Path) {
     let Some(src) = app_src(root) else { return };
     let main_rs = src.join("main.rs");
     let Ok(main) = fs::read_to_string(&main_rs) else {
-        r.warn("main.rs", "introuvable", None);
+        r.warn("main.rs", "not found", None);
         return;
     };
 
     if main.contains("// karbon:api-routes") {
-        r.ok("Auto-montage des routes", "marqueurs présents dans main.rs");
+        r.ok("Route auto-wiring", "markers present in main.rs");
     } else {
         r.warn(
-            "Auto-montage des routes",
-            "marqueurs absents — les contrôleurs générés ne se câbleront pas tout seuls",
-            Some("ajoute `// karbon:api-routes` dans api_routes() et `// karbon:routes` dans build_router()"),
+            "Route auto-wiring",
+            "markers missing — generated controllers will not be mounted automatically",
+            Some("add `// karbon:api-routes` in api_routes() and `// karbon:routes` in build_router()"),
         );
     }
 
@@ -206,10 +178,10 @@ fn check_routing(r: &mut Report, root: &Path) {
         };
         if !main.contains(&ty) {
             r.warn(
-                "Contrôleur non monté",
-                &format!("`{ty}` est généré mais absent de main.rs"),
+                "Controller not mounted",
+                &format!("`{ty}` is generated but missing from main.rs"),
                 Some(&format!(
-                    ".nest(controller::{module}::{ty}::prefix(), controller::{module}::{ty}::router())  — ou relance `karbon generate ...` (auto-montage)"
+                    ".nest(controller::{module}::{ty}::prefix(), controller::{module}::{ty}::router())  — or run `karbon generate ...` again (auto-wiring)"
                 )),
             );
         }
@@ -231,9 +203,9 @@ fn check_admin_entities(r: &mut Report, root: &Path) {
         let entity = src.join(format!("entity/{base}.rs"));
         if !entity.exists() {
             r.fail(
-                "Admin sans entité",
-                &format!("`{base}_admin.rs` référence l'entité `{base}` introuvable"),
-                Some(&format!("lance `karbon generate crud {}` avant l'admin", pascal(base))),
+                "Admin without entity",
+                &format!("`{base}_admin.rs` refers to the entity `{base}`, which does not exist"),
+                Some(&format!("run `karbon generate crud {}` before the admin", pascal(base))),
             );
         }
     }
@@ -243,7 +215,7 @@ fn check_admin_entities(r: &mut Report, root: &Path) {
 fn check_database(r: &mut Report, root: &Path) {
     let env_path = root.join(".env");
     if !env_path.exists() {
-        r.warn("Fichier .env", "absent", Some("copie `.env.example` → `.env`"));
+        r.warn(".env file", "missing", Some("copy `.env.example` to `.env`, then run `karbon secret --write`"));
         return;
     }
     let Ok(content) = fs::read_to_string(&env_path) else {
@@ -260,12 +232,12 @@ fn check_database(r: &mut Report, root: &Path) {
             .get("DB_DRIVER")
             .or_else(|| vars.get("DB_CONNECTION"))
             .cloned()
-            .unwrap_or_else(|| "mysql".to_string());
-        r.ok("Base de données", &format!("configurée ({driver})"));
+            .unwrap_or_else(|| crate::db_url::compiled_driver(root).to_string());
+        r.ok("Database", &format!("configured ({driver})"));
     } else {
         r.info(
-            "Base de données",
-            "non configurée (DB_NAME vide) — l'app tourne sans DB ; migrations & admin en ont besoin",
+            "Database",
+            "not configured (DB_NAME empty) — the app runs without one; migrations and the admin need it",
         );
     }
 }
@@ -275,24 +247,24 @@ fn check_database(r: &mut Report, root: &Path) {
 fn check_jwt_secret(r: &mut Report, secret: &str) {
     use super::secret::{MIN_LEN, PLACEHOLDERS};
     const LABEL: &str = "JWT_SECRET";
-    const FIX: Option<&str> = Some("`karbon secret --write` en génère un et l'écrit dans .env");
+    const FIX: Option<&str> = Some("`karbon secret --write` generates one and writes it to .env");
 
     let secret = secret.trim();
     if secret.is_empty() {
-        r.info(LABEL, "vide — authentification désactivée (tout token est refusé)");
+        r.info(LABEL, "empty — authentication disabled (every token is rejected)");
     } else if PLACEHOLDERS.contains(&secret) {
-        r.fail(LABEL, "c'est la valeur d'exemple, publique : l'app refuse de démarrer avec", FIX);
+        r.fail(LABEL, "this is the public example value: the app refuses to start with it", FIX);
     } else if secret.len() < MIN_LEN {
-        r.warn(LABEL, &format!("moins de {MIN_LEN} caractères — refusé hors development/test"), FIX);
+        r.warn(LABEL, &format!("shorter than {MIN_LEN} characters — refused outside development/test"), FIX);
     } else {
-        r.ok(LABEL, "défini");
+        r.ok(LABEL, "set");
     }
 }
 
 /// Migration files: count + duplicate version-number detection.
 fn check_migrations(r: &mut Report, dir: &Path) {
     let Ok(entries) = fs::read_dir(dir) else {
-        r.info("Migrations", "pas de dossier migration/");
+        r.info("Migrations", "no migration/ directory");
         return;
     };
     let files: Vec<String> = entries
@@ -302,7 +274,7 @@ fn check_migrations(r: &mut Report, dir: &Path) {
         .collect();
 
     if files.is_empty() {
-        r.info("Migrations", "aucune migration");
+        r.info("Migrations", "no migration yet");
         return;
     }
 
@@ -318,32 +290,32 @@ fn check_migrations(r: &mut Report, dir: &Path) {
     if let Some(p) = dup {
         r.warn(
             "Migrations",
-            &format!("préfixe `{p}` en double — ordre d'application ambigu"),
-            Some("renumérote les fichiers en double dans migration/"),
+            &format!("prefix `{p}` used twice — the order they apply in is ambiguous"),
+            Some("renumber the duplicate files in migration/"),
         );
     } else {
-        r.ok("Migrations", &format!("{} fichier(s), numérotation OK", files.len()));
+        r.ok("Migrations", &format!("{} file(s), numbering OK", files.len()));
     }
 }
 
 /// Frontend project sanity (only for full skeletons).
 fn check_frontend(r: &mut Report, config: &KarbonConfig, root: &Path) {
     let Some(fc) = &config.frontend else {
-        r.info("Frontend", "aucun (skeleton micro / backend-only)");
+        r.info("Frontend", "none (micro skeleton / backend-only)");
         return;
     };
     let dir = root.join(&fc.dir);
     if !dir.exists() {
-        r.fail("Frontend", &format!("dossier `{}` introuvable", fc.dir), None);
+        r.fail("Frontend", &format!("directory `{}` not found", fc.dir), None);
         return;
     }
     if !dir.join("package.json").exists() {
-        r.warn("Frontend", "package.json absent", None);
+        r.warn("Frontend", "package.json missing", None);
     }
 
     // SvelteKit needs src/app.html.
     if dir.join("svelte.config.js").exists() && !dir.join("src/app.html").exists() {
-        r.fail("Frontend (SvelteKit)", "src/app.html manquant", Some("crée src/app.html (requis par SvelteKit)"));
+        r.fail("Frontend (SvelteKit)", "src/app.html missing", Some("create src/app.html (SvelteKit requires it)"));
     }
 
     // Vite dev proxy must forward backend routes.
@@ -356,12 +328,12 @@ fn check_frontend(r: &mut Report, config: &KarbonConfig, root: &Path) {
             }
         }
         if missing.is_empty() {
-            r.ok("Proxy Vite", "relaie /api, /_studio, /health, /admin");
+            r.ok("Vite proxy", "forwards /api, /_studio, /health, /admin");
         } else {
             r.warn(
-                "Proxy Vite",
-                &format!("relais manquant(s) : {}", missing.join(", ")),
-                Some("ajoute-les au bloc `server.proxy` de vite.config.ts → http://localhost:<port-backend>"),
+                "Vite proxy",
+                &format!("route(s) not forwarded: {}", missing.join(", ")),
+                Some("add them to the `server.proxy` block of vite.config.ts → http://localhost:<backend-port>"),
             );
         }
     }
@@ -410,10 +382,10 @@ impl Report {
     fn summary(&self) {
         println!();
         if self.fail == 0 && self.warn == 0 {
-            println!("  {} Tout est bon ({} vérifications OK)\n", "✓".green().bold(), self.ok);
+            println!("  {} All good ({} checks OK)\n", "✓".green().bold(), self.ok);
         } else {
             println!(
-                "  {} {} OK · {} avertissement(s) · {} problème(s)\n",
+                "  {} {} OK · {} warning(s) · {} problem(s)\n",
                 "→".blue(),
                 self.ok.to_string().green(),
                 self.warn.to_string().yellow(),

@@ -1,22 +1,33 @@
+use crate::i18n::Locale;
+
 /// Number formatting and utility helpers
 pub struct NumberHelper;
 
 impl NumberHelper {
-    /// Format a file size in human-readable format (French units)
+    /// Format a file size in human-readable format, with the units of
+    /// [`crate::i18n::locale`]: `"1.5 KB"`, or `"1.5 Ko"` with `APP_LOCALE=fr`.
     pub fn filesize_format(bytes: u64) -> String {
-        const UNITS: &[&str] = &["o", "Ko", "Mo", "Go", "To"];
+        Self::filesize_format_in(bytes, crate::i18n::locale())
+    }
+
+    /// [`filesize_format`](Self::filesize_format) with the units of a given language.
+    pub fn filesize_format_in(bytes: u64, locale: Locale) -> String {
+        let units: &[&str] = match locale {
+            Locale::En => &["B", "KB", "MB", "GB", "TB"],
+            Locale::Fr => &["o", "Ko", "Mo", "Go", "To"],
+        };
         let mut size = bytes as f64;
         let mut unit_idx = 0;
 
-        while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
+        while size >= 1024.0 && unit_idx < units.len() - 1 {
             size /= 1024.0;
             unit_idx += 1;
         }
 
         if unit_idx == 0 {
-            format!("{} {}", bytes, UNITS[0])
+            format!("{} {}", bytes, units[0])
         } else {
-            format!("{:.1} {}", size, UNITS[unit_idx])
+            format!("{:.1} {}", size, units[unit_idx])
         }
     }
 
@@ -54,9 +65,28 @@ impl NumberHelper {
         format!("{},{}", formatted_int, decimal_str)
     }
 
-    /// Format as ordinal (French): 1 => "1er", 2 => "2e", etc.
+    /// Format as ordinal in the language of [`crate::i18n::locale`]: `"1st"`, `"2nd"`,
+    /// `"11th"` — or `"1er"`, `"2e"` with `APP_LOCALE=fr`.
     pub fn ordinal(value: u64) -> String {
-        if value == 1 { "1er".to_string() } else { format!("{}e", value) }
+        Self::ordinal_in(value, crate::i18n::locale())
+    }
+
+    /// [`ordinal`](Self::ordinal) in a given language.
+    pub fn ordinal_in(value: u64, locale: Locale) -> String {
+        match locale {
+            Locale::Fr if value == 1 => "1er".to_string(),
+            Locale::Fr => format!("{value}e"),
+            Locale::En => {
+                let suffix = match (value % 10, value % 100) {
+                    (_, 11..=13) => "th",
+                    (1, _) => "st",
+                    (2, _) => "nd",
+                    (3, _) => "rd",
+                    _ => "th",
+                };
+                format!("{value}{suffix}")
+            }
+        }
     }
 
     /// Format as percentage
@@ -111,12 +141,21 @@ mod tests {
 
     #[test]
     fn test_filesize_format() {
-        assert_eq!(NumberHelper::filesize_format(0), "0 o");
-        assert_eq!(NumberHelper::filesize_format(512), "512 o");
-        assert_eq!(NumberHelper::filesize_format(1024), "1.0 Ko");
-        assert_eq!(NumberHelper::filesize_format(1536), "1.5 Ko");
-        assert_eq!(NumberHelper::filesize_format(1048576), "1.0 Mo");
-        assert_eq!(NumberHelper::filesize_format(1073741824), "1.0 Go");
+        let en = |bytes| NumberHelper::filesize_format_in(bytes, Locale::En);
+        assert_eq!(en(0), "0 B");
+        assert_eq!(en(512), "512 B");
+        assert_eq!(en(1024), "1.0 KB");
+        assert_eq!(en(1536), "1.5 KB");
+        assert_eq!(en(1048576), "1.0 MB");
+        assert_eq!(en(1073741824), "1.0 GB");
+
+        let fr = |bytes| NumberHelper::filesize_format_in(bytes, Locale::Fr);
+        assert_eq!(fr(0), "0 o");
+        assert_eq!(fr(512), "512 o");
+        assert_eq!(fr(1024), "1.0 Ko");
+        assert_eq!(fr(1536), "1.5 Ko");
+        assert_eq!(fr(1048576), "1.0 Mo");
+        assert_eq!(fr(1073741824), "1.0 Go");
     }
 
     #[test]
@@ -137,9 +176,28 @@ mod tests {
 
     #[test]
     fn test_ordinal() {
-        assert_eq!(NumberHelper::ordinal(1), "1er");
-        assert_eq!(NumberHelper::ordinal(2), "2e");
-        assert_eq!(NumberHelper::ordinal(100), "100e");
+        let fr = |n| NumberHelper::ordinal_in(n, Locale::Fr);
+        assert_eq!(fr(1), "1er");
+        assert_eq!(fr(2), "2e");
+        assert_eq!(fr(100), "100e");
+
+        let en = |n| NumberHelper::ordinal_in(n, Locale::En);
+        for (n, expected) in [
+            (1, "1st"),
+            (2, "2nd"),
+            (3, "3rd"),
+            (4, "4th"),
+            (11, "11th"),
+            (12, "12th"),
+            (13, "13th"),
+            (21, "21st"),
+            (22, "22nd"),
+            (100, "100th"),
+            (101, "101st"),
+            (111, "111th"),
+        ] {
+            assert_eq!(en(n), expected);
+        }
     }
 
     #[test]

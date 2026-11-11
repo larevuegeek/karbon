@@ -2,7 +2,7 @@
 //!
 //! Classic CGI invokes the binary **once per request**, passing the request via
 //! environment variables + stdin and reading the response from stdout. This is
-//! the lowest-common-denominator way to run on a mutualisé host that supports
+//! the lowest-common-denominator way to run on a shared host that supports
 //! CGI but not a long-lived process.
 //!
 //! ⚠️ **Best-effort / unproven**: one process per request is slow, and this has

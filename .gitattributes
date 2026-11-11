@@ -1,0 +1,2 @@
+# Fetched and piped to `sh`: CRLF line endings would break it.
+install.sh text eol=lf

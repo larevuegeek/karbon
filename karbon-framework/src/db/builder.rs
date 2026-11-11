@@ -3,8 +3,8 @@ use sqlx::{Arguments, AssertSqlSafe};
 use super::{Db, DbArguments, placeholder};
 use crate::error::{AppError, AppResult};
 
-/// `column IN (?, …)` en liant chaque valeur ; une liste vide donne `1 = 0` (ne correspond à
-/// rien) plutôt qu'un `IN ()` invalide.
+/// `column IN (?, …)`, binding each value; an empty list yields `1 = 0` (matches nothing)
+/// rather than an invalid `IN ()`.
 fn in_clause<T>(column: &str, values: &[T], args: &mut DbArguments, param_count: &mut usize) -> String
 where
     T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + Clone + 'static,
@@ -312,7 +312,7 @@ impl UpdateBuilder {
         self
     }
 
-    /// WHERE column IN (?, …) ; une liste vide ne correspond à aucune ligne.
+    /// WHERE column IN (?, …); an empty list matches no row.
     pub fn where_in<T>(mut self, column: &str, values: &[T]) -> Self
     where
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + Clone + 'static,
@@ -343,7 +343,7 @@ impl UpdateBuilder {
         self
     }
 
-    /// Requête SQL générée (sans les valeurs).
+    /// The generated SQL (without the values).
     pub fn to_sql(&self) -> String {
         let mut n = 0;
         let mut render = |clauses: &[Clause]| -> Vec<String> {
@@ -533,7 +533,7 @@ impl DeleteBuilder {
         self
     }
 
-    /// WHERE column IN (?, …) ; une liste vide ne correspond à aucune ligne.
+    /// WHERE column IN (?, …); an empty list matches no row.
     pub fn where_in<T>(mut self, column: &str, values: &[T]) -> Self
     where
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + Clone + 'static,
@@ -557,7 +557,7 @@ impl DeleteBuilder {
         self
     }
 
-    /// Requête SQL générée (sans les valeurs).
+    /// The generated SQL (without the values).
     pub fn to_sql(&self) -> String {
         #[allow(unused_mut)]
         let mut sql = format!("DELETE FROM {}{}", self.table, where_sql(&self.where_clauses));
@@ -681,7 +681,7 @@ impl CountBuilder {
         self
     }
 
-    /// WHERE column IN (?, …) ; une liste vide ne correspond à aucune ligne.
+    /// WHERE column IN (?, …); an empty list matches no row.
     pub fn where_in<T>(mut self, column: &str, values: &[T]) -> Self
     where
         T: sqlx::Type<Db> + sqlx::Encode<'static, Db> + Send + Clone + 'static,
@@ -691,7 +691,7 @@ impl CountBuilder {
         self
     }
 
-    /// Requête SQL générée (sans les valeurs).
+    /// The generated SQL (without the values).
     pub fn to_sql(&self) -> String {
         format!("SELECT COUNT(*) FROM {}{}", self.table, where_sql(&self.where_clauses))
     }

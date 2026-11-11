@@ -1,29 +1,32 @@
 # {{PROJECT_NAME_TITLE}}
 
-Bienvenue dans la documentation de **{{PROJECT_NAME_TITLE}}**.
+Welcome to the documentation of **{{PROJECT_NAME_TITLE}}**.
 
-Ce dossier `docs/` contient les guides Markdown du projet. Ils sont :
+This `docs/` folder holds the project's Markdown guides. They are:
 
-- **affichés en direct** dans Studio (onglet **Docs**) en développement ;
-- **compilés en site statique** avec `karbon docs build` (→ `docs/_site/`).
+- **shown live** in Studio (the **Docs** tab) during development;
+- **built into a static site** with `karbon docs build` (→ `docs/_site/`).
 
-## Démarrer
+## Getting started
 
 ```bash
-karbon dev                 # backend + frontend en hot-reload
-karbon generate crud Post  # scaffolde une entité + repo + contrôleur + migration
-karbon migrate             # applique les migrations
-karbon doctor              # diagnostique le projet
+karbon dev                 # backend + frontend, with hot reload
+karbon generate crud Post  # scaffolds an entity + repository + controller
+karbon generate auth       # sign-up / sign-in pages + JSON API
+karbon migrate diff        # writes the migration from the entity ↔ database diff
+karbon migrate             # applies the pending migrations
+karbon user create you@example.com --admin   # your first administrator
+karbon doctor              # diagnoses the project
 ```
 
-## Écrire la doc
+## Writing docs
 
-Ajoute des fichiers `.md` dans `docs/` : chacun devient une page (le titre vient du
-premier `# titre`). Renomme/duplique celui-ci pour créer tes propres guides.
+Add `.md` files to `docs/`: each one becomes a page (its title is the first
+`# heading`). Rename or duplicate this one to start your own guides.
 
 ## API
 
-L'API du projet est documentée automatiquement :
+The project's API documents itself:
 
-- `/openapi.json` — le document OpenAPI 3.0 (agrégé depuis les contrôleurs) ;
-- `/docs` — l'explorateur **Swagger UI**.
+- `/openapi.json` — the OpenAPI 3.0 document (aggregated from the controllers);
+- `/docs` — the **Swagger UI** explorer.

@@ -1,20 +1,22 @@
-# Karbon — référence
+# Karbon — reference
 
-Référence rapide du framework, rendue en direct dans Studio. Elle évolue avec le code.
+A quick reference of the framework, rendered live in Studio. It evolves with the code.
 
 ## CLI
 
-| Commande | Rôle |
-|----------|------|
-| `karbon new <app>` | Nouveau projet (`--frontend svelte\|nextjs`, `--skeleton full\|micro`, `--template blog`, `--local <repo>`) |
-| `karbon dev` | Dev (backend + frontend, hot-reload) |
-| `karbon build` / `karbon serve` | Build prod / lancer la prod (reverse proxy intégré) |
-| `karbon generate <kind> <Name>` | Génère `entity` / `controller` / `crud` / `admin` (`--dry-run`, `--force`) |
-| `karbon migrate [status\|rollback\|diff]` | Migrations versionnées ; `diff` = entités ↔ base |
-| `karbon doctor` | Diagnostic des pièges courants (offline) |
-| `karbon secret [--write]` | Génère un `JWT_SECRET` aléatoire (affiché, ou écrit dans `.env`) |
-| `karbon docs build` | Rend `docs/*.md` → site statique `docs/_site/` |
-| `karbon deploy <docker\|paas\|fly\|railway\|publish>` | Déploiement |
+| Command | Purpose |
+|---------|---------|
+| `karbon new <app>` | New project (`--frontend svelte\|nextjs`, `--skeleton full\|micro`, `--template blog`, `--local <repo>`) |
+| `karbon dev` | Development (backend + frontend, hot reload) |
+| `karbon build` / `karbon serve` | Production build / run it (built-in reverse proxy) |
+| `karbon generate <kind> <Name>` | Generates `entity` / `controller` / `crud` / `admin` (`--dry-run`, `--force`) |
+| `karbon generate auth` | Accounts: sign-up, sign-in, session renewal, password reset — browser pages + JSON API |
+| `karbon user create <email> [--admin]` | Creates an account (`user promote <email>` makes one an administrator) |
+| `karbon migrate [status\|rollback\|diff]` | Versioned migrations; `diff` = entities ↔ database |
+| `karbon doctor` | Diagnoses common pitfalls (offline) |
+| `karbon secret [--write]` | Generates a random `JWT_SECRET` (printed, or written to `.env`) |
+| `karbon docs build` | Renders `docs/*.md` → static site in `docs/_site/` |
+| `karbon deploy <docker\|paas\|fly\|railway\|publish>` | Deployment |
 
 ## Controllers
 
@@ -26,62 +28,72 @@ impl PostController {
 }
 ```
 
-La macro génère `router()`, `prefix()` et `openapi_paths()`. Les routes générées sont
-montées automatiquement dans `main.rs` (marqueurs `// karbon:routes` / `// karbon:api-routes`).
+The macro generates `router()`, `prefix()` and `openapi_paths()`. Generated routes are
+mounted automatically in `main.rs` (markers `// karbon:routes` / `// karbon:api-routes`).
 
-**Protection par route** : `role = "…"` (contrôleur) ou `#[require_role("…")]` (route, prioritaire).
-Le contrôle utilise le paramètre `auth: AuthGuard` du handler ; si une route porte un rôle **sans**
-`auth: AuthGuard`, **le macro refuse de compiler** (pas de route non protégée en silence).
+**Per-route protection**: `role = "…"` (controller) or `#[require_role("…")]` (route, takes
+precedence). The check uses the handler's `auth: AuthGuard` parameter; a route that carries
+a role **without** `auth: AuthGuard` **does not compile** (no silently unprotected route).
 
-**Firewall global** : `App::firewall(AccessControl::new().public("^/login").rule("^/admin", ["ROLE_ADMIN"]))`
-— règles pattern d'URL → rôles, appliquées centralement (première règle qui matche gagne).
+**Global firewall**: `App::firewall(AccessControl::new().public("^/login").rule("^/admin", ["ROLE_ADMIN"]))`
+— URL pattern → roles rules, enforced centrally (the first matching rule wins).
 
-**Validation des paramètres de route** (déclarative, appliquée en 400 avant le handler) :
+**Route parameter validation** (declarative, answered with a 400 before the handler runs):
 
 ```rust
-#[karbon::get("/{id}", id = "int:min=1")]                 // entier ≥ 1
+#[karbon::get("/{id}", id = "int:min=1")]                 // integer ≥ 1
 #[karbon::get("/{slug}", slug = "slug")]                   // ^[a-z0-9-]+$
 #[karbon::get("/{status}", status = "enum:draft|published")]
 #[karbon::get("/{code}", code = "regex:^[A-Z]{2}[0-9]{2}$")]
 ```
-Règles : `int[:min=N][:max=N]`, `string[:minlen=N][:maxlen=N]`, `slug`, `uuid`,
-`enum:a|b|c`, `regex:^…$`. Le nom du binding doit correspondre au nom du paramètre de chemin.
+Rules: `int[:min=N][:max=N]`, `string[:minlen=N][:maxlen=N]`, `slug`, `uuid`,
+`enum:a|b|c`, `regex:^…$`. The binding name must match the path parameter name.
 
-## Base de données
+## Database
 
-- Multi-driver **MySQL** (défaut) / **PostgreSQL** / **SQLite** (feature flags).
-- `CrudRepository` : `find_by_id`, `find_all`, `find_where`, `delete`, soft-delete, slug…
-- `SelectBuilder` : query builder typé et paramétré (anti-injection).
-- `Insertable` / `Updatable` (derive) : INSERT/UPDATE avec `#[timestamps]`, `#[slug_from]`.
-- Relations : `has_many`, belongs-to via `find_by_id`, `load_grouped_by` (anti N+1).
-- **Base optionnelle** : `DB_NAME` vide → l'app démarre sans se connecter.
-- **Migrations par diff** : les entités sont la source de vérité ; `karbon migrate diff`
-  compare entités ↔ base et génère la migration (`CREATE`/`ALTER ADD`, additif).
+- Multi-driver: **MySQL** (default) / **PostgreSQL** / **SQLite** (feature flags).
+- `CrudRepository`: `find_by_id`, `find_all`, `find_where`, `delete`, soft delete, slug…
+- `SelectBuilder`: typed, parameterized query builder (injection-safe).
+- `Insertable` / `Updatable` (derive): INSERT/UPDATE with `#[timestamps]`, `#[slug_from]`.
+- Relations: `has_many`, belongs-to through `find_by_id`, `load_grouped_by` (no N+1).
+- **Optional database**: empty `DB_NAME` → the app starts without connecting.
+- **Migrations by diff**: entities are the source of truth; `karbon migrate diff` compares
+  entities ↔ database and writes the migration (`CREATE` / `ALTER ADD`, additive only).
 
-## Sécurité
+## Security
 
-Argon2id, JWT (access 15 min + refresh 30 j hashé SHA-256), CSRF (double-submit),
-AuthGuard + hiérarchie de rôles, upload sécurisé (magic bytes, anti path-traversal,
-sanitization SVG), CORS, compression, request-id, graceful shutdown.
+Argon2id, JWT (15 min access token + 30 day refresh token, stored as a SHA-256 hash), CSRF
+(double submit), AuthGuard (Bearer header, or the `karbon_auth` session cookie for browsers)
++ role hierarchy, `LOGIN_PATH` (browsers without a session are sent to the login page), hardened uploads (magic bytes, path traversal
+protection, SVG sanitization), CORS, compression, request ID, graceful shutdown.
 
-## Composants
+## Components
 
-- **Forms** (`form::Form`/`Field`) : binding, validation, rendu HTML, CSRF.
-- **Validator** composable : agrège toutes les violations, imbriqué, groupes.
-- **Message bus** (`MessageBus`) : sync + async, retry/backoff, dead-letter.
-- **Messages** (`MessageBus` : événements et travail en arrière-plan), **Jobs persistants** (`PersistentQueue`). `EventBus` et `JobQueue` sont dépréciés.
-- **Cache** : mémoire / fichier / Redis, tags, cache HTTP (ETag).
-- **Templates** : Tera, MiniJinja, ou moteur maison (`native-templates`).
+- **Forms** (`form::Form` / `Field`): binding, validation, HTML rendering, CSRF.
+- Composable **Validator**: collects every violation, nested, with groups.
+- **Messages** (`MessageBus`): events and background work, sync or async, retry with
+  backoff, dead-letter log. `EventBus` and `JobQueue` are deprecated.
+- **Persistent jobs** (`PersistentQueue`): stored in the database, survive a restart.
+- **Cache**: memory / file / Redis, tags, HTTP cache (ETag).
+- **Templates**: Tera (the supported engine); MiniJinja and the in-house engine
+  (`native-templates`) are experimental.
 - **i18n**, **mail** (lettre), **scraping**, **images** (`ImageProcessor`).
-- **Realtime** : `ChannelRegistry` (rooms WebSocket), HMR, LiveWire, Inertia.
+- **Realtime**: `ChannelRegistry` (WebSocket rooms), HMR, LiveWire, Inertia.
+
+## Language
+
+Karbon's own messages (masked errors, route and form validation) are in English.
+`APP_LOCALE=fr` switches them to French. Your application's messages are yours: translate
+them with `i18n::I18n`.
 
 ## Studio (dev)
 
-Dashboard temps réel (feature `studio`, dev only) : requêtes, events, jobs, mails,
-**Overview** (perf), **Database** (schéma), **Terminal** (commandes CLI whitelistées + Maker),
-**Docs** (cette page). Token + localhost. Toolbar injectée en bas des pages HTML.
+Real-time dashboard (feature `studio`, development only): requests, events, jobs, mails,
+**Overview** (performance), **Database** (schema), **Terminal** (allowlisted CLI commands +
+Maker), **Docs** (this page). Open from a browser on the same machine, or with the token
+printed at startup. A toolbar is injected at the bottom of HTML pages.
 
-## Extensibilité
+## Extensibility
 
-- `http::Module` — contribue des routes.
-- `http::Bundle` — routes + hook `boot(&AppState)` au démarrage (plugin compile-time).
+- `http::Module` — contributes routes.
+- `http::Bundle` — routes + a `boot(&AppState)` hook at startup (compile-time plugin).

@@ -257,6 +257,10 @@ impl App {
         crate::security::activate_hierarchy(role_hierarchy.clone());
 
         let db = if self.config.has_database() {
+            // SQLite has no host or port: its "address" is the file named by DB_NAME.
+            #[cfg(feature = "sqlite")]
+            tracing::info!("Opening SQLite database {}", self.config.db_name);
+            #[cfg(not(feature = "sqlite"))]
             tracing::info!("Connecting to database at {}:{}", self.config.db_host, self.config.db_port);
             let db = Database::connect(&self.config).await?;
             tracing::info!("Database connected");
@@ -358,7 +362,7 @@ impl App {
                 .map_err(|e| anyhow::anyhow!("Bundle '{}' boot failed: {}", bundle.name(), e))?;
         }
 
-        // Profiler activé uniquement en mode debug
+        // Profiler active in debug builds only
         if cfg!(debug_assertions) {
             tracing::info!("Debug profiler enabled");
             router = router.layer(middleware::from_fn(crate::logger::profiler_middleware));
@@ -484,6 +488,15 @@ impl App {
             ));
         }
 
+        // LOGIN_PATH: a browser that opens a protected page without a session is sent to
+        // the login page. Outside the firewall, so its 401s are covered like a handler's.
+        if let Some(login_path) = login_path_from(std::env::var("LOGIN_PATH").ok().as_deref())? {
+            tracing::info!("Login page: {login_path} (browsers without a session are redirected to it)");
+            router = router.layer(middleware::from_fn(move |req: axum::extract::Request, next: middleware::Next| {
+                super::middleware::login_redirect(login_path.clone(), req, next)
+            }));
+        }
+
         // Apply rate limiting if configured
         if rate_limit_max > 0 {
             tracing::info!("Rate limiting: {} requests per {}s", rate_limit_max, rate_limit_window);
@@ -577,6 +590,17 @@ fn jwt_secret_refusal(secret: &str, env: &crate::config::Environment) -> Option<
         ));
     }
     None
+}
+
+/// The login page named by `LOGIN_PATH`, if any. A value that is not a local path stops
+/// the startup: redirecting every unauthenticated browser to a mistyped or foreign address
+/// is not something to discover in production.
+fn login_path_from(value: Option<&str>) -> anyhow::Result<Option<std::sync::Arc<str>>> {
+    match value.map(str::trim).filter(|v| !v.is_empty()) {
+        None => Ok(None),
+        Some(path) if super::middleware::is_valid_login_path(path) => Ok(Some(std::sync::Arc::from(path))),
+        Some(path) => anyhow::bail!("LOGIN_PATH must be a path of this application such as `/login` (got `{path}`)"),
+    }
 }
 
 fn bind_ip(host: Option<&str>) -> std::net::IpAddr {

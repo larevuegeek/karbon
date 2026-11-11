@@ -10,3 +10,4 @@ pub mod new;
 pub mod secret;
 pub mod serve;
 pub mod sql_script;
+pub mod user;

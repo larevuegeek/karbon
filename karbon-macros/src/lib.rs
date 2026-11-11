@@ -526,25 +526,25 @@ pub fn derive_insertable(input: TokenStream) -> TokenStream {
         bind_calls.push(quote! { .bind(chrono::Utc::now()) });
     }
 
-    // Build the SQL string at compile time
-    let columns_str = column_names.join(", ");
-    let placeholders_str: String = (1..=column_names.len()).map(|_| "?".to_string()).collect::<Vec<_>>().join(", ");
-    let sql_literal = format!("INSERT INTO {} ({}) VALUES ({})", table, columns_str, placeholders_str);
-
+    // The SQL is built by the framework, not here: placeholders (`?` or `$n`) and the way
+    // the new id comes back (query result, or `RETURNING id`) depend on the driver the
+    // *application* compiles with, which a macro cannot see. A literal `VALUES (?, ?)` made
+    // every `insert()` a syntax error under PostgreSQL.
     let expanded = quote! {
         impl #name {
-            /// Auto-generated INSERT query from #[derive(Insertable)]
+            /// Auto-generated INSERT query from #[derive(Insertable)]. Returns the new id.
             pub async fn insert<'e, E>(&self, executor: E) -> karbon::error::AppResult<u64>
             where
                 E: sqlx::Executor<'e, Database = karbon::db::Db>,
             {
                 #(#slug_lets)*
-                karbon::tracing::debug!("[SQL INSERT] {}", #sql_literal);
-                let result = sqlx::query(#sql_literal)
-                    #(#bind_calls)*
-                    .execute(executor)
-                    .await?;
-                Ok(karbon::db::last_insert_id(&result))
+                let sql = karbon::db::insert_sql(#table, &[#(#column_names),*]);
+                karbon::tracing::debug!("[SQL INSERT] {}", sql);
+                // Table and columns come from the struct definition at compile time;
+                // values are bound, never interpolated.
+                let query = sqlx::query(sqlx::AssertSqlSafe(sql))
+                    #(#bind_calls)*;
+                Ok(karbon::db::insert_returning_id(query, executor).await?)
             }
         }
     };
@@ -749,8 +749,8 @@ pub fn derive_updatable(input: TokenStream) -> TokenStream {
 /// #[karbon::validated]
 /// #[derive(Debug, Deserialize, Validate)]
 /// pub struct RegisterRequest {
-///     #[validate(accepted(message = "Vous devez accepter les CGU"))]
-///     pub cgu: bool,
+///     #[validate(accepted(message = "You must accept the terms"))]
+///     pub terms: bool,
 /// }
 /// ```
 ///

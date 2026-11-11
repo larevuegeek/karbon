@@ -29,6 +29,7 @@ let ok   = Password::verify("…", &amp;hash)?;</pre>
 
 <h2>AuthGuard</h2>
 <p><code>AuthGuard</code> is an Axum extractor that verifies the JWT and resolves the role hierarchy. Inject it into a handler to require — and read — an authenticated user.</p>
+<p>The token is read from <code>Authorization: Bearer …</code> (API clients) or, when the request has no such header, from the <code>karbon_auth</code> cookie (browsers). That cookie is <code>HttpOnly</code>, <code>SameSite=Lax</code> and <code>Secure</code> on HTTPS; <code>security::login_cookie</code> / <code>logout_cookie</code> build it, and <code>karbon generate auth</code> writes the pages that use it. Keep the CSRF protection on with browser sessions. With <code>LOGIN_PATH=/auth/login</code>, a browser opening a protected page without a session is redirected to the login page, while API calls keep their <code>401</code>.</p>
 <pre>#[karbon::get("/me")]
 async fn me(auth: AuthGuard) -&gt; AppResult&lt;impl IntoResponse&gt; {
     auth.require_role("ROLE_USER")?;

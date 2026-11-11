@@ -1,13 +1,20 @@
 use chrono::{NaiveDate, NaiveDateTime, Utc};
 
+use crate::i18n::Locale;
+
 /// Date/time helpers
 pub struct DateHelper;
 
 impl DateHelper {
-    /// Human-readable "time ago" string (French)
+    /// Human-readable "time ago" string, in the language of [`crate::i18n::locale`]:
+    /// `"3 h ago"`, or `"Il y a 3 h"` with `APP_LOCALE=fr`.
     pub fn time_ago(date: &NaiveDateTime) -> String {
-        let now = Utc::now().naive_utc();
-        let diff = now.signed_duration_since(*date);
+        Self::time_ago_in(date, crate::i18n::locale())
+    }
+
+    /// [`time_ago`](Self::time_ago) in a given language, whatever the process locale.
+    pub fn time_ago_in(date: &NaiveDateTime, locale: Locale) -> String {
+        let diff = Utc::now().naive_utc().signed_duration_since(*date);
 
         let seconds = diff.num_seconds();
         let minutes = diff.num_minutes();
@@ -15,27 +22,29 @@ impl DateHelper {
         let days = diff.num_days();
 
         if seconds < 0 {
-            return "Dans le futur".to_string();
+            return locale.pick("In the future", "Dans le futur").to_string();
+        }
+        if seconds < 60 {
+            return locale.pick("Just now", "A l'instant").to_string();
         }
 
-        if seconds < 60 {
-            "A l'instant".to_string()
-        } else if minutes < 60 {
-            format!("Il y a {} min", minutes)
+        let (count, en, fr) = if minutes < 60 {
+            (minutes, "min", "min")
         } else if hours < 24 {
-            format!("Il y a {} h", hours)
+            (hours, "h", "h")
         } else if days < 30 {
-            format!("Il y a {} j", days)
+            (days, "d", "j")
         } else if days < 365 {
-            let months = days / 30;
-            format!("Il y a {} mois", months)
+            (days / 30, "mo", "mois")
+        } else if days / 365 == 1 {
+            (1, "yr", "an")
         } else {
-            let years = days / 365;
-            if years == 1 {
-                "Il y a 1 an".to_string()
-            } else {
-                format!("Il y a {} ans", years)
-            }
+            (days / 365, "yrs", "ans")
+        };
+
+        match locale {
+            Locale::En => format!("{count} {en} ago"),
+            Locale::Fr => format!("Il y a {count} {fr}"),
         }
     }
 
@@ -203,6 +212,25 @@ mod tests {
     #[test]
     fn test_time_ago_future() {
         let future = make_dt(2099, 1, 1, 0, 0, 0);
-        assert_eq!(DateHelper::time_ago(&future), "Dans le futur");
+        assert_eq!(DateHelper::time_ago_in(&future, Locale::En), "In the future");
+        assert_eq!(DateHelper::time_ago_in(&future, Locale::Fr), "Dans le futur");
+    }
+
+    #[test]
+    fn time_ago_speaks_both_languages() {
+        let ago = |d: chrono::Duration, locale| DateHelper::time_ago_in(&(Utc::now().naive_utc() - d), locale);
+        let cases = [
+            (chrono::Duration::seconds(5), "Just now", "A l'instant"),
+            (chrono::Duration::minutes(5), "5 min ago", "Il y a 5 min"),
+            (chrono::Duration::hours(3), "3 h ago", "Il y a 3 h"),
+            (chrono::Duration::days(2), "2 d ago", "Il y a 2 j"),
+            (chrono::Duration::days(95), "3 mo ago", "Il y a 3 mois"),
+            (chrono::Duration::days(400), "1 yr ago", "Il y a 1 an"),
+            (chrono::Duration::days(800), "2 yrs ago", "Il y a 2 ans"),
+        ];
+        for (age, en, fr) in cases {
+            assert_eq!(ago(age, Locale::En), en);
+            assert_eq!(ago(age, Locale::Fr), fr);
+        }
     }
 }

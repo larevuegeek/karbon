@@ -10,6 +10,7 @@ export default defineConfig({
 			'/files': 'http://localhost:3005',
 			'/health': 'http://localhost:3005',
 			'/admin': 'http://localhost:3005',
+			'/auth': 'http://localhost:3005',
 			'/docs': 'http://localhost:3005',
 			'/openapi.json': 'http://localhost:3005',
 			'/_studio': {

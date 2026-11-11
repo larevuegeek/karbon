@@ -4,15 +4,10 @@ PORT=3005
 # HOST=127.0.0.1
 APP_ENV=development
 LOG_LEVEL=info
+# Language of Karbon's own messages (masked errors, route/form validation): en (default) or fr.
+# APP_LOCALE=fr
 
-# Database — OPTIONAL. Leave DB_NAME empty to run WITHOUT a database.
-# Set DB_NAME (e.g. {{PROJECT_NAME_SNAKE}}) when you add entities / use the DB.
-# MySQL default port: 3306 | PostgreSQL default port: 5432
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_NAME=
-DB_USER=root
-DB_PASSWORD=
+{{DB_BLOCK}}
 
 # Auth — required if you use JWT/AuthGuard. Empty disables auth (all tokens rejected).
 # `karbon new` wrote a random secret in your .env. The placeholder below is public: the app
@@ -23,6 +18,7 @@ JWT_EXPIRATION=900
 REFRESH_TOKEN_EXPIRATION=2592000
 
 # CSRF protection (double-submit + same-site Origin check). Set to false only for pure APIs.
+# Keep it on with browser sessions (the `karbon_auth` cookie of `karbon generate auth`).
 CSRF_ENABLED=true
 
 # CORS — empty = deny cross-origin (same-origin only). Set a comma list or "*" to allow.

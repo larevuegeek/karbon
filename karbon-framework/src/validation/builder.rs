@@ -10,7 +10,7 @@
 //!
 //! let mut v = Validator::new();
 //! v.field("name", &input.name, &[&NotBlank::new(), &Length::new().min(2).max(50)]);
-//! v.check("age", input.age >= 18, "Vous devez être majeur");
+//! v.check("age", input.age >= 18, "You must be of age");
 //! v.into_result()?; // -> AppError::Validation listing every error, or Ok
 //! ```
 

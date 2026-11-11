@@ -41,7 +41,10 @@ async fn run_async(root: &Path, migration_dir: &Path, action: &str, name: Option
         return Err(format!("No migration directory found ({})", migration_dir.display()));
     }
 
-    let database_url = read_database_url(&root.join(".env"))?;
+    // A relative SQLite path means the same file here as for the application, which runs
+    // from the project root.
+    let _ = std::env::set_current_dir(root);
+    let database_url = read_database_url(root)?;
 
     install_default_drivers();
     let pool = AnyPoolOptions::new()
@@ -83,10 +86,21 @@ mod diff {
         name: String,
         sql_type: String,
         nullable: bool,
+        /// `// karbon:unique` after the field, or a field named `slug`.
+        unique: bool,
     }
     struct TableDef {
         name: String,
         columns: Vec<Column>,
+    }
+    /// A field of an entity struct, as read from its source.
+    struct EntityField {
+        name: String,
+        rust_type: String,
+        /// A trailing `// karbon:unique` comment.
+        unique: bool,
+        /// A trailing `// karbon:text` comment: long text, not a 255-character string.
+        long_text: bool,
     }
 
     pub async fn run(
@@ -101,10 +115,10 @@ mod diff {
             .iter()
             .map(|d| root.join(d))
             .find(|p| p.exists())
-            .ok_or("Aucun dossier entity/ trouvé")?;
+            .ok_or("No entity/ directory found")?;
         let tables = parse_entities(&entity_dir, driver)?;
         if tables.is_empty() {
-            return Err("Aucune entité trouvée dans entity/".to_string());
+            return Err("No entity found in entity/".to_string());
         }
         let current = introspect(pool, driver).await?;
 
@@ -139,7 +153,7 @@ mod diff {
         }
 
         if changes == 0 {
-            println!("\n  {} Schéma à jour — aucune migration générée\n", "✓".green());
+            println!("\n  {} Schema up to date — no migration generated\n", "✓".green());
             return Ok(());
         }
 
@@ -147,10 +161,10 @@ mod diff {
         let next = next_number(migration_dir);
         let fname = format!("{next:04}_{}.sql", slugify(name.unwrap_or("diff")));
         let content = format!("-- migrate:up\n{up}\n-- migrate:down\n{down}");
-        fs::write(migration_dir.join(&fname), content).map_err(|e| format!("écriture {fname}: {e}"))?;
+        fs::write(migration_dir.join(&fname), content).map_err(|e| format!("Cannot write {fname}: {e}"))?;
 
-        println!("\n  {} {changes} changement(s) → {}", "✓".green().bold(), format!("migration/{fname}").cyan());
-        println!("  {} relis le fichier puis applique avec {}\n", "→".blue(), "karbon migrate".bold());
+        println!("\n  {} {changes} change(s) → {}", "✓".green().bold(), format!("migration/{fname}").cyan());
+        println!("  {} review the file, then apply it with {}\n", "→".blue(), "karbon migrate".bold());
         Ok(())
     }
 
@@ -166,7 +180,7 @@ mod diff {
 
     fn parse_entities(dir: &Path, driver: Drv) -> Result<Vec<TableDef>, String> {
         let mut out = Vec::new();
-        for entry in fs::read_dir(dir).map_err(|e| format!("lecture entity/: {e}"))? {
+        for entry in fs::read_dir(dir).map_err(|e| format!("Cannot read entity/: {e}"))? {
             let path = entry.map_err(|e| e.to_string())?.path();
             if path.extension().is_none_or(|x| x != "rs") {
                 continue;
@@ -187,17 +201,23 @@ mod diff {
         let name = table_name(content, &entity_name);
         let columns = fields
             .iter()
-            .filter(|(n, _)| !matches!(n.as_str(), "id" | "created" | "updated" | "created_at" | "updated_at"))
-            .map(|(n, ty)| {
-                let (sql_type, nullable) = rust_to_sql(ty, driver);
-                Column { name: n.clone(), sql_type, nullable }
+            .filter(|f| !matches!(f.name.as_str(), "id" | "created" | "updated" | "created_at" | "updated_at"))
+            .map(|f| {
+                let (sql_type, nullable) = rust_to_sql(&f.rust_type, driver);
+                // `String` alone is a VARCHAR(255) on MySQL and PostgreSQL: a `text` field
+                // (an article body) would be cut — or refused — at 255 characters.
+                let sql_type = if f.long_text { "TEXT".to_string() } else { sql_type };
+                Column { name: f.name.clone(), sql_type, nullable, unique: f.unique || f.name == "slug" }
             })
             .collect();
         Some(TableDef { name, columns })
     }
 
-    /// The entity struct = the first `pub struct` whose fields include `id`.
-    fn find_entity_struct(content: &str) -> Option<(String, Vec<(String, String)>)> {
+    /// The entity struct = the first `pub struct` whose fields include `id`. A trailing
+    /// comment on a field says what its Rust type cannot: `// karbon:unique` asks for a
+    /// UNIQUE column (`pub email: String, // karbon:unique`), `// karbon:text` for a TEXT
+    /// one (`pub body: String, // karbon:text`).
+    fn find_entity_struct(content: &str) -> Option<(String, Vec<EntityField>)> {
         let lines: Vec<&str> = content.lines().collect();
         let mut i = 0;
         while i < lines.len() {
@@ -207,13 +227,20 @@ mod diff {
                 let mut j = i + 1;
                 while j < lines.len() && lines[j].trim() != "}" {
                     if let Some(f) = lines[j].trim().strip_prefix("pub ")
-                        && let Some((n, t)) = f.split_once(':')
+                        && let Some((n, rest)) = f.split_once(':')
                     {
-                        fields.push((n.trim().to_string(), t.trim().trim_end_matches(',').to_string()));
+                        let (ty, comment) = rest.split_once("//").unwrap_or((rest, ""));
+                        let ty = ty.trim().trim_end_matches(',').trim();
+                        fields.push(EntityField {
+                            name: n.trim().to_string(),
+                            rust_type: ty.to_string(),
+                            unique: comment.contains("karbon:unique"),
+                            long_text: comment.contains("karbon:text"),
+                        });
                     }
                     j += 1;
                 }
-                if fields.iter().any(|(n, _)| n == "id") {
+                if fields.iter().any(|f| f.name == "id") {
                     return Some((sname, fields));
                 }
                 i = j;
@@ -298,7 +325,7 @@ mod diff {
         }];
         for c in cols {
             let nn = if c.nullable { "" } else { " NOT NULL" };
-            let uniq = if c.name == "slug" { " UNIQUE" } else { "" };
+            let uniq = if c.unique { " UNIQUE" } else { "" };
             lines.push(format!("    {q}{}{q} {}{nn}{uniq}", c.name, c.sql_type));
         }
         let ts = if driver == Drv::Postgres { "TIMESTAMP" } else { "DATETIME" };
@@ -326,7 +353,7 @@ mod diff {
                 let rows: Vec<(String, String)> = sqlx::query_as(sql)
                     .fetch_all(pool)
                     .await
-                    .map_err(|e| format!("introspection : {e}"))?;
+                    .map_err(|e| format!("Schema introspection failed: {e}"))?;
                 for (t, c) in rows {
                     map.entry(t.to_lowercase()).or_default().insert(c.to_lowercase());
                 }
@@ -336,7 +363,7 @@ mod diff {
                     sqlx::query_as("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
                         .fetch_all(pool)
                         .await
-                        .map_err(|e| format!("introspection : {e}"))?;
+                        .map_err(|e| format!("Schema introspection failed: {e}"))?;
                 for (t,) in tables {
                     if !t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                         continue;
@@ -344,7 +371,7 @@ mod diff {
                     let cols = sqlx::query(AssertSqlSafe(format!("PRAGMA table_info(\"{t}\")")))
                         .fetch_all(pool)
                         .await
-                        .map_err(|e| format!("introspection {t} : {e}"))?;
+                        .map_err(|e| format!("Schema introspection of {t} failed: {e}"))?;
                     let set = map.entry(t.to_lowercase()).or_default();
                     for row in cols {
                         let cn: String = row.try_get("name").unwrap_or_default();
@@ -396,6 +423,82 @@ mod diff {
             format!("{}ies", &s[..s.len() - 1])
         } else {
             format!("{s}s")
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// The entity `karbon generate auth` writes: the email must end up UNIQUE, the
+        /// comment and the attributes around the fields must not confuse the parser.
+        #[test]
+        fn a_unique_marker_makes_a_unique_column() {
+            let entity = crate::templates::AUTH_USER_ENTITY;
+            let table = parse_entity(entity, Drv::Sqlite).expect("the User entity is recognised");
+            assert_eq!(table.name, "users");
+
+            let columns: Vec<_> = table
+                .columns
+                .iter()
+                .map(|c| (c.name.as_str(), c.sql_type.as_str(), c.unique))
+                .collect();
+            assert_eq!(columns, [("email", "TEXT", true), ("password", "TEXT", false), ("roles", "TEXT", false)]);
+
+            let ddl = create_table_sql(&table.name, &table.columns, Drv::Postgres);
+            assert!(ddl.contains(r#""email" TEXT NOT NULL UNIQUE"#), "{ddl}");
+            assert!(ddl.contains(r#""password" TEXT NOT NULL,"#), "{ddl}");
+        }
+
+        /// The tokens table of `karbon generate auth`, for each driver.
+        #[test]
+        fn the_token_entity_maps_to_typed_columns() {
+            let columns = |driver| {
+                let table = parse_entity(crate::templates::AUTH_TOKEN_ENTITY, driver).expect("AuthToken is recognised");
+                assert_eq!(table.name, "auth_tokens");
+                table
+                    .columns
+                    .into_iter()
+                    .map(|c| format!("{} {}{}", c.name, c.sql_type, if c.unique { " UNIQUE" } else { "" }))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(
+                columns(Drv::Sqlite),
+                ["user_id INTEGER", "kind TEXT", "token_hash TEXT UNIQUE", "expires DATETIME"]
+            );
+            assert_eq!(
+                columns(Drv::Postgres),
+                ["user_id BIGINT", "kind VARCHAR(255)", "token_hash VARCHAR(255) UNIQUE", "expires TIMESTAMP"]
+            );
+            assert_eq!(
+                columns(Drv::Mysql),
+                ["user_id BIGINT", "kind VARCHAR(255)", "token_hash VARCHAR(255) UNIQUE", "expires DATETIME"]
+            );
+        }
+
+        /// A `text` field is a Rust `String` like any other: without the marker it became a
+        /// VARCHAR(255) under MySQL and PostgreSQL, too short for an article body.
+        #[test]
+        fn a_text_marker_makes_a_text_column() {
+            let entity = "pub struct Post {\n    pub id: i64,\n    pub title: String,\n    pub body: String, // karbon:text\n    pub summary: Option<String>, // karbon:text\n}\n";
+            for driver in [Drv::Mysql, Drv::Postgres, Drv::Sqlite] {
+                let table = parse_entity(entity, driver).unwrap();
+                let types: Vec<_> = table
+                    .columns
+                    .iter()
+                    .map(|c| (c.name.as_str(), c.sql_type.as_str(), c.nullable))
+                    .collect();
+                let title = if driver == Drv::Sqlite { "TEXT" } else { "VARCHAR(255)" };
+                assert_eq!(types, [("title", title, false), ("body", "TEXT", false), ("summary", "TEXT", true)]);
+            }
+        }
+
+        #[test]
+        fn a_slug_stays_unique_and_other_fields_are_not() {
+            let entity = "pub struct Post {\n    pub id: i64,\n    pub title: String,\n    pub slug: String,\n}\n";
+            let table = parse_entity(entity, Drv::Mysql).unwrap();
+            let unique: Vec<_> = table.columns.iter().filter(|c| c.unique).map(|c| c.name.as_str()).collect();
+            assert_eq!(unique, ["slug"]);
         }
     }
 }
@@ -623,31 +726,26 @@ fn validate_version(version: &str) -> Result<(), String> {
 // DATABASE_URL resolution
 // ─────────────────────────────────────────────────────────────────
 
-fn read_database_url(env_path: &Path) -> Result<String, String> {
-    if let Ok(url) = std::env::var("DATABASE_URL") {
+/// `DATABASE_URL` from the environment, else whatever the `.env` of `root` describes
+/// (see [`crate::db_url::from_vars`]).
+fn read_database_url(root: &Path) -> Result<String, String> {
+    if let Ok(url) = std::env::var("DATABASE_URL")
+        && !url.trim().is_empty()
+    {
         return Ok(url);
     }
 
-    if env_path.exists() {
-        let content = fs::read_to_string(env_path).map_err(|e| format!("Cannot read .env: {e}"))?;
+    let env_path = root.join(".env");
+    let content = match fs::read_to_string(&env_path) {
+        Ok(content) => content,
+        Err(_) => return Err(format!("No {} — copy `.env.example` to `.env` first", env_path.display())),
+    };
 
-        for line in content.lines() {
-            let line = line.trim();
-            if line.starts_with('#') || line.is_empty() {
-                continue;
-            }
-            if let Some(url) = line.strip_prefix("DATABASE_URL=") {
-                return Ok(url.trim().trim_matches('"').trim_matches('\'').to_string());
-            }
-        }
-
-        let vars = parse_env_vars(&content);
-        if let Some(url) = build_database_url(&vars) {
-            return Ok(url);
-        }
-    }
-
-    Err("DATABASE_URL not found. Set it in .env or as an environment variable".to_string())
+    crate::db_url::from_vars(&parse_env_vars(&content), crate::db_url::compiled_driver(root)).ok_or_else(|| {
+        "No database configured: set DB_NAME (or DATABASE_URL) in .env — DB_NAME is empty, \
+         which is how an app runs without a database"
+            .to_string()
+    })
 }
 
 fn parse_env_vars(content: &str) -> std::collections::HashMap<String, String> {
@@ -657,45 +755,12 @@ fn parse_env_vars(content: &str) -> std::collections::HashMap<String, String> {
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
+        let line = line.strip_prefix("export ").unwrap_or(line);
         if let Some((key, val)) = line.split_once('=') {
             vars.insert(key.trim().to_string(), val.trim().trim_matches('"').trim_matches('\'').to_string());
         }
     }
     vars
-}
-
-fn build_database_url(vars: &std::collections::HashMap<String, String>) -> Option<String> {
-    let driver = vars.get("DB_DRIVER").or(vars.get("DB_CONNECTION"))?;
-    let host = vars.get("DB_HOST")?;
-    let port = vars.get("DB_PORT")?;
-    let name = vars.get("DB_NAME").or(vars.get("DB_DATABASE"))?;
-    let user = vars.get("DB_USER").or(vars.get("DB_USERNAME"))?;
-    let pass = vars.get("DB_PASSWORD").cloned().unwrap_or_default();
-
-    let scheme = match driver.as_str() {
-        "mysql" | "mariadb" => "mysql",
-        "postgres" | "postgresql" => "postgres",
-        _ => return None,
-    };
-
-    let (user, pass) = (encode_userinfo(user), encode_userinfo(&pass));
-    Some(format!("{scheme}://{user}:{pass}@{host}:{port}/{name}"))
-}
-
-/// Percent-encode a database user or password for the userinfo part of a URL, as
-/// `karbon::config::Config::database_url` does: `@ : / ? #`… no longer break the URL, and
-/// `%` is kept so a value already encoded by hand produces the same URL as before.
-pub(crate) fn encode_userinfo(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => out.push(byte as char),
-            b'-' | b'.' | b'_' | b'~' | b'%' | b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';'
-            | b'=' => out.push(byte as char),
-            _ => out.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    out
 }
 
 #[cfg(test)]

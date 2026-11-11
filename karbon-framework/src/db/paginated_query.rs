@@ -7,19 +7,19 @@ use super::repository::WhereValue;
 use super::{Db, DbPool, DbRow, placeholder};
 use crate::error::{AppError, AppResult};
 
-/// Condition WHERE d'une requête paginée.
+/// A WHERE condition of a paginated query.
 #[derive(Debug, Clone)]
 enum Condition {
-    /// `col <op> ?` — colonne validée comme identifiant.
+    /// `col <op> ?` — the column is validated as an identifier.
     Column(String, &'static str, WhereValue),
-    /// Condition SQL libre (écrite par le code, jamais par l'utilisateur) avec ses valeurs,
-    /// une par `?`.
+    /// Free-form SQL condition (written by the code, never by the user) with its values,
+    /// one per `?`.
     Raw(String, Vec<WhereValue>),
 }
 
-/// Builder pour les requêtes paginées avec tri, recherche et filtres WHERE.
+/// Builder for paginated queries with sorting, search and WHERE filters.
 ///
-/// # Exemples
+/// # Examples
 ///
 /// ```ignore
 /// // Simple
@@ -29,7 +29,7 @@ enum Condition {
 ///     .execute(pool, params)
 ///     .await
 ///
-/// // Avec WHERE
+/// // With WHERE
 /// PaginatedQuery::<CommentListItem>::new(
 ///     "SELECT c.id, c.comment, u.username FROM comment c LEFT JOIN users u ON c.user_id = u.id"
 /// )
@@ -39,7 +39,7 @@ enum Condition {
 ///     .execute(pool, params)
 ///     .await
 ///
-/// // Avec conditions libres et tri calculé
+/// // With free-form conditions and a computed sort
 /// PaginatedQuery::<ContentListItem>::new("SELECT c.id, c.title FROM content c")
 ///     .where_raw("(c.status = 1 OR c.user_id = ?)", vec![user_id.into()])
 ///     .where_raw("EXISTS (SELECT 1 FROM content_field_tags t WHERE t.content_id = c.id AND t.term_id = ?)", vec![tag_id.into()])
@@ -47,7 +47,7 @@ enum Condition {
 ///     .execute(pool, params)
 ///     .await
 ///
-/// // Avec recherche
+/// // With search
 /// PaginatedQuery::<UserListItem>::new("SELECT u.id, u.username FROM users u")
 ///     .allowed_sorts(&["id", "username", "email", "created"])
 ///     .sort_prefix("u")
@@ -68,7 +68,7 @@ pub struct PaginatedQuery<T> {
     _phantom: PhantomData<T>,
 }
 
-/// Requêtes et valeurs prêtes à exécuter (séparé de l'exécution pour être testable).
+/// Queries and values ready to run (kept apart from execution so it can be tested).
 #[derive(Debug)]
 struct Prepared {
     data_sql: String,
@@ -82,7 +82,7 @@ impl<T> PaginatedQuery<T>
 where
     T: Send + Unpin + for<'r> sqlx::FromRow<'r, DbRow>,
 {
-    /// Crée un nouveau builder à partir d'une requête SELECT de base (sans ORDER BY/LIMIT).
+    /// Creates a builder from a base SELECT query (without ORDER BY/LIMIT).
     pub fn new(base_sql: &str) -> Self {
         Self {
             base_sql: base_sql.to_string(),
@@ -98,78 +98,78 @@ where
         }
     }
 
-    /// Colonnes de tri autorisées (whitelist pour éviter l'injection SQL).
+    /// Columns the client may sort by (an allowlist, against SQL injection).
     pub fn allowed_sorts(mut self, sorts: &[&str]) -> Self {
         self.allowed_sorts = sorts.iter().map(|s| s.to_string()).collect();
         self
     }
 
-    /// Colonne de tri par défaut.
+    /// Default sort column.
     pub fn default_sort(mut self, sort: &str) -> Self {
         self.default_sort = sort.to_string();
         self
     }
 
-    /// Direction de tri par défaut ("ASC" ou "DESC").
+    /// Default sort direction ("ASC" or "DESC").
     pub fn default_order(mut self, order: &str) -> Self {
         self.default_order = order.to_uppercase();
         self
     }
 
-    /// Préfixe de table pour le ORDER BY (ex: "u" → `ORDER BY u.id`).
+    /// Table prefix for the ORDER BY (e.g. "u" → `ORDER BY u.id`).
     pub fn sort_prefix(mut self, prefix: &str) -> Self {
         self.sort_prefix = Some(prefix.to_string());
         self
     }
 
-    /// Colonnes à rechercher avec LIKE (activé si `params.search` est renseigné).
+    /// Columns searched with LIKE (active when `params.search` is set).
     pub fn search_columns(mut self, columns: &[&str]) -> Self {
         self.search_columns = columns.iter().map(|s| s.to_string()).collect();
         self
     }
 
-    /// Ajoute une condition WHERE (col = ?).
+    /// Adds a WHERE condition (col = ?).
     pub fn where_eq(mut self, column: &str, value: WhereValue) -> Self {
         self.where_conditions.push(Condition::Column(column.to_string(), "=", value));
         self
     }
 
-    /// Ajoute une condition WHERE (col >= ?).
+    /// Adds a WHERE condition (col >= ?).
     pub fn where_gte(mut self, column: &str, value: WhereValue) -> Self {
         self.where_conditions.push(Condition::Column(column.to_string(), ">=", value));
         self
     }
 
-    /// Ajoute une condition WHERE (col <= ?).
+    /// Adds a WHERE condition (col <= ?).
     pub fn where_lte(mut self, column: &str, value: WhereValue) -> Self {
         self.where_conditions.push(Condition::Column(column.to_string(), "<=", value));
         self
     }
 
-    /// Ajoute une condition WHERE libre (`OR`, `EXISTS`, sous-requête, `IN`…), combinée aux
-    /// autres par `AND`. Chaque `?` reçoit, dans l'ordre, une valeur de `values` (numérotés
-    /// automatiquement en `$n` sous PostgreSQL). La condition est du SQL écrit par le code :
-    /// n'y interpolez jamais une saisie utilisateur, passez-la en valeur.
+    /// Adds a free-form WHERE condition (`OR`, `EXISTS`, subquery, `IN`…), combined with the
+    /// others by `AND`. Each `?` receives, in order, one value of `values` (numbered
+    /// automatically as `$n` under PostgreSQL). The condition is SQL written by the code:
+    /// never interpolate user input into it, pass it as a value.
     pub fn where_raw(mut self, condition: &str, values: Vec<WhereValue>) -> Self {
         self.where_conditions.push(Condition::Raw(condition.to_string(), values));
         self
     }
 
-    /// Tri fixe (expression SQL écrite par le code, ex. `c.une DESC, c.created DESC`) à la place
-    /// du tri choisi par `params.sort` / `params.order`.
+    /// Fixed sort (an SQL expression written by the code, e.g. `c.une DESC, c.created DESC`)
+    /// instead of the one chosen by `params.sort` / `params.order`.
     pub fn order_raw(mut self, expr: &str) -> Self {
         self.fixed_order = Some(expr.to_string());
         self
     }
 
-    /// Surcharge la requête COUNT (utile si le FROM est complexe).
-    /// Par défaut, le COUNT est déduit automatiquement de la requête de base.
+    /// Overrides the COUNT query (useful when the FROM is complex).
+    /// By default the COUNT is derived from the base query.
     pub fn count_from(mut self, sql: &str) -> Self {
         self.count_from = Some(sql.to_string());
         self
     }
 
-    /// Exécute la requête paginée et retourne `(Vec<T>, total)`.
+    /// Runs the paginated query and returns `(Vec<T>, total)`.
     pub async fn execute(self, pool: &DbPool, params: &PaginationParams) -> AppResult<(Vec<T>, u64)> {
         let p = self.prepare(params)?;
 
@@ -199,9 +199,9 @@ where
         Ok((items, total as u64))
     }
 
-    /// Construit les requêtes data / COUNT et la liste ordonnée des valeurs à lier.
+    /// Builds the data and COUNT queries and the ordered list of values to bind.
     fn prepare(&self, params: &PaginationParams) -> AppResult<Prepared> {
-        // ─── Tri ───
+        // ─── Sort ───
         let order_sql = match &self.fixed_order {
             Some(expr) => expr.clone(),
             None => {
@@ -211,7 +211,7 @@ where
                     let allowed_refs: Vec<&str> = self.allowed_sorts.iter().map(|s| s.as_str()).collect();
                     params.sort_column(&allowed_refs, &self.default_sort).to_string()
                 };
-                // Direction en liste blanche (jamais une chaîne de requête interpolée).
+                // Direction from an allowlist (never an interpolated query string).
                 let order = if params.order.eq_ignore_ascii_case("asc") {
                     "ASC"
                 } else if params.order.eq_ignore_ascii_case("desc") {
@@ -235,7 +235,7 @@ where
             }
         };
 
-        // ─── WHERE (placeholders numérotés dans l'ordre des valeurs) ───
+        // ─── WHERE (placeholders numbered in the order of the values) ───
         let mut where_clauses: Vec<String> = Vec::new();
         let mut binds: Vec<WhereValue> = Vec::new();
         let mut ph_idx: usize = 0;
@@ -253,7 +253,7 @@ where
                     let (numbered, count) = number_placeholders(sql, &mut ph_idx);
                     if count != values.len() {
                         return Err(AppError::Internal(format!(
-                            "where_raw : {count} placeholder(s) pour {} valeur(s) dans « {sql} »",
+                            "where_raw: {count} placeholder(s) for {} value(s) in `{sql}`",
                             values.len()
                         )));
                     }
@@ -293,7 +293,7 @@ where
         let offset_ph = placeholder(ph_idx);
         let data_sql =
             format!("{}{} ORDER BY {} LIMIT {} OFFSET {}", self.base_sql, where_sql, order_sql, limit_ph, offset_ph);
-        // Le COUNT réutilise les mêmes index de placeholder que le WHERE.
+        // The COUNT reuses the placeholder indexes of the WHERE.
         let count_sql = match &self.count_from {
             Some(custom) => format!("{}{}", custom, where_sql),
             None => format!("SELECT COUNT(*) {}{}", extract_from_clause(&self.base_sql).trim_start(), where_sql),
@@ -313,8 +313,8 @@ where
     }
 }
 
-/// Remplace chaque `?` hors chaînes et identifiants entre guillemets par le placeholder du
-/// backend (`?` ou `$n`) ; renvoie le SQL et le nombre de placeholders.
+/// Replaces each `?` outside strings and quoted identifiers with the backend's placeholder
+/// (`?` or `$n`); returns the SQL and the number of placeholders.
 fn number_placeholders(sql: &str, next: &mut usize) -> (String, usize) {
     let mut out = String::with_capacity(sql.len());
     let mut quote: Option<char> = None;
@@ -344,7 +344,7 @@ fn number_placeholders(sql: &str, next: &mut usize) -> (String, usize) {
     (out, count)
 }
 
-/// Extrait la clause FROM d'un SELECT (tout après le premier FROM/from).
+/// Extracts the FROM clause of a SELECT (everything after the first FROM/from).
 fn extract_from_clause(sql: &str) -> &str {
     // Find the first top-level " FROM " (i.e. not inside parentheses), so that subqueries
     // like `(SELECT ... FROM tbl)` in the SELECT list don't fool us.
@@ -367,7 +367,7 @@ fn extract_from_clause(sql: &str) -> &str {
     sql
 }
 
-/// Bind une WhereValue sur un query_as<T>
+/// Binds a WhereValue on a query_as<T>
 fn bind_where_value<'q, T>(
     query: sqlx::query::QueryAs<'q, Db, T, <Db as sqlx::Database>::Arguments>,
     value: &'q WhereValue,
@@ -384,7 +384,7 @@ where
     }
 }
 
-/// Bind une WhereValue sur un query_as<(i64,)> (pour les COUNT)
+/// Binds a WhereValue on a query_as<(i64,)> (for the COUNT)
 fn bind_where_value_tuple<'q>(
     query: sqlx::query::QueryAs<'q, Db, (i64,), <Db as sqlx::Database>::Arguments>,
     value: &'q WhereValue,

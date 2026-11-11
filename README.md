@@ -42,22 +42,57 @@ If you like the productivity of **Laravel / Symfony / Django** but want the
 
 ## Quick Start
 
+**1. Install** — you need [Rust](https://rustup.rs) (and [Node.js](https://nodejs.org) 20+ for
+the SvelteKit / Next.js frontend).
+
 ```bash
-# Create a new project (SvelteKit by default)
-karbon new my-app
-karbon new my-app --frontend nextjs  # or with Next.js
-
-cd my-app
-
-# Start development (backend + frontend with hot-reload)
-karbon dev
-
-# Build for production
-karbon build
-
-# Run in production (single port)
-karbon serve
+# Linux / macOS — prebuilt binary
+curl -fsSL https://raw.githubusercontent.com/larevuegeek/karbon/main/install.sh | sh
 ```
+```powershell
+# Windows — prebuilt binary
+irm https://raw.githubusercontent.com/larevuegeek/karbon/main/install.ps1 | iex
+```
+```bash
+# Any platform — builds the CLI from source (a few minutes)
+cargo install karbon-cli
+```
+
+**2. Create a project** — it comes with a SQLite database: nothing else to install.
+
+```bash
+karbon new my-app             # SvelteKit frontend (default)
+cd my-app
+karbon dev                    # backend + frontend, with hot reload
+```
+
+Open <http://localhost:3004>. The backend answers on port 3005, and the Studio dev
+cockpit is at <http://localhost:3005/_studio>.
+
+**3. Add your first resource, and a way to sign in**
+
+```bash
+karbon generate crud Post title:string body:text published:bool
+karbon generate admin Post    # a back-office for it, behind ROLE_ADMIN
+karbon generate auth          # sign-up, sign-in, password reset — pages + JSON API
+karbon migrate diff           # writes the migration from your entities
+karbon migrate                # applies it
+karbon user create you@example.com --admin
+```
+
+Sign in at <http://localhost:3005/auth/login>, then open `/admin/posts`.
+
+Other starting points:
+
+```bash
+karbon new my-app --frontend nextjs      # Next.js instead of SvelteKit
+karbon new my-api --skeleton micro       # backend only, no Node needed
+karbon new my-app --db postgres          # or --db mysql (default: sqlite)
+karbon new my-blog --template blog       # with a Post CRUD and its admin
+```
+
+When you are ready to ship: `karbon build`, then `karbon serve` (one port, the Rust binary
+proxies to the frontend) — or see the [deployment guide](docs/DEPLOY.md).
 
 ## CLI Commands
 
@@ -65,6 +100,8 @@ karbon serve
 |---------|-------------|
 | `karbon new <name>` | Create a new project (SvelteKit by default) |
 | `karbon new <name> --frontend nextjs` | Create a new project with Next.js |
+| `karbon new <name> --db sqlite\|mysql\|postgres` | Choose the database (default: `sqlite`, a file — nothing to install) |
+| `karbon new <name> --skeleton micro` | Backend-only project (no frontend) |
 | `karbon dev` | Start dev servers (Rust + Vite, hot-reload) |
 | `karbon build` | Build for production |
 | `karbon serve` | Run production build (single port, reverse proxy) |
@@ -77,6 +114,8 @@ karbon serve
 | `karbon migrate status` / `rollback` | Show migration status / roll back the last one |
 | `karbon migrate diff [name]` | Generate a migration from the entity ↔ database diff |
 | `karbon doctor` / `doctor --db` | Diagnose the project (offline; `--db` checks connectivity) |
+| `karbon generate auth` | Accounts: sign-up, sign-in, session renewal, password reset — browser pages + JSON API |
+| `karbon user create <email> [--admin]` / `user promote <email>` | Create an account or make one an administrator |
 | `karbon secret` / `secret --write` | Generate a random `JWT_SECRET` (print it, or write it to `.env`) |
 | `karbon docs build` | Render `docs/**.md` to a static site (`docs/_site/`) |
 | `karbon deploy docker` | Generate optimized multi-stage Dockerfile |
@@ -87,17 +126,24 @@ karbon serve
 
 ## Database
 
-MySQL is the default. To use PostgreSQL, change the feature flag:
+`karbon new` wires the project for the database you choose — **SQLite** by default (a file,
+`DB_NAME=app.db`, nothing to install), or `--db mysql` / `--db postgres`.
+
+The driver is a compile-time feature of the `karbon` dependency. To change it later, edit
+`app/Cargo.toml` (and the `sqlx` feature in the workspace `Cargo.toml`):
 
 ```toml
-# Cargo.toml of your project
-karbon = { package = "karbon-framework", version = "0.5.0", default-features = false, features = ["postgres"] }
+# SQLite
+karbon = { package = "karbon-framework", version = "0.5.1", default-features = false, features = ["sqlite", "studio"] }
+# PostgreSQL
+karbon = { package = "karbon-framework", version = "0.5.1", default-features = false, features = ["postgres", "studio"] }
+# MySQL / MariaDB (the framework's default feature)
+karbon = { package = "karbon-framework", version = "0.5.1", features = ["studio"] }
 ```
 
-Set the matching port in `.env`:
-```
-DB_PORT=5432  # PostgreSQL (default: 3306 for MySQL)
-```
+Then describe the connection in `.env`: `DB_NAME` alone for SQLite (the file path), or
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` for a server. With `DB_NAME`
+empty the application runs without a database.
 
 ## Project Structure
 
@@ -500,8 +546,9 @@ host = "user@server"                 # optional — if absent, deploys locally
 ## Requirements
 
 - Rust 1.85+ (edition 2024)
-- Node.js 20+
-- MySQL/MariaDB or PostgreSQL
+- Node.js 20+ — only for a project with a frontend (`--skeleton micro` needs none)
+- A database server only if you choose one: new projects use SQLite, a file. MySQL/MariaDB
+  and PostgreSQL are one option away (`--db`)
 
 ## License
 

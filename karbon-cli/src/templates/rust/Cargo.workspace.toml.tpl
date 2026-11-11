@@ -17,7 +17,7 @@ serde_json = "1"
 # their types cross the framework boundary (`Validate`, `DbPool`), so two copies in
 # the dependency graph are two incompatible sets of types.
 validator = { version = "0.21.0", features = ["derive"] }
-sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls", "mysql", "chrono"] }
+sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls", "{{SQLX_DRIVER}}", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1"
 tracing = "0.1"

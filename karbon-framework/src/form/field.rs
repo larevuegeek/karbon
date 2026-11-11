@@ -135,7 +135,8 @@ impl Field {
         self.errors.clear();
 
         if self.required && self.value.trim().is_empty() {
-            self.errors.push("Ce champ est obligatoire".to_string());
+            self.errors
+                .push(crate::i18n::pick("This field is required", "Ce champ est obligatoire").to_string());
             return false;
         }
 
@@ -228,7 +229,13 @@ impl Field {
                 kind.input_type(),
                 esc(&self.name),
                 esc(&self.name),
-                esc(&self.value),
+                // A password is never written back into the page: a form re-rendered with
+                // its errors would otherwise carry it in clear in the HTML.
+                if matches!(kind, FieldKind::Password) {
+                    String::new()
+                } else {
+                    esc(&self.value)
+                },
                 req,
                 placeholder
             ),

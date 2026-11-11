@@ -14,6 +14,7 @@
 //! - `regex:<pattern>` — value must match the (anchored as written) regular expression
 
 use crate::error::{AppError, AppResult};
+use crate::i18n::{Locale, locale, pick};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::{Mutex, OnceLock};
@@ -32,26 +33,35 @@ pub fn validate<T: Display>(name: &str, value: &T, rule: &str) -> AppResult<()> 
         return if allowed.iter().any(|v| *v == s) {
             Ok(())
         } else {
-            Err(err(name, &format!("doit être : {}", allowed.join(", "))))
+            let allowed = allowed.join(", ");
+            Err(err(
+                name,
+                &match locale() {
+                    Locale::En => format!("must be one of: {allowed}"),
+                    Locale::Fr => format!("doit être : {allowed}"),
+                },
+            ))
         };
     }
 
     let mut parts = rule.split(':');
     match parts.next().unwrap_or("") {
         "int" => {
-            let n: i64 = s.parse().map_err(|_| err(name, "doit être un entier"))?;
+            let n: i64 = s
+                .parse()
+                .map_err(|_| err(name, pick("must be an integer", "doit être un entier")))?;
             for c in parts {
                 if let Some(v) = c.strip_prefix("min=")
                     && let Ok(m) = v.parse::<i64>()
                     && n < m
                 {
-                    return Err(err(name, &format!("doit être ≥ {m}")));
+                    return Err(err(name, &format!("{} ≥ {m}", pick("must be", "doit être"))));
                 }
                 if let Some(v) = c.strip_prefix("max=")
                     && let Ok(m) = v.parse::<i64>()
                     && n > m
                 {
-                    return Err(err(name, &format!("doit être ≤ {m}")));
+                    return Err(err(name, &format!("{} ≤ {m}", pick("must be", "doit être"))));
                 }
             }
         }
@@ -62,20 +72,38 @@ pub fn validate<T: Display>(name: &str, value: &T, rule: &str) -> AppResult<()> 
                     && let Ok(m) = v.parse::<usize>()
                     && len < m
                 {
-                    return Err(err(name, &format!("au moins {m} caractères")));
+                    return Err(err(
+                        name,
+                        &match locale() {
+                            Locale::En => format!("at least {m} characters"),
+                            Locale::Fr => format!("au moins {m} caractères"),
+                        },
+                    ));
                 }
                 if let Some(v) = c.strip_prefix("maxlen=")
                     && let Ok(m) = v.parse::<usize>()
                     && len > m
                 {
-                    return Err(err(name, &format!("au plus {m} caractères")));
+                    return Err(err(
+                        name,
+                        &match locale() {
+                            Locale::En => format!("at most {m} characters"),
+                            Locale::Fr => format!("au plus {m} caractères"),
+                        },
+                    ));
                 }
             }
         }
         "slug" if !is_slug(&s) => {
-            return Err(err(name, "slug invalide (minuscules, chiffres, tirets)"));
+            return Err(err(
+                name,
+                pick(
+                    "invalid slug (lowercase letters, digits, hyphens)",
+                    "slug invalide (minuscules, chiffres, tirets)",
+                ),
+            ));
         }
-        "uuid" if !is_uuid(&s) => return Err(err(name, "UUID invalide")),
+        "uuid" if !is_uuid(&s) => return Err(err(name, pick("invalid UUID", "UUID invalide"))),
         _ => {}
     }
     Ok(())
@@ -96,8 +124,8 @@ fn check_regex(name: &str, s: &str, pattern: &str) -> AppResult<()> {
         .or_insert_with(|| regex::Regex::new(pattern).ok());
     match entry {
         Some(re) if re.is_match(s) => Ok(()),
-        Some(_) => Err(err(name, "format invalide")),
-        None => Err(err(name, "règle regex invalide")), // developer typo in the pattern
+        Some(_) => Err(err(name, pick("invalid format", "format invalide"))),
+        None => Err(err(name, pick("invalid regex rule", "règle regex invalide"))), // developer typo in the pattern
     }
 }
 
@@ -122,6 +150,33 @@ fn is_uuid(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn message(result: AppResult<()>) -> String {
+        match result {
+            Err(AppError::Validation(message)) => message,
+            other => panic!("expected a validation error, got {other:?}"),
+        }
+    }
+
+    /// Each rule answers in the language of the process: English, or French under
+    /// `APP_LOCALE=fr`. `pick` keeps the assertions true under either.
+    #[test]
+    fn messages_follow_the_locale() {
+        assert_eq!(
+            message(validate("id", &"abc", "int")),
+            format!("id: {}", pick("must be an integer", "doit être un entier"))
+        );
+        assert_eq!(message(validate("id", &0i64, "int:min=1")), format!("id: {} ≥ 1", pick("must be", "doit être")));
+        assert_eq!(
+            message(validate("status", &"x", "enum:draft|published")),
+            format!("status: {} draft, published", pick("must be one of:", "doit être :"))
+        );
+        assert_eq!(
+            message(validate("name", &"a", "string:minlen=3")),
+            format!("name: {}", pick("at least 3 characters", "au moins 3 caractères"))
+        );
+        assert_eq!(message(validate("u", &"nope", "uuid")), format!("u: {}", pick("invalid UUID", "UUID invalide")));
+    }
 
     #[test]
     fn int_min_max() {

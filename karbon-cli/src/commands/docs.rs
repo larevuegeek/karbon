@@ -59,7 +59,7 @@ fn build(root: &Path) -> Result<(), String> {
         let body = format!("<h1>Documentation</h1>\n<ul class=\"kd-index\">{listing}</ul>");
         let html = layout("Documentation", "", &pages, &body);
         fs::write(out.join("index.html"), html).map_err(|e| format!("Cannot write index: {e}"))?;
-        println!("  {} docs/_site/index.html (généré)", "✓".green());
+        println!("  {} docs/_site/index.html (generated)", "✓".green());
     }
 
     println!("\n  {} {} page(s) → {}\n", "✓".green().bold(), pages.len(), "docs/_site/".cyan());

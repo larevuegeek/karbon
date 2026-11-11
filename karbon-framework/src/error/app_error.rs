@@ -81,8 +81,13 @@ pub fn error_body() -> ErrorBody {
     ERROR_BODY.get().copied().unwrap_or_default()
 }
 
-const MASKED_MESSAGE: &str = "Une erreur interne est survenue";
-const INVALID_TOKEN_MESSAGE: &str = "Token invalide ou expiré";
+fn masked_message() -> &'static str {
+    crate::i18n::pick("An internal error occurred", "Une erreur interne est survenue")
+}
+
+fn invalid_token_message() -> &'static str {
+    crate::i18n::pick("Invalid or expired token", "Token invalide ou expiré")
+}
 
 #[derive(Serialize)]
 struct TypedBody {
@@ -119,8 +124,15 @@ impl AppError {
         self.client_message(ErrorBody::Flat, is_dev_environment())
     }
 
+    /// A UNIQUE constraint refused the write: the client sent a value that already exists.
+    /// That is a conflict to report, not a server failure to mask.
+    fn is_unique_violation(&self) -> bool {
+        matches!(self, Self::Database(sqlx::Error::Database(e)) if e.is_unique_violation())
+    }
+
     fn status_code(&self) -> StatusCode {
         match self {
+            Self::Database(_) if self.is_unique_violation() => StatusCode::CONFLICT,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::BadRequest(_) | Self::Validation(_) => StatusCode::BAD_REQUEST,
             Self::Unauthorized(_) | Self::Jwt(_) => StatusCode::UNAUTHORIZED,
@@ -136,6 +148,7 @@ impl AppError {
 
     fn error_type(&self) -> &str {
         match self {
+            Self::Database(_) if self.is_unique_violation() => "conflict",
             Self::NotFound(_) => "not_found",
             Self::BadRequest(_) => "bad_request",
             Self::Unauthorized(_) | Self::Jwt(_) => "unauthorized",
@@ -175,11 +188,17 @@ impl AppError {
     /// What the client reads: masked detail outside development, never why a token failed.
     fn client_message(&self, body: ErrorBody, is_dev: bool) -> String {
         if matches!(self, Self::Jwt(_)) {
-            return INVALID_TOKEN_MESSAGE.to_string();
+            return invalid_token_message().to_string();
+        }
+
+        // The database's own text names the table and the column: the log keeps it, the
+        // client gets a sentence it can show, in every environment.
+        if self.is_unique_violation() {
+            return crate::i18n::pick("This value is already in use", "Cette valeur est déjà utilisée").to_string();
         }
 
         if self.is_masked() && !is_dev {
-            return MASKED_MESSAGE.to_string();
+            return masked_message().to_string();
         }
 
         match body {
@@ -229,7 +248,10 @@ fn collect_validation_messages(errors: &validator::ValidationErrors, out: &mut V
                 for e in errs {
                     match &e.message {
                         Some(m) => out.push(m.to_string()),
-                        None => out.push(format!("Valeur invalide pour {field}")),
+                        None => out.push(match crate::i18n::locale() {
+                            crate::i18n::Locale::En => format!("Invalid value for {field}"),
+                            crate::i18n::Locale::Fr => format!("Valeur invalide pour {field}"),
+                        }),
                     }
                 }
             }
@@ -246,7 +268,9 @@ fn collect_validation_messages(errors: &validator::ValidationErrors, out: &mut V
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         // Raw server errors are logged here; a `Failure` was logged by `AppError::internal`.
-        if self.is_masked() {
+        if self.is_unique_violation() {
+            tracing::debug!(error = %self, "Unique constraint refused a write");
+        } else if self.is_masked() {
             tracing::error!(status = %self.status_code(), error = %self, "Server error");
         }
 
@@ -324,7 +348,7 @@ mod tests {
         for body in [ErrorBody::Typed, ErrorBody::Flat] {
             let (_, masked) = rendered(AppError::Internal("column `x` unknown".into()), body, false).await;
             let text = masked.to_string();
-            assert!(text.contains(MASKED_MESSAGE) && !text.contains("column"), "{text}");
+            assert!(text.contains(masked_message()) && !text.contains("column"), "{text}");
 
             let (status, shown) =
                 rendered(AppError::internal("pool timeout", "Impossible de créer la commande"), body, false).await;
@@ -339,10 +363,10 @@ mod tests {
         let (status, body) = rendered(AppError::from(sqlx::Error::RowNotFound), ErrorBody::Flat, false).await;
 
         assert_eq!(status, 500);
-        assert_eq!(body["error"], MASKED_MESSAGE);
+        assert_eq!(body["error"], masked_message());
 
         let (_, dev) = rendered(AppError::from(sqlx::Error::RowNotFound), ErrorBody::Flat, true).await;
-        assert_ne!(dev["error"], MASKED_MESSAGE);
+        assert_ne!(dev["error"], masked_message());
     }
 
     /// Why a token was refused (expired, bad signature…) is not the client's business, even
@@ -354,7 +378,7 @@ mod tests {
             let text = rendered.to_string();
 
             assert_eq!(status, 401);
-            assert!(text.contains(INVALID_TOKEN_MESSAGE) && !text.contains("Expired"), "{text}");
+            assert!(text.contains(invalid_token_message()) && !text.contains("Expired"), "{text}");
         }
     }
 
@@ -362,11 +386,11 @@ mod tests {
     #[test]
     fn public_message_is_what_a_client_may_read() {
         assert_eq!(AppError::NotFound("Article introuvable".into()).public_message(), "Article introuvable");
-        assert_eq!(expired_token().public_message(), INVALID_TOKEN_MESSAGE);
+        assert_eq!(expired_token().public_message(), invalid_token_message());
 
         // Outside development (tests run without APP_ENV): raw errors masked.
         if !is_dev_environment() {
-            assert_eq!(AppError::from(sqlx::Error::RowNotFound).public_message(), MASKED_MESSAGE);
+            assert_eq!(AppError::from(sqlx::Error::RowNotFound).public_message(), masked_message());
         }
     }
 
@@ -376,7 +400,7 @@ mod tests {
 
         #[derive(Validate)]
         struct Form {
-            #[validate(length(min = 3, message = "Nom trop court"))]
+            #[validate(length(min = 3, message = "Name too short"))]
             name: String,
             #[validate(email)]
             email: String,
@@ -388,6 +412,39 @@ mod tests {
             panic!("expected a validation error");
         };
 
-        assert_eq!(message, "Valeur invalide pour email ; Nom trop court");
+        // The application's message is kept as written; the fallback for a rule without
+        // one is Karbon's, hence in the language of the process.
+        let fallback = crate::i18n::pick("Invalid value for email", "Valeur invalide pour email");
+        assert_eq!(message, format!("{fallback} ; Name too short"));
+    }
+    /// The first thing a newcomer does with a generated admin is submit the same slug
+    /// twice: that answered a 500 carrying the database's own message.
+    #[cfg(feature = "sqlite")]
+    #[tokio::test]
+    async fn a_unique_violation_is_a_conflict_with_a_message_for_the_client() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::raw_sql("CREATE TABLE posts (slug TEXT NOT NULL UNIQUE); INSERT INTO posts VALUES ('hello');")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let refused = sqlx::query("INSERT INTO posts VALUES ('hello')")
+            .execute(&pool)
+            .await
+            .unwrap_err();
+        let error = AppError::from(refused);
+
+        for (body, is_dev) in [(ErrorBody::Typed, false), (ErrorBody::Typed, true), (ErrorBody::Flat, false)] {
+            let response = error.render(body, is_dev);
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let text = String::from_utf8(bytes.to_vec()).unwrap();
+            let expected = crate::i18n::pick("This value is already in use", "Cette valeur est déjà utilisée");
+            assert!(text.contains(expected), "{text}");
+            assert!(!text.contains("posts") && !text.contains("UNIQUE"), "database detail leaked: {text}");
+        }
+
+        // Any other database error stays a masked 500.
+        let other = AppError::from(sqlx::query("SELECT * FROM missing").execute(&pool).await.unwrap_err());
+        assert_eq!(other.render(ErrorBody::Typed, false).status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

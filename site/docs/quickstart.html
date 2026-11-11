@@ -18,13 +18,13 @@ cd my-app</pre>
 <p>Other starting points:</p>
 <pre>karbon new my-app --frontend nextjs   # Next.js instead of SvelteKit
 karbon new my-app --skeleton micro    # backend-only, no frontend
+karbon new my-app --db postgres       # or --db mysql (default: sqlite)
 karbon new my-app --template blog     # Post CRUD + admin pre-scaffolded</pre>
 <p>A <code>full</code> project contains a Rust backend (<code>app/</code>), a frontend, a <code>karbon.toml</code> config and a starter <code>docs/</code> folder. See <a href="structure.html">Project structure</a> for the full layout.</p>
 
 <h2>2. Configure the environment</h2>
-<p>Copy the example env file and set your database (or leave it blank to run without one):</p>
-<pre>cp .env.example .env</pre>
-<p>For a quick start with zero setup, SQLite needs nothing but a path. For MySQL/PostgreSQL, set <code>DB_*</code> or a single <code>DATABASE_URL</code>. Karbon loads <code>.env</code> files in cascade (<code>.env</code> → <code>.env.{env}</code> → <code>.env.local</code>), Symfony-style. See <a href="configuration.html">Configuration</a>.</p>
+<p><code>karbon new</code> already wrote a working <code>.env</code>: a random <code>JWT_SECRET</code>, and a SQLite database (<code>DB_NAME=app.db</code>, a file created on first use — nothing to install).</p>
+<p>With <code>--db mysql</code> or <code>--db postgres</code>, create the database, then set <code>DB_NAME</code> and the other <code>DB_*</code> variables (or a single <code>DATABASE_URL</code>). Karbon loads <code>.env</code> files in cascade (<code>.env</code> → <code>.env.{env}</code> → <code>.env.local</code>), Symfony-style. See <a href="configuration.html">Configuration</a>.</p>
 
 <div class="note">
 <p><b>No database?</b> Leave <code>DB_NAME</code> empty and the app starts without connecting. Perfect for prototypes and static pages.</p>

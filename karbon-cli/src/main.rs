@@ -1,12 +1,13 @@
 mod cargo_target;
 mod commands;
 mod config;
+mod db_url;
 mod process;
 mod templates;
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use commands::new::{Frontend, Skeleton};
+use commands::new::{Db, Frontend, Skeleton};
 use config::KarbonConfig;
 
 #[derive(Parser)]
@@ -34,6 +35,9 @@ enum Commands {
         /// Project skeleton: full (backend + frontend) or micro (backend-only)
         #[arg(long, short, default_value = "full")]
         skeleton: String,
+        /// Database: sqlite (default — a file, nothing to install), mysql or postgres
+        #[arg(long, short, default_value = "sqlite")]
+        db: String,
         /// Starter template: none (default) or blog (scaffolds a Post CRUD + admin)
         #[arg(long, short, default_value = "none")]
         template: String,
@@ -57,10 +61,10 @@ enum Commands {
     /// Generate boilerplate code
     #[command(alias = "g")]
     Generate {
-        /// What to generate: entity, controller, crud, admin
+        /// What to generate: entity, controller, crud, admin, auth
         kind: String,
-        /// Name (PascalCase, e.g. "Post", "BlogComment")
-        name: String,
+        /// Name (PascalCase, e.g. "Post", "BlogComment"). Not used by `auth`.
+        name: Option<String>,
         /// Field specs for entity/crud: name:type[?] (e.g. title:string body:text published:bool)
         /// Types: string text int bigint float bool datetime date json. `?` = nullable.
         fields: Vec<String>,
@@ -100,6 +104,22 @@ enum Commands {
         #[arg(long)]
         write: bool,
     },
+    /// Manage the accounts created by `karbon generate auth`. Actions: create, promote
+    ///
+    /// `karbon user create you@example.com --admin` makes the first administrator;
+    /// `karbon user promote <email>` gives ROLE_ADMIN to an existing account.
+    User {
+        /// User action: create, promote
+        action: String,
+        /// Email of the account
+        email: String,
+        /// With `create`: give the account ROLE_ADMIN
+        #[arg(long)]
+        admin: bool,
+        /// With `create`: the password (asked for when omitted)
+        #[arg(long)]
+        password: Option<String>,
+    },
     /// Deploy the project
     /// Targets: publish, publish:build, docker, paas (config files), fly, railway
     Deploy {
@@ -113,22 +133,13 @@ fn main() {
     let cli = Cli::parse();
 
     // Commands that don't need karbon.toml
-    if let Commands::New { name, frontend, skeleton, template, local } = &cli.command {
-        let fe = match Frontend::from_str(frontend) {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("\n{} {e}\n", "error:".red().bold());
-                std::process::exit(1);
-            }
-        };
-        let sk = match Skeleton::from_str(skeleton) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("\n{} {e}\n", "error:".red().bold());
-                std::process::exit(1);
-            }
-        };
-        if let Err(e) = commands::new::run(name, fe, sk, template, local) {
+    if let Commands::New { name, frontend, skeleton, db, template, local } = &cli.command {
+        let created = Frontend::from_str(frontend).and_then(|fe| {
+            let sk = Skeleton::from_str(skeleton)?;
+            let db = Db::from_str(db)?;
+            commands::new::run(name, fe, sk, db, template, local)
+        });
+        if let Err(e) = created {
             eprintln!("\n{} {e}\n", "error:".red().bold());
             std::process::exit(1);
         }
@@ -183,12 +194,15 @@ fn main() {
         Commands::Doctor { db } => commands::doctor::run(&config, &root, db),
         Commands::Generate { ref kind, ref name, ref fields, dry_run, force, interactive } => commands::generate::run(
             kind,
-            name,
+            name.as_deref(),
             fields,
             &root,
             commands::generate::GenOptions { dry_run, force, interactive },
         ),
         Commands::Maintenance { ref action } => commands::maintenance::run(&root, action),
+        Commands::User { ref action, ref email, admin, ref password } => {
+            commands::user::run(&root, action, email, admin, password.as_deref())
+        }
         Commands::Deploy { ref target } => commands::deploy::run(&config, &root, target),
         Commands::New { .. } | Commands::Docs { .. } | Commands::Migrate { .. } | Commands::Secret { .. } => {
             unreachable!()

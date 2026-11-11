@@ -17,6 +17,7 @@
 <pre>karbon new my-app                     # SvelteKit (default)
 karbon new my-app --frontend nextjs   # Next.js frontend
 karbon new my-app --skeleton micro    # backend-only (no frontend)
+karbon new my-app --db postgres       # sqlite (default), mysql or postgres
 karbon new my-app --template blog     # Post CRUD + admin starter
 karbon new my-app --local ./karbon    # depend on a local framework checkout</pre>
 <table>
@@ -61,6 +62,12 @@ karbon migrate diff [name]  # generate a migration from the entity ↔ DB diff</
 <pre>karbon doctor        # offline diagnostics (toolchain, layout, config)
 karbon doctor --db   # also probe the DB connection &amp; pending migrations</pre>
 <p>Exits non-zero on a blocking problem — safe for CI.</p>
+
+<h2>user</h2>
+<pre>karbon user create you@example.com --admin   # asks for the password
+karbon user create bob@example.com --password "S0mething"
+karbon user promote bob@example.com          # give ROLE_ADMIN to an existing account</pre>
+<p>Manages the accounts of the <code>users</code> table created by <code>karbon generate auth</code>. Passwords are hashed with Argon2id, as the application verifies them.</p>
 
 <h2>secret</h2>
 <pre>karbon secret          # print a random JWT secret (256 bits)

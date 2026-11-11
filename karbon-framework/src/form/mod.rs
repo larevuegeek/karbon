@@ -11,7 +11,7 @@
 //! let mut form = Form::new()
 //!     .add(Field::text("title", "Titre").required().constraint(Length::new().min(3)))
 //!     .add(Field::textarea("body", "Contenu").required())
-//!     .add(Field::checkbox("published", "Publié"))
+//!     .add(Field::checkbox("published", "Published"))
 //!     .csrf(csrf_token);
 //!
 //! if form.handle(&submitted) {        // bind + validate
@@ -154,11 +154,28 @@ mod tests {
         pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
     }
 
+    /// A login form re-rendered with its errors echoed the password in `value="…"`.
+    #[test]
+    fn a_submitted_password_is_never_written_back_into_the_page() {
+        let mut form = Form::new().add(Field::email("email", "Email").required()).add(
+            Field::password("password", "Password")
+                .required()
+                .constraint(Length::new().min(50)),
+        );
+        assert!(!form.handle(&data(&[("email", "a@example.com"), ("password", "S3cret-Passw0rd")])));
+
+        let html = form.render();
+        assert!(!html.contains("S3cret-Passw0rd"), "{html}");
+        assert!(html.contains("type=\"password\"") && html.contains("value=\"a@example.com\""), "{html}");
+        // The value is still bound, for the handler to read.
+        assert_eq!(form.value("password"), Some("S3cret-Passw0rd"));
+    }
+
     #[test]
     fn valid_submission() {
         let mut form = Form::new()
             .add(Field::text("title", "Titre").required().constraint(Length::new().min(3)))
-            .add(Field::checkbox("published", "Publié"));
+            .add(Field::checkbox("published", "Published"));
         let ok = form.handle(&data(&[("title", "Hello"), ("published", "1")]));
         assert!(ok);
         assert!(form.is_valid());
@@ -178,7 +195,7 @@ mod tests {
 
     #[test]
     fn unchecked_checkbox_is_zero() {
-        let mut form = Form::new().add(Field::checkbox("published", "Publié"));
+        let mut form = Form::new().add(Field::checkbox("published", "Published"));
         form.handle(&data(&[])); // checkbox absent
         assert_eq!(form.value("published"), Some("0"));
     }

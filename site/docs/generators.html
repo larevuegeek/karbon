@@ -49,9 +49,32 @@ published_at:datetime  meta:json  summary:text?</pre>
 <pre>karbon generate crud Post title:string body:text</pre>
 <p>The all-in-one: entity + repository + controller, wired into routes and OpenAPI. Run <code>migrate diff</code> next to create the schema.</p>
 
+<h2>What generate crud gives you</h2>
+<p>A working REST API under the API prefix, behind <code>ROLE_ADMIN</code> (the generated file says how to open reads):</p>
+<pre>GET    /api/v1/posts?page=1&amp;per_page=20&amp;sort=id&amp;order=desc&amp;search=…
+GET    /api/v1/posts/{id}        404 when missing
+POST   /api/v1/posts             201 with the new row
+PUT    /api/v1/posts/{id}        partial: only the fields sent change
+DELETE /api/v1/posts/{id}        204</pre>
+<p>A <code>text</code> field is written <code>pub body: String, // karbon:text</code> in the entity: the marker makes <code>migrate diff</code> create a <code>TEXT</code> column (a plain <code>String</code> is a <code>VARCHAR(255)</code> under MySQL and PostgreSQL) and the admin render a textarea. <code>// karbon:unique</code> asks for a <code>UNIQUE</code> column the same way.</p>
+
 <h2>generate admin</h2>
 <pre>karbon generate admin Post</pre>
 <p>Produces a field-aware <code>PostAdminController</code> (prefix <code>/admin/posts</code>, <code>ROLE_ADMIN</code>). It reads the entity's fields and generates the list view, create/edit forms, and typed <code>New</code>/<code>Update</code> DTOs with per-type coercion (string/number/bool/date/json, nullable handled). CSRF is wired via a small <code>X-CSRF-Token</code> script, and <code>{id}</code> routes are validated. Run it after <code>generate crud</code>.</p>
+
+<h2>generate auth</h2>
+<pre>karbon generate auth</pre>
+<p>The accounts of your application, ready to use: sign-up, sign-in, sign-out, session renewal and password reset. It writes four files you own and can edit — <code>entity/user.rs</code>, <code>entity/auth_token.rs</code>, <code>service/auth.rs</code> (the logic) and <code>controller/auth_controller.rs</code>:</p>
+<ul>
+  <li>browser pages with session cookies, under <code>/auth</code>: <code>login</code>, <code>register</code>, <code>forgot</code>, <code>reset</code>, <code>account</code>, <code>logout</code>;</li>
+  <li>their JSON twins under the API prefix: <code>POST /auth/login</code>, <code>register</code>, <code>refresh</code>, <code>logout</code>, <code>forgot</code>, <code>reset</code>, and <code>GET /auth/me</code>.</li>
+</ul>
+<p><b>Sessions renew themselves.</b> The access token is short-lived (<code>JWT_EXPIRATION</code>, 15 minutes by default); a refresh token (<code>REFRESH_TOKEN_EXPIRATION</code>, 30 days) buys the next one. It works once, only its keyed hash is stored, and deleting it ends the session.</p>
+<p><b>Password reset</b> emails a one-hour, single-use link (set <code>SMTP_HOST</code>; without it, in development, the link is written to the log). Using it signs the account out everywhere.</p>
+<p>Then create the table and your first administrator:</p>
+<pre>karbon migrate diff &amp;&amp; karbon migrate
+karbon user create you@example.com --admin</pre>
+<p>Signing up through the application always gives <code>ROLE_USER</code>; <code>karbon user promote &lt;email&gt;</code> makes an existing account an administrator. <code>generate auth</code> also sets <code>LOGIN_PATH=/auth/login</code> in <code>.env</code>, so a browser that opens a protected page without a session is sent to the login page. It takes no name, and <code>karbon new --template blog</code> runs it for you.</p>
 
 <h2>Common flags</h2>
 <table>

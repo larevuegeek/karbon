@@ -44,11 +44,89 @@ impl Skeleton {
     }
 }
 
-pub fn run(name: &str, frontend: Frontend, skeleton: Skeleton, template: &str, local: &str) -> Result<(), String> {
+/// The database a new project is wired for. The driver is a compile-time feature of the
+/// framework, so it decides the `karbon` and `sqlx` dependencies as well as the `.env`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Db {
+    /// A single file, nothing to install: the default, so a new project has a working
+    /// database out of the box.
+    Sqlite,
+    Mysql,
+    Postgres,
+}
+
+impl Db {
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "sqlite" | "sqlite3" => Ok(Self::Sqlite),
+            "mysql" | "mariadb" => Ok(Self::Mysql),
+            "postgres" | "postgresql" | "pg" => Ok(Self::Postgres),
+            _ => Err(format!("Unknown database '{}'. Available: sqlite, mysql, postgres", s)),
+        }
+    }
+
+    fn label(&self) -> &str {
+        match self {
+            Self::Sqlite => "SQLite",
+            Self::Mysql => "MySQL",
+            Self::Postgres => "PostgreSQL",
+        }
+    }
+
+    /// What follows the source (`version = …` or `path = …`) in the `karbon` dependency.
+    /// MySQL is the framework's default feature; the other two replace it.
+    fn karbon_features(&self) -> &str {
+        match self {
+            Self::Sqlite => r#"default-features = false, features = ["sqlite", "studio"]"#,
+            Self::Mysql => r#"features = ["studio"]"#,
+            Self::Postgres => r#"default-features = false, features = ["postgres", "studio"]"#,
+        }
+    }
+
+    fn sqlx_driver(&self) -> &str {
+        match self {
+            Self::Sqlite => "sqlite",
+            Self::Mysql => "mysql",
+            Self::Postgres => "postgres",
+        }
+    }
+
+    /// The database section of `.env`. SQLite names its file, so the project has a
+    /// database from the first run; a server-based database is left unset, since nothing
+    /// says that server exists yet.
+    fn env_block(&self, snake: &str) -> String {
+        match self {
+            Self::Sqlite => "# Database — SQLite: a single file, nothing to install. DB_NAME is its path, created\n\
+                 # on first use. Leave it empty to run WITHOUT a database.\n\
+                 DB_NAME=app.db"
+                .to_string(),
+            Self::Mysql => format!(
+                "# Database — MySQL / MariaDB. Set DB_NAME (e.g. {snake}) once the database exists;\n\
+                 # empty, the app runs WITHOUT a database.\n\
+                 DB_HOST=127.0.0.1\nDB_PORT=3306\nDB_NAME=\nDB_USER=root\nDB_PASSWORD="
+            ),
+            Self::Postgres => format!(
+                "# Database — PostgreSQL. Set DB_NAME (e.g. {snake}) once the database exists;\n\
+                 # empty, the app runs WITHOUT a database.\n\
+                 DB_HOST=127.0.0.1\nDB_PORT=5432\nDB_NAME=\nDB_USER=postgres\nDB_PASSWORD="
+            ),
+        }
+    }
+}
+
+pub fn run(
+    name: &str,
+    frontend: Frontend,
+    skeleton: Skeleton,
+    db: Db,
+    template: &str,
+    local: &str,
+) -> Result<(), String> {
     let kind_label = match skeleton {
         Skeleton::Full => frontend.label().to_string(),
         Skeleton::Micro => "backend-only / micro".to_string(),
     };
+    let kind_label = format!("{kind_label}, {}", db.label());
     println!("\n{}  Creating project {} ({})\n", "▲ karbon".bold().red(), name.bold().cyan(), kind_label.bold());
 
     let root = Path::new(name);
@@ -185,7 +263,10 @@ pub fn run(name: &str, frontend: Frontend, skeleton: Skeleton, template: &str, l
             .replace("{{PROJECT_NAME}}", name)
             .replace("{{PROJECT_NAME_SNAKE}}", &snake)
             .replace("{{PROJECT_NAME_TITLE}}", &title)
-            .replace("{{KARBON_VERSION}}", env!("CARGO_PKG_VERSION"));
+            .replace("{{KARBON_VERSION}}", env!("CARGO_PKG_VERSION"))
+            .replace("{{KARBON_FEATURES}}", db.karbon_features())
+            .replace("{{SQLX_DRIVER}}", db.sqlx_driver())
+            .replace("{{DB_BLOCK}}", &db.env_block(&snake));
         // The live `.env` gets its own random secret. `.env.example` keeps the placeholder,
         // which is published with this CLI and which the framework refuses to start with.
         let rendered = if *path == ".env" {
@@ -199,7 +280,7 @@ pub fn run(name: &str, frontend: Frontend, skeleton: Skeleton, template: &str, l
 
     // Dev convenience: point the generated project at a local karbon checkout.
     if !local.is_empty() {
-        apply_local_dep(root, local)?;
+        apply_local_dep(root, local, db)?;
     } else {
         println!(
             "\n  {} No {} given — `karbon` resolves to the published crates.io version.",
@@ -224,11 +305,13 @@ pub fn run(name: &str, frontend: Frontend, skeleton: Skeleton, template: &str, l
     // Starter template: scaffold a Post CRUD + admin on top of the skeleton.
     let is_blog = template.eq_ignore_ascii_case("blog");
     if is_blog {
-        println!("\n  {} Scaffolding blog starter (Post CRUD + admin)...\n", "▲".red());
+        println!("\n  {} Scaffolding blog starter (Post CRUD + admin + sign-in)...\n", "▲".red());
         let gen_opts = crate::commands::generate::GenOptions::default();
         let post_fields = ["title:string".to_string(), "slug:string".to_string()];
-        crate::commands::generate::run("crud", "Post", &post_fields, root, gen_opts)?;
-        crate::commands::generate::run("admin", "Post", &[], root, gen_opts)?;
+        crate::commands::generate::run("crud", Some("Post"), &post_fields, root, gen_opts)?;
+        crate::commands::generate::run("admin", Some("Post"), &[], root, gen_opts)?;
+        // The admin is behind ROLE_ADMIN: without a way to sign in, nobody could open it.
+        crate::commands::generate::run("auth", None, &[], root, gen_opts)?;
     } else if !template.eq_ignore_ascii_case("none") {
         return Err(format!("Unknown template '{template}'. Available: none, blog"));
     }
@@ -236,9 +319,13 @@ pub fn run(name: &str, frontend: Frontend, skeleton: Skeleton, template: &str, l
     println!("\n  {} Project {} created! ({})\n", "✓".green().bold(), name.bold().cyan(), kind_label);
     println!("  Next steps:\n");
     println!("    {} {}", "cd".dimmed(), name);
+    if db != Db::Sqlite {
+        println!("    create the {} database, then set {} in .env", db.label(), "DB_NAME".bold());
+    }
     if is_blog {
-        println!("    {} (set DB_NAME in .env first) to generate the migration", "karbon migrate diff".bold());
-        println!("    {} to create the table", "karbon migrate".bold());
+        println!("    {} to generate the migration", "karbon migrate diff".bold());
+        println!("    {} to create the tables", "karbon migrate".bold());
+        println!("    {} for your administrator", "karbon user create you@example.com --admin".bold());
     }
     println!("    {} to start developing\n", "karbon dev".bold());
 
@@ -247,7 +334,7 @@ pub fn run(name: &str, frontend: Frontend, skeleton: Skeleton, template: &str, l
 
 /// Rewrite the generated `app/Cargo.toml` so `karbon` is a path dependency on a
 /// local checkout (dev convenience — the framework isn't on crates.io yet).
-fn apply_local_dep(root: &Path, local: &str) -> Result<(), String> {
+fn apply_local_dep(root: &Path, local: &str, db: Db) -> Result<(), String> {
     let abs = fs::canonicalize(local).map_err(|e| format!("--local path '{local}' not found: {e}"))?;
     let fw = abs.join("karbon-framework");
     if !fw.join("Cargo.toml").exists() {
@@ -258,14 +345,15 @@ fn apply_local_dep(root: &Path, local: &str) -> Result<(), String> {
 
     let app_cargo = root.join("app/Cargo.toml");
     let content = fs::read_to_string(&app_cargo).map_err(|e| format!("read app/Cargo.toml: {e}"))?;
-    // Replace the whole `karbon = { … }` line (preserves the studio feature).
+    // Replace the whole `karbon = { … }` line: only the source changes, the driver and
+    // studio features stay.
     let mut replaced = false;
     let mut lines: Vec<String> = content
         .lines()
         .map(|l| {
             if l.trim_start().starts_with("karbon = {") {
                 replaced = true;
-                format!("karbon = {{ package = \"karbon-framework\", path = \"{fw_str}\", features = [\"studio\"] }}")
+                format!("karbon = {{ package = \"karbon-framework\", path = \"{fw_str}\", {} }}", db.karbon_features())
             } else {
                 l.to_string()
             }

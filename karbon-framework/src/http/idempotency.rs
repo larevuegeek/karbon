@@ -4,6 +4,7 @@
 use axum::http::HeaderMap;
 
 use crate::error::AppError;
+use crate::i18n::pick;
 
 pub const IDEMPOTENCY_KEY_HEADER: &str = "Idempotency-Key";
 
@@ -13,11 +14,23 @@ pub fn validate_idempotency_key(raw: &str) -> Result<&str, AppError> {
     let key = raw.trim();
 
     if key.len() < 8 || key.len() > 64 {
-        return Err(AppError::BadRequest("Idempotency-Key doit faire entre 8 et 64 caractères.".into()));
+        return Err(AppError::BadRequest(
+            pick(
+                "Idempotency-Key must be 8 to 64 characters long.",
+                "Idempotency-Key doit faire entre 8 et 64 caractères.",
+            )
+            .into(),
+        ));
     }
 
     if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-        return Err(AppError::BadRequest("Idempotency-Key : caractères autorisés [a-zA-Z0-9-_].".into()));
+        return Err(AppError::BadRequest(
+            pick(
+                "Idempotency-Key: allowed characters are [a-zA-Z0-9-_].",
+                "Idempotency-Key : caractères autorisés [a-zA-Z0-9-_].",
+            )
+            .into(),
+        ));
     }
 
     Ok(key)
@@ -29,17 +42,24 @@ pub fn idempotency_key(headers: &HeaderMap) -> Result<Option<String>, AppError> 
         return Ok(None);
     };
 
-    let raw = value
-        .to_str()
-        .map_err(|_| AppError::BadRequest("Idempotency-Key non-ASCII.".into()))?;
+    let raw = value.to_str().map_err(|_| {
+        AppError::BadRequest(pick("Idempotency-Key is not ASCII.", "Idempotency-Key non-ASCII.").into())
+    })?;
 
     validate_idempotency_key(raw).map(|key| Some(key.to_string()))
 }
 
 /// For endpoints where a replay must never have two effects (payments…).
 pub fn require_idempotency_key(headers: &HeaderMap) -> Result<String, AppError> {
-    idempotency_key(headers)?
-        .ok_or_else(|| AppError::BadRequest("Header Idempotency-Key obligatoire sur cet endpoint.".into()))
+    idempotency_key(headers)?.ok_or_else(|| {
+        AppError::BadRequest(
+            pick(
+                "The Idempotency-Key header is required on this endpoint.",
+                "Header Idempotency-Key obligatoire sur cet endpoint.",
+            )
+            .into(),
+        )
+    })
 }
 
 #[cfg(test)]

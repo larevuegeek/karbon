@@ -1,99 +1,97 @@
-# Déployer une application Karbon
+# Deploying a Karbon application
 
-Une app Karbon se compile en **un binaire Rust** (backend + reverse proxy intégré)
-accompagné du **build frontend** (SvelteKit/Next.js servi en SSR par Node). Ce guide
-couvre les cibles de déploiement, de la plus simple à la plus avancée.
+A Karbon app compiles to **one Rust binary** (backend + built-in reverse proxy) shipped
+with the **frontend build** (SvelteKit/Next.js, server-rendered by Node). This guide covers
+the deployment targets, from the simplest to the most advanced.
 
-> Pré-requis : `karbon build` produit `target/release/<app>` + le build frontend. Dans un
-> workspace Cargo, `target/` est celui de la racine du workspace (ou celui de
-> `CARGO_TARGET_DIR`) : Karbon le demande à cargo.
-> En production, le binaire Rust sert l'API et proxie le reste vers le SSR Node
-> quand `KARBON_FRONTEND_URL` est défini (ce que fait `karbon serve`).
+> Prerequisite: `karbon build` produces `target/release/<app>` and the frontend build. In a
+> Cargo workspace, `target/` is the one at the workspace root (or `CARGO_TARGET_DIR`):
+> Karbon asks cargo where it is.
+> In production the Rust binary serves the API and proxies everything else to the Node SSR
+> server when `KARBON_FRONTEND_URL` is set (which `karbon serve` does).
 
 ---
 
-## 1. VPS / serveur dédié (rsync + PM2 ou systemd)
+## 1. VPS / dedicated server (rsync + PM2 or systemd)
 
-Le plus direct quand tu as un accès SSH. Configure la section `[deploy]` de `karbon.toml` :
+The most direct route when you have SSH access. Fill in the `[deploy]` section of
+`karbon.toml`:
 
 ```toml
 [deploy]
 path = "/var/www/my-app"
-user = "www-data"            # optionnel — chown après copie
-manager = "pm2"              # "pm2" ou "systemd"
-host = "user@server"         # optionnel — si absent, déploiement local
+user = "www-data"            # optional — chown after the copy
+manager = "pm2"              # "pm2" or "systemd"
+host = "user@server"         # optional — without it, the deploy is local
 ```
 
-Puis :
+Then:
 
 ```bash
 karbon deploy publish:build   # build + rsync + restart
-karbon deploy publish         # rsync + restart (sans rebuild)
+karbon deploy publish         # rsync + restart (no rebuild)
 ```
 
-Le binaire, le build frontend, les migrations et `.env.example` sont synchronisés,
-les dépendances frontend installées (`npm install --omit=dev`), puis le process
-manager redémarré.
+The binary, the frontend build, the migrations and `.env.example` are synchronized, the
+frontend dependencies installed (`npm install --omit=dev`), then the process manager
+restarted.
 
-### Plusieurs serveurs derrière un répartiteur
+### Several servers behind a load balancer
 
-Avec deux instances ou plus, **compile une seule fois** et publie le même résultat
-partout : deux compilations du même code ne donnent pas les mêmes noms de fichiers
-frontend (SvelteKit y grave une version), et une page servie à moitié par l'une,
-à moitié par l'autre, casse.
+With two instances or more, **build once** and publish the same result everywhere: two
+builds of the same code do not produce the same frontend file names (SvelteKit stamps a
+version into them), and a page served half by one build and half by another breaks.
 
 ```toml
 [deploy]
 path = "/var/www/my-app"
 user = "www-data"
 manager = "pm2"
-# Publiés dans cet ordre, l'un après l'autre ; "local" = la machine qui lance la commande
+# Published in this order, one after the other; "local" = the machine running the command
 hosts = ["root@10.0.0.12", "local"]
-# Optionnel : avant de passer au suivant, attendre que celui-ci réponde (vérifié SUR la cible)
+# Optional: wait for this one to answer before moving on (checked ON the target)
 health_url = "http://127.0.0.1:8080/api/health"
-health_timeout = 120          # secondes (défaut : 120)
+health_timeout = 120          # seconds (default: 120)
 ```
 
-`karbon deploy publish:build` compile **une fois**, puis publie et redémarre chaque
-cible à son tour. Avec `health_url`, la cible suivante n'est touchée que lorsque la
-précédente répond : les serveurs ne sont jamais redémarrés tous en même temps. Au
-premier échec, la commande s'arrête et dit quelles cibles n'ont pas été publiées.
-`host` (une seule cible) reste accepté ; `host` et `hosts` ensemble sont refusés.
+`karbon deploy publish:build` builds **once**, then publishes to and restarts each target
+in turn. With `health_url`, the next target is only touched once the previous one answers:
+the servers are never all restarted at the same time. At the first failure the command
+stops and says which targets were not published. `host` (a single target) is still
+accepted; `host` and `hosts` together are refused.
 
 ---
 
 ## 2. Docker
 
 ```bash
-karbon deploy docker          # génère Dockerfile + .dockerignore
+karbon deploy docker          # generates Dockerfile + .dockerignore
 docker build -t my-app .
 docker run -p 3000:3000 --env-file .env -e APP_ENV=production my-app
 ```
 
-Le Dockerfile généré est **multi-stage** (build frontend → build backend →
-image runtime `debian-slim` avec Node pour le SSR) et inclut un `HEALTHCHECK`
-sur `/health`.
+The generated Dockerfile is **multi-stage** (frontend build → backend build → `debian-slim`
+runtime image with Node for SSR) and includes a `HEALTHCHECK` on `/health`.
 
-> Note : une image `scratch`/`distroless` totalement statique n'est pas possible
-> tant que le SSR Node est embarqué (le runtime Node est requis). Pour une app
-> **API-only** (sans frontend SSR), le binaire Rust peut tourner seul dans une
-> image minimale.
+> Note: a fully static `scratch`/`distroless` image is not possible while Node SSR is
+> embedded (the Node runtime is required). An **API-only** app (no SSR frontend) can run
+> the Rust binary alone in a minimal image.
 
 ---
 
 ## 3. PaaS (Fly.io / Render / Railway)
 
 ```bash
-karbon deploy paas            # génère fly.toml, render.yaml, Procfile (+ Dockerfile si absent)
+karbon deploy paas            # generates fly.toml, render.yaml, Procfile (+ Dockerfile if missing)
 ```
 
-- **Fly.io** : `fly launch --copy-config --no-deploy` (première fois), puis `fly deploy`.
-- **Render** : connecte le repo à un Blueprint Render — `render.yaml` est détecté automatiquement.
-- **Railway** : `railway up` (utilise le Dockerfile).
+- **Fly.io**: `fly launch --copy-config --no-deploy` (first time), then `fly deploy`.
+- **Render**: connect the repository to a Render Blueprint — `render.yaml` is detected.
+- **Railway**: `railway up` (uses the Dockerfile).
 
-Tous pointent leur healthcheck sur `/health` et définissent `APP_ENV=production`.
+All of them point their health check at `/health` and set `APP_ENV=production`.
 
-Raccourcis (génèrent la config au besoin puis déploient via le CLI de la plateforme) :
+Shortcuts (they generate the config when needed, then deploy through the platform's CLI):
 
 ```bash
 karbon deploy fly       # → flyctl deploy
@@ -102,7 +100,7 @@ karbon deploy railway   # → railway up
 
 ### Multi-arch (amd64 + arm64)
 
-Le Dockerfile généré fonctionne sous `buildx` pour les deux architectures :
+The generated Dockerfile works under `buildx` for both architectures:
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 -t my-app --push .
@@ -110,37 +108,42 @@ docker buildx build --platform linux/amd64,linux/arm64 -t my-app --push .
 
 ---
 
-## 4. Variables d'environnement & environnements
+## 4. Environment variables & environments
 
-Karbon charge les fichiers `.env` en cascade selon `APP_ENV` (style Symfony) :
+Karbon loads the `.env` files in cascade according to `APP_ENV` (Symfony style):
 
 ```
-.env.{env}.local   (priorité max)
-.env.local         (ignoré en test)
+.env.{env}.local   (highest priority)
+.env.local         (ignored in test)
 .env.{env}
-.env               (priorité min)
+.env               (lowest priority)
 ```
 
-En production, mets `APP_ENV=production`. Les valeurs déjà présentes dans
-l'environnement réel ne sont jamais écrasées par les fichiers.
+In production, set `APP_ENV=production`. Values already present in the real environment are
+never overwritten by the files.
 
-Variables minimales requises : `DB_NAME`, `DB_USER`, `JWT_SECRET` (voir `.env.example`).
+What an app needs depends on what it uses: `JWT_SECRET` for authentication (generate it
+with `karbon secret` — the app refuses to start with the placeholder of `.env.example`),
+and `DB_NAME` / `DB_USER` / `DB_PASSWORD` for a database. See `.env.example`.
 
 ---
 
 ## 5. Migrations
 
 ```bash
-karbon migrate                # exécute les .sql de migration/ dans l'ordre alphabétique
+karbon migrate                # applies the pending migrations of migration/
+karbon migrate status         # applied / pending
+karbon migrate rollback       # undoes the last one (its `-- migrate:down` section)
 ```
 
-Lit `DATABASE_URL` ou les variables `DB_*`. Supporte MySQL/MariaDB (`mysql` CLI)
-et PostgreSQL (`psql` CLI).
+Migrations are versioned: each file runs once, tracked in the `_karbon_migrations` table.
+They run natively — no `mysql` or `psql` client is needed on the server. The connection
+comes from `DATABASE_URL` or the `DB_*` variables.
 
 ---
 
-## 6. Hébergement mutualisé
+## 6. Shared hosting
 
-⚠️ Un mutualisé classique ne laisse pas tourner un process Rust persistant. Le
-support **FastCGI** est en réflexion et n'est pas encore disponible. Pour
-l'instant, privilégie un VPS, Docker ou un PaaS.
+⚠️ Classic shared hosting does not let a long-lived Rust process run. The `cgi` feature is
+a best-effort adapter that has not been validated on a real shared host. For now, prefer a
+VPS, Docker or a PaaS.

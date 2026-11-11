@@ -27,14 +27,21 @@
 rustc --version   # should print 1.82 or newer</pre>
 
 <h2>Install the CLI</h2>
-<p>The CLI is published on crates.io:</p>
+<p>The quickest way is the prebuilt binary:</p>
+<pre># Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/larevuegeek/karbon/main/install.sh | sh
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/larevuegeek/karbon/main/install.ps1 | iex</pre>
+<p>The script downloads the binary for your platform from the latest GitHub release, checks its SHA-256 and puts it in <code>~/.cargo/bin</code> (or <code>~/.local/bin</code>). Set <code>KARBON_VERSION</code> to pin a release, <code>KARBON_INSTALL_DIR</code> to choose the folder.</p>
+<p>Or build it from source — it is published on crates.io:</p>
 <pre>cargo install karbon-cli</pre>
-<p>This installs a <code>karbon</code> binary into <code>~/.cargo/bin</code> (make sure that's on your <code>PATH</code>). Verify it:</p>
+<p>Either way you get a <code>karbon</code> binary (make sure its folder is on your <code>PATH</code>). Verify it:</p>
 <pre>karbon --version
 karbon --help</pre>
 
 <div class="note">
-<p><b>Updating.</b> Re-run <code>cargo install karbon-cli</code> to upgrade to the latest published version. Add <code>--force</code> to reinstall the same version.</p>
+<p><b>Updating.</b> Run the install script again, or re-run <code>cargo install karbon-cli</code>, to get the latest published version.</p>
 </div>
 
 <h2>Check your environment</h2>

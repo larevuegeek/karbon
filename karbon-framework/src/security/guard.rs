@@ -3,7 +3,7 @@ use std::pin::Pin;
 
 use axum::{
     extract::{FromRequestParts, Request},
-    http::{header::AUTHORIZATION, request::Parts},
+    http::request::Parts,
     middleware::Next,
     response::Response,
 };
@@ -13,7 +13,11 @@ use crate::http::AppState;
 
 use super::{Claims, RoleHierarchy};
 
-/// Extractor: pulls the authenticated user from the request
+/// Extractor: pulls the authenticated user from the request.
+///
+/// The access token is read from `Authorization: Bearer <token>` (API clients) or, when
+/// the request has no such header, from the session cookie (browsers — see
+/// [`auth_cookie`](super::auth_cookie)).
 ///
 /// Usage in a handler:
 /// ```ignore
@@ -91,16 +95,17 @@ impl FromRequestParts<AppState> for AuthGuard {
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        // Extract Bearer token from Authorization header
-        let auth_header: &str = parts
-            .headers
-            .get(AUTHORIZATION)
-            .and_then(|value| value.to_str().ok())
-            .ok_or_else(|| AppError::Unauthorized("Missing Authorization header".to_string()))?;
+        use super::auth_cookie::{NoToken, token_from};
 
-        let token: &str = auth_header
-            .strip_prefix("Bearer ")
-            .ok_or_else(|| AppError::Unauthorized("Invalid Authorization format".to_string()))?;
+        let token: &str = token_from(&parts.headers).map_err(|reason| {
+            AppError::Unauthorized(
+                match reason {
+                    NoToken::Missing => "Authentication required",
+                    NoToken::Malformed => "Invalid Authorization format",
+                }
+                .to_string(),
+            )
+        })?;
 
         // Verify JWT
         let jwt: super::JwtManager = super::JwtManager::new(&state.config.jwt_secret, state.config.jwt_expiration);
@@ -112,7 +117,7 @@ impl FromRequestParts<AppState> for AuthGuard {
     }
 }
 
-/// Middleware factory pour protéger un groupe de routes par rôle.
+/// Middleware factory that protects a group of routes with a role.
 ///
 /// ```ignore
 /// router.layer(middleware::from_fn(require_role("ROLE_ADMIN")))
@@ -127,5 +132,79 @@ pub fn require_role(
             auth.require_role(role)?;
             Ok(next.run(request).await)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::db::Database;
+    use crate::security::{AUTH_COOKIE, JwtManager, default_hierarchy};
+    use axum::http::Request;
+
+    const SECRET: &str = "a-test-secret-long-enough-for-hmac-1234";
+
+    fn state() -> AppState {
+        let config = Config::test_config(SECRET);
+        AppState {
+            db: Database::connect_lazy(&config).expect("lazy pool"),
+            config,
+            mailer: None,
+            role_hierarchy: default_hierarchy(),
+            #[cfg(feature = "templates")]
+            templates: crate::template::TemplateEngine::empty(),
+        }
+    }
+
+    fn token(secret: &str) -> String {
+        JwtManager::new(secret, 60)
+            .generate_full("a@example.com", "a@example.com", vec!["ROLE_ADMIN".into()], Some(7), None, None)
+            .unwrap()
+    }
+
+    async fn guard(headers: &[(&str, String)]) -> Result<AuthGuard, AppError> {
+        let mut request = Request::builder().uri("/admin");
+        for (name, value) in headers {
+            request = request.header(*name, value);
+        }
+        let (mut parts, ()) = request.body(()).unwrap().into_parts();
+        AuthGuard::from_request_parts(&mut parts, &state()).await
+    }
+
+    /// A browser cannot send `Authorization`: before the session cookie, a server-rendered
+    /// page behind a role could not be opened at all.
+    #[tokio::test]
+    async fn a_browser_session_cookie_authenticates_like_a_bearer_header() {
+        let token = token(SECRET);
+
+        let by_cookie = guard(&[("cookie", format!("csrf_token=x; {AUTH_COOKIE}={token}"))])
+            .await
+            .unwrap();
+        assert_eq!(by_cookie.user_id(), Some(7));
+        assert!(by_cookie.has_role("ROLE_USER"));
+
+        let by_header = guard(&[("authorization", format!("Bearer {token}"))]).await.unwrap();
+        assert_eq!(by_header.sub(), "a@example.com");
+    }
+
+    #[tokio::test]
+    async fn a_cookie_is_verified_like_any_token() {
+        let forged = token("another-secret-long-enough-for-hmac-5678");
+        assert!(matches!(
+            guard(&[("cookie", format!("{AUTH_COOKIE}={forged}"))]).await,
+            Err(AppError::Unauthorized(_))
+        ));
+        assert!(matches!(guard(&[("cookie", format!("{AUTH_COOKIE}=garbage"))]).await, Err(AppError::Unauthorized(_))));
+    }
+
+    #[tokio::test]
+    async fn no_credentials_and_a_broken_header_are_refused() {
+        assert!(matches!(guard(&[]).await, Err(AppError::Unauthorized(m)) if m == "Authentication required"));
+
+        // The header wins: a valid cookie does not rescue a malformed Authorization.
+        let headers =
+            [("authorization", "Basic abc".to_string()), ("cookie", format!("{AUTH_COOKIE}={}", token(SECRET)))];
+        assert!(matches!(guard(&headers).await, Err(AppError::Unauthorized(m)) if m == "Invalid Authorization format"));
     }
 }

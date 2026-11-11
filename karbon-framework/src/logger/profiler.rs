@@ -1,13 +1,13 @@
 use axum::{extract::Request, middleware::Next, response::Response};
 use std::time::Instant;
 
-/// Middleware de profiling — activé uniquement en mode debug.
+/// Profiling middleware — active in debug builds only.
 ///
-/// Log chaque requête avec :
-/// - Méthode HTTP + path
+/// Logs each request with:
+/// - HTTP method + path
 /// - Status code
-/// - Temps d'exécution (warning si > 100ms)
-/// - Taille de la réponse
+/// - Execution time (warning above 100 ms)
+/// - Response size
 ///
 /// ```ignore
 /// use axum::middleware;
@@ -17,14 +17,14 @@ use std::time::Instant;
 ///     .layer(middleware::from_fn(profiler_middleware))
 /// ```
 ///
-/// Sortie :
+/// Output:
 /// ```text
 /// [DEBUG] GET /admin/categories → 200 OK (2ms) [156 bytes]
 /// [SLOW]  GET /admin/users → 200 OK (152ms) [4.2 KB]
 /// [DEBUG] POST /auth/login → 401 WARN (12ms) [64 bytes]
 /// ```
 pub async fn profiler_middleware(request: Request, next: Next) -> Response {
-    // En mode release, le middleware est un no-op
+    // In a release build the middleware is a no-op
     if !cfg!(debug_assertions) {
         return next.run(request).await;
     }
@@ -39,7 +39,7 @@ pub async fn profiler_middleware(request: Request, next: Next) -> Response {
     let status = response.status().as_u16();
     let duration_ms = duration.as_millis();
 
-    // Taille de la réponse
+    // Response size
     let size = response
         .headers()
         .get(axum::http::header::CONTENT_LENGTH)

@@ -11,6 +11,130 @@ patch versions (`0.x.y`) are backwards-compatible fixes and additions. From
 `1.0.0` onward the project will follow [Semantic Versioning](https://semver.org/)
 strictly. Breaking changes are always listed under **Changed** / **Removed**.
 
+## [0.5.1] - 2026-11-11
+
+> The first day. A newcomer installs the CLI without compiling it, gets a project whose
+> database works with nothing else installed, can sign in to what they generate, and
+> reads English everywhere.
+> - **Sign-in out of the box**: `karbon generate auth` (sign-up, sign-in, session renewal,
+>   password reset), browser sessions (`AuthGuard` reads a cookie as well as a Bearer
+>   header), `karbon user create --admin`.
+> - **`generate crud` writes a working REST API**, no longer a controller of TODOs.
+> - **English everywhere**: the CLI, the messages Karbon writes for end users, the code
+>   comments and the bundled docs. French stays one setting away: `APP_LOCALE=fr`.
+> - **SQLite by default** in `karbon new`; `--db mysql` / `--db postgres` for a server.
+> - **Prebuilt binaries** of the CLI, with `install.sh` and `install.ps1`.
+>
+> **Upgrading**: a French-speaking site sets `APP_LOCALE=fr` in its `.env` to keep the
+> messages it had. Existing projects keep their database: only new ones default to SQLite.
+
+### Fixed
+- **`#[derive(Insertable)]` could not insert under PostgreSQL.** The macro wrote
+  `VALUES (?, ?)` itself, which PostgreSQL rejects (its placeholders are `$1`, `$2`), and
+  returned `0` instead of the new id. The SQL now comes from `db::insert_sql` at run time,
+  and the id from the new `db::insert_returning_id` (`RETURNING id` under PostgreSQL).
+  MySQL and SQLite are unchanged. Not verified against a live PostgreSQL server: the SQL
+  and the generated code are checked, the round trip is not.
+- **A password field wrote the submitted password back into the page**: a `Form`
+  re-rendered with its errors carried it in `value="…"`. `Field::password` no longer
+  renders its value.
+- **A duplicate value answered `500`** with the database's message (in development) or the
+  masked one. A UNIQUE-constraint violation is now a `409 conflict` — "This value is
+  already in use" — in every environment, without naming the table or the column.
+- **The generated admin dropped validation errors**: its script reloaded the page when a
+  form came back with errors, showing an empty form. It now displays what the server
+  answered. Its `esc()` also escapes quotes, and the page declares `lang="en"`.
+- **`karbon migrate` failed on a freshly generated project** with "DATABASE_URL not found":
+  it built the URL from `DB_*` only when `DB_DRIVER` was set, which `karbon new` never
+  wrote. The CLI now takes the driver from `DB_DRIVER` / `DB_CONNECTION` when present, else
+  from the feature the project's `karbon` dependency is compiled with. `karbon doctor`
+  shares that logic and no longer reports a SQLite or PostgreSQL project as `mysql`.
+- The startup log of a SQLite application said `Connecting to database at 127.0.0.1:0`; it
+  now names the file.
+
+### Changed
+- **`karbon generate crud` writes a working REST controller**: paginated and searchable
+  list, show (`404` when missing), create (`201` with the new row), partial update,
+  delete (`204`) — it wrote a stub answering `"TODO"`. Everything stays behind
+  `ROLE_ADMIN`; the file says how to open reads. `karbon generate controller` still
+  writes the stub. The generated DTOs accept what a client sends: no `id` in an update
+  body (it is in the URL), no `slug` when it derives from the title.
+- **`karbon generate admin` picks the control from the type**: a checkbox for a boolean
+  (it was a required text box in which to type `true`), a textarea for a `text` field, a
+  number or date input. A page left open past the access token's life renews its session
+  and resubmits.
+- **`AuthGuard` without credentials answers "Authentication required"** — it said
+  "Missing Authorization header", which a browser session makes inaccurate.
+- **`karbon generate <kind> <Name>`**: the name is optional on the command line, because
+  `auth` takes none; every other generator still requires it.
+- **`karbon new` creates a SQLite project by default** — it created a MySQL one, with an
+  empty `DB_NAME`. Pass `--db mysql` to get the previous result.
+- **Karbon's own user-facing messages are in English by default**: the masked 500
+  (`An internal error occurred`), the refused token, route-parameter and form validation,
+  `Idempotency-Key` errors, and the display helpers `DateHelper::time_ago` (`3 h ago`),
+  `NumberHelper::filesize_format` (`1.5 KB`) and `NumberHelper::ordinal` (`1st`, `2nd`).
+  They were in French. Messages the application writes itself are untouched.
+- **The CLI speaks English**: `karbon doctor`, the field assistant of `karbon generate`
+  (which now asks `nullable? (y/N)` — `o`/`oui` are still accepted), `karbon migrate diff`
+  and `karbon docs`. Commands, options and exit codes are unchanged.
+- The README opens with installation and a three-step quick start.
+- The `docs/index.md` written by `karbon new`, the reference embedded in Studio and
+  `docs/DEPLOY.md` are in English. The deployment guide also stops describing migrations
+  as run through the `mysql`/`psql` clients: they have been native since 0.3.
+
+### Added
+- **`karbon generate auth`** writes the accounts of an application — four files that are
+  yours to edit: `entity/user.rs`, `entity/auth_token.rs`, `service/auth.rs` (the logic)
+  and `controller/auth_controller.rs`. Browser pages under `/auth` (`login`, `register`,
+  `forgot`, `reset`, `account`, `logout`) and their JSON twins under the API prefix
+  (`login`, `register`, `refresh`, `logout`, `forgot`, `reset`, `me`).
+  - **Sessions renew themselves.** The access token is short (`JWT_EXPIRATION`, 15 min);
+    a refresh token (`REFRESH_TOKEN_EXPIRATION`, 30 days) buys the next one. It works
+    once, is stored as a keyed hash, and deleting it ends the session. A browser whose
+    access token expired is renewed on its way through the login page; a form submitted
+    from a page left open is retried after a silent renewal.
+  - **Password reset**: a one-hour, single-use link sent by email; using it ends every
+    session of the account. Without SMTP, in development, the link is written to the log
+    so the flow can be tried.
+  - Unknown email and wrong password are indistinguishable, in message and in time; so
+    are a reset request for a known and for an unknown email.
+  - `karbon new --template blog` now runs it: the generated admin was behind `ROLE_ADMIN`
+    with no way to sign in.
+- **`karbon user create <email> [--admin] [--password …]`** and **`karbon user promote
+  <email>`** manage those accounts from the terminal — the first administrator is one
+  command. The password is asked for without being echoed, twice. Signing up through the
+  application always gives `ROLE_USER`.
+- **`security::{refresh_cookie, clear_refresh_cookie, refresh_token_from, REFRESH_COOKIE}`**
+  for the refresh token of a browser session, scoped to the routes that use it.
+- **Browser sessions**: `AuthGuard` reads the access token from `Authorization: Bearer`
+  or, when the request has no such header, from the `karbon_auth` cookie — `HttpOnly`,
+  `SameSite=Lax`, `Secure` on HTTPS. New `security::{login_cookie, logout_cookie,
+  local_redirect, AUTH_COOKIE}`; `local_redirect` only follows a path of the site, so a
+  `?next=` cannot send a visitor elsewhere. A server-rendered page behind a role could
+  not be opened from a browser before. The firewall accepts the cookie too.
+- **`LOGIN_PATH`**: when set, a browser that opens a protected page without a session is
+  redirected to it with `?next=`; API calls and scripts keep their `401`
+  (`http::middleware::login_redirect`). `generate auth` writes it in `.env`.
+- **`// karbon:unique`** after an entity field makes `karbon migrate diff` create the
+  column `UNIQUE` (`pub email: String, // karbon:unique`); `slug` stays unique by name.
+- **`// karbon:text`** makes it a `TEXT` column. `generate entity … body:text` writes the
+  marker: a `text` field is a Rust `String` like a `string` one, and without it the
+  column was a `VARCHAR(255)` under MySQL and PostgreSQL — too short for an article.
+  Entities generated earlier are unchanged; add the marker by hand to get the same.
+- **`karbon new --db sqlite|mysql|postgres`** (default `sqlite`) wires the `karbon` and
+  `sqlx` dependencies and the `.env` for the chosen database. With SQLite the project has a
+  database from the first run (`DB_NAME=app.db`, git-ignored): `generate crud`,
+  `migrate diff` and `migrate` work with nothing else installed.
+- **Prebuilt `karbon` binaries** for Linux (x86_64, aarch64), macOS (Intel, Apple Silicon)
+  and Windows (x86_64), attached to each GitHub release by a new `release.yml` workflow
+  (on a `v*` tag, or "Run workflow"). **`install.sh`** and **`install.ps1`** download the
+  right one, check its SHA-256 and install it; `cargo install karbon-cli` still works.
+- **`APP_LOCALE`** (`en` by default, `fr`) and `karbon::i18n::{Locale, locale, set_locale}`
+  choose the language of Karbon's own messages, process-wide.
+- `DateHelper::time_ago_in`, `NumberHelper::filesize_format_in` and
+  `NumberHelper::ordinal_in` take the language as an argument, for a site that serves
+  several.
+
 ## [0.5.0] - 2026-11-11
 
 > Security and licensing release, with breaking changes — hence the minor bump.
